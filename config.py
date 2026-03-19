@@ -18,3 +18,11 @@ DEFAULT_CONTEXT_LINES = int(os.getenv("DEFAULT_CONTEXT_LINES", "20"))
 # 服务监听配置
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "445"))
+
+# ─── P3：自然语言增强配置 ─────────────────────────────
+NL_ENABLED = os.getenv("NL_ENABLED", "true").lower() == "true"
+NL_MODEL = os.getenv("NL_MODEL", "deepseek-chat")
+NL_API_KEY = os.getenv("NL_API_KEY", "")
+NL_API_BASE = os.getenv("NL_API_BASE", "https://api.deepseek.com/v1")
+NL_TIMEOUT = float(os.getenv("NL_TIMEOUT", "10.0"))
+NL_CACHE_TTL = int(os.getenv("NL_CACHE_TTL", "86400"))

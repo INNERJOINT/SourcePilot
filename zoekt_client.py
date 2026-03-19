@@ -34,13 +34,18 @@ async def search(
         "q": zoekt_query,
         "num": top_k * 3,
         "format": "json",
-        "ctx": DEFAULT_CONTEXT_LINES,  # 控制 Zoekt 返回匹配行前后的上下文行数
     }
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             # 尝试 /search?format=json（兼容大多数 zoekt-webserver 版本）
             resp = await client.get(f"{ZOEKT_URL}/search", params=params)
+
+            # Zoekt 对无结果的查询返回 418 "I'm a teapot"
+            if resp.status_code == 418:
+                logger.info("Zoekt returned 418 (no results) for query: %s", params.get("q"))
+                return []
+
             resp.raise_for_status()
 
             raw_text = resp.text

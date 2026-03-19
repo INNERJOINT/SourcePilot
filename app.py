@@ -143,16 +143,34 @@ async def retrieval(body: RetrievalRequest, request: Request):
         if len(parts) == 2 and parts[1]:
             repos_filter = parts[1]
 
-    # 3. 调用 Zoekt 搜索
+    # 3. 查询分类 & 搜索
     try:
-        records = await zoekt_client.search(
-            query=body.query,
-            top_k=body.retrieval_setting.top_k,
-            score_threshold=body.retrieval_setting.score_threshold,
-            repos=repos_filter,
-        )
+        # 判断查询类型
+        if config.NL_ENABLED:
+            from nl.classifier import classify_query
+            query_type = classify_query(body.query)
+        else:
+            query_type = "exact"
+
+        logger.info("Query type: %s (NL_ENABLED=%s)", query_type, config.NL_ENABLED)
+
+        if query_type == "natural_language":
+            records = await _nl_search(
+                query=body.query,
+                top_k=body.retrieval_setting.top_k,
+                score_threshold=body.retrieval_setting.score_threshold,
+                repos=repos_filter,
+            )
+        else:
+            # 精确查询：直接走 Zoekt
+            records = await zoekt_client.search(
+                query=body.query,
+                top_k=body.retrieval_setting.top_k,
+                score_threshold=body.retrieval_setting.score_threshold,
+                repos=repos_filter,
+            )
     except Exception as e:
-        logger.error("Zoekt 搜索异常: %s", e)
+        logger.error("搜索异常: %s", e)
         return JSONResponse(
             status_code=500,
             content={
@@ -164,6 +182,76 @@ async def retrieval(body: RetrievalRequest, request: Request):
     logger.info("Retrieval returned %d records", len(records))
 
     return {"records": records}
+
+
+async def _nl_search(
+    query: str,
+    top_k: int,
+    score_threshold: float,
+    repos: str | None,
+) -> list[dict]:
+    """
+    自然语言增强搜索流程：
+    LLM Rewrite → 多路 Zoekt 并行查询 → RRF 融合 → Feature Rerank
+    """
+    import asyncio
+    from nl.rewriter import rewrite_query
+    from nl.merger import rrf_merge
+    from nl.reranker import feature_rerank
+
+    # 1. LLM Query Rewrite
+    rewrite_results = await rewrite_query(query)
+    logger.info(
+        "NL rewrite: %d queries → %s",
+        len(rewrite_results),
+        [r["query"] for r in rewrite_results],
+    )
+
+    if not rewrite_results:
+        # rewrite 完全失败时，降级为直接搜索
+        return await zoekt_client.search(
+            query=query, top_k=top_k,
+            score_threshold=score_threshold, repos=repos,
+        )
+
+    # 2. 多路 Zoekt 并行查询
+    tasks = [
+        zoekt_client.search(
+            query=rq["query"],
+            top_k=20,  # 每路多取一些
+            score_threshold=0,  # 融合后再过滤
+            repos=repos,
+        )
+        for rq in rewrite_results
+    ]
+    all_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 过滤异常结果
+    valid_results = [r for r in all_results if isinstance(r, list)]
+    logger.info(
+        "NL multi-query: %d/%d routes succeeded",
+        len(valid_results), len(all_results),
+    )
+
+    if not valid_results:
+        # 所有路都失败时，降级
+        return await zoekt_client.search(
+            query=query, top_k=top_k,
+            score_threshold=score_threshold, repos=repos,
+        )
+
+    # 3. RRF 融合
+    merged = rrf_merge(valid_results)
+    logger.info("NL RRF merged: %d candidates", len(merged))
+
+    # 4. Feature-based Rerank
+    reranked = feature_rerank(query, merged, top_n=top_k)
+
+    # 5. 按 score_threshold 过滤
+    if score_threshold > 0:
+        reranked = [r for r in reranked if r.get("score", 0) >= score_threshold]
+
+    return reranked
 
 
 # ─── 健康检查 ────────────────────────────────────────
