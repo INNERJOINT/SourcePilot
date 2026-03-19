@@ -231,8 +231,9 @@ def _format_results(query: str, results: list[dict]) -> str:
 
 # ─── 入口 ─────────────────────────────────────────────
 
-async def main():
-    logger.info("Starting AOSP Code Search MCP Server")
+async def main_stdio():
+    """以 stdio 模式启动（供 Claude Code 等本地工具直接调用）"""
+    logger.info("Starting AOSP Code Search MCP Server (stdio)")
     logger.info("Zoekt URL: %s", config.ZOEKT_URL)
 
     async with stdio_server() as (read_stream, write_stream):
@@ -243,5 +244,76 @@ async def main():
         )
 
 
+async def main_streamable_http(host: str, port: int):
+    """以 Streamable HTTP 模式启动（供远程客户端通过 HTTP 访问）"""
+    import uuid
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+
+    logger.info("Starting AOSP Code Search MCP Server (streamable-http)")
+    logger.info("Zoekt URL: %s", config.ZOEKT_URL)
+    logger.info("Listening on http://%s:%d/mcp", host, port)
+
+    session_id = uuid.uuid4().hex
+
+    transport = StreamableHTTPServerTransport(
+        mcp_session_id=session_id,
+    )
+
+    async def handle_mcp(scope, receive, send):
+        await transport.handle_request(scope, receive, send)
+
+    app = Starlette(
+        routes=[
+            Mount("/mcp", app=handle_mcp),
+        ],
+    )
+
+    async with transport.connect() as (read_stream, write_stream):
+        task = asyncio.create_task(
+            server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+        )
+        uvicorn_config = uvicorn.Config(
+            app=app,
+            host=host,
+            port=port,
+            log_level="info",
+        )
+        uvicorn_server = uvicorn.Server(uvicorn_config)
+        await uvicorn_server.serve()
+        task.cancel()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="AOSP Code Search MCP Server")
+    parser.add_argument(
+        "--transport", "-t",
+        choices=["stdio", "streamable-http"],
+        default="stdio",
+        help="传输模式: stdio（默认，本地工具调用）或 streamable-http（远程 HTTP 访问）",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Streamable HTTP 监听地址（默认 0.0.0.0）",
+    )
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=8888,
+        help="Streamable HTTP 监听端口（默认 8888）",
+    )
+    args = parser.parse_args()
+
+    if args.transport == "streamable-http":
+        asyncio.run(main_streamable_http(args.host, args.port))
+    else:
+        asyncio.run(main_stdio())
