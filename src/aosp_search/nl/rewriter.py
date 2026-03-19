@@ -12,7 +12,7 @@ import re
 import httpx
 
 from config import NL_MODEL, NL_API_KEY, NL_API_BASE, NL_TIMEOUT
-from nl.cache import get_cached_rewrite, set_cached_rewrite
+from aosp_search.nl.cache import get_cached_rewrite, set_cached_rewrite
 
 logger = logging.getLogger(__name__)
 

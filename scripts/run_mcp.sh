@@ -25,11 +25,14 @@ if [ ! -x "$VENV_PYTHON" ]; then
     VENV_PYTHON="python3"
 fi
 
+DIR=$(cd "$(dirname "$0")" && pwd)
+export PYTHONPATH="$DIR/../src"
+
 # 如果没传参数，默认 stdio 模式
 if [ $# -eq 0 ]; then
     echo "AOSP Code Search MCP Server (stdio)" >&2
     echo "Zoekt URL: ${ZOEKT_URL:-http://localhost:6070}" >&2
-    exec "$VENV_PYTHON" mcp_server.py
+    exec "$VENV_PYTHON" -m aosp_search.mcp_server
 fi
 
 # 检查是否是 streamable-http 模式，打印提示信息
@@ -43,4 +46,4 @@ for arg in "$@"; do
     fi
 done
 
-exec "$VENV_PYTHON" mcp_server.py "$@"
+exec "$VENV_PYTHON" -m aosp_search.mcp_server "$@"

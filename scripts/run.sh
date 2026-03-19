@@ -31,11 +31,16 @@ echo "=========================================="
 # 直接使用 pyenv 虚拟环境中的 python（兼容 sudo）
 VENV_PYTHON="/opt/pyenv/versions/dify_py3_env/bin/python3"
 if [ ! -x "$VENV_PYTHON" ]; then
-    echo "Error: $VENV_PYTHON not found. Please check pyenv virtualenv name."
+    echo "Error: Python environment $VENV_PYTHON not found!" >&2
+    echo "Please check if pyenv and dify_py3_env are properly configured." >&2
     exit 1
 fi
 
-exec "$VENV_PYTHON" -m uvicorn app:app \
+DIR=$(cd "$(dirname "$0")" && pwd)
+export PYTHONPATH="$DIR/../src"
+
+exec "$VENV_PYTHON" -m uvicorn aosp_search.app:app \
     --host 0.0.0.0 \
     --port "${PORT}" \
+    --reload \
     --log-level info

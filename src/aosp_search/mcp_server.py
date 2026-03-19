@@ -22,8 +22,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-import config
-import zoekt_client
+from aosp_search import config
+from aosp_search import zoekt_client
 
 # 日志配置（MCP stdio 模式下日志必须输出到 stderr）
 logging.basicConfig(

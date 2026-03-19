@@ -14,8 +14,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-import config
-import zoekt_client
+from aosp_search import config
+from aosp_search import zoekt_client
 
 # 日志配置
 logging.basicConfig(
@@ -195,9 +195,9 @@ async def _nl_search(
     LLM Rewrite → 多路 Zoekt 并行查询 → RRF 融合 → Feature Rerank
     """
     import asyncio
-    from nl.rewriter import rewrite_query
-    from nl.merger import rrf_merge
-    from nl.reranker import feature_rerank
+    from aosp_search.nl.rewriter import rewrite_query
+    from aosp_search.nl.merger import rrf_merge
+    from aosp_search.nl.reranker import feature_rerank
 
     # 1. LLM Query Rewrite
     rewrite_results = await rewrite_query(query)
