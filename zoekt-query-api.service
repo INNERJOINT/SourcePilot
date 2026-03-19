@@ -1,0 +1,22 @@
+[Unit]
+Description=Zoekt-Dify Query API (External Knowledge Base Adapter)
+Documentation=https://docs.dify.ai/zh/use-dify/knowledge/connect-external-knowledge-base
+After=network.target zoekt-webserver.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/jenkins/code/t2/query_api
+Environment=ZOEKT_URL=http://localhost:6070
+Environment=API_KEY=your-api-key
+Environment=PORT=445
+Environment=DEFAULT_CONTEXT_LINES=20
+ExecStart=/usr/bin/python3 -m uvicorn app:app --host 0.0.0.0 --port 445 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

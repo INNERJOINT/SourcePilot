@@ -1,0 +1,211 @@
+app:
+  description: '基于 Zoekt 代码搜索的 AOSP 代码问答助手，通过外部知识库检索代码片段并由 LLM 生成回答。'
+  icon: 🔍
+  icon_background: '#2B5CE6'
+  mode: advanced-chat
+  name: AOSP 代码问答助手
+  use_icon_as_answer_icon: true
+
+kind: app
+
+version: 0.1.5
+
+workflow:
+  conversation_variables: []
+
+  environment_variables: []
+
+  features:
+    file_upload:
+      allowed_file_extensions: []
+      allowed_file_types: []
+      allowed_file_upload_methods:
+        - local_file
+      enabled: false
+      fileUploadConfig:
+        file_size_limit: 15
+        batch_count_limit: 5
+      image:
+        enabled: false
+      number_limits: 3
+    opening_statement: '你好！我是 AOSP 代码问答助手。你可以问我任何关于 AOSP 源码的问题，例如：
+
+      - SystemServer 的启动流程是什么？
+
+      - AudioFlinger 如何处理音频路由？
+
+      - SurfaceFlinger 的 VSYNC 机制是怎样的？'
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+      - SystemServer 启动了哪些核心服务？
+      - ActivityManagerService 的启动流程
+      - Zygote 进程是如何 fork 应用进程的？
+    suggested_questions_after_answer:
+      enabled: true
+    text_to_speech:
+      enabled: false
+
+  graph:
+    edges:
+      - data:
+          isInIteration: false
+          sourceType: start
+          targetType: knowledge-retrieval
+        id: start-to-retrieval
+        source: start
+        sourceHandle: source
+        target: knowledge_retrieval
+        targetHandle: target
+        type: custom
+      - data:
+          isInIteration: false
+          sourceType: knowledge-retrieval
+          targetType: llm
+        id: retrieval-to-llm
+        source: knowledge_retrieval
+        sourceHandle: source
+        target: llm_node
+        targetHandle: target
+        type: custom
+      - data:
+          isInIteration: false
+          sourceType: llm
+          targetType: answer
+        id: llm-to-answer
+        source: llm_node
+        sourceHandle: source
+        target: answer_node
+        targetHandle: target
+        type: custom
+
+    nodes:
+      # ─── 开始节点 ───
+      - data:
+          desc: ''
+          selected: false
+          title: 开始
+          type: start
+          variables: []
+        height: 54
+        id: start
+        position:
+          x: 80
+          y: 282
+        positionAbsolute:
+          x: 80
+          y: 282
+        type: custom
+        width: 244
+
+      # ─── 知识检索节点（连接外部知识库） ───
+      - data:
+          dataset_ids:
+            - '<YOUR_EXTERNAL_KNOWLEDGE_ID>'
+          desc: '通过外部知识库 API 检索 AOSP 代码片段'
+          multiple_retrieval_config:
+            reranking_enable: false
+            reranking_mode: reranking_model
+            top_k: 5
+          query_variable_selector:
+            - start
+            - sys.query
+          retrieval_mode: multiple
+          selected: false
+          single_retrieval_config:
+            model:
+              completion_params:
+                frequency_penalty: 0
+                max_tokens: 512
+                presence_penalty: 0
+                temperature: 0
+                top_p: 1
+              mode: chat
+              name: deepseek-chat
+              provider: deepseek
+          title: 知识检索
+          type: knowledge-retrieval
+        height: 54
+        id: knowledge_retrieval
+        position:
+          x: 380
+          y: 282
+        positionAbsolute:
+          x: 380
+          y: 282
+        type: custom
+        width: 244
+
+      # ─── LLM 节点 ───
+      - data:
+          context:
+            enabled: true
+            variable_selector:
+              - knowledge_retrieval
+              - result
+          desc: '根据检索到的代码片段回答用户问题'
+          model:
+            completion_params:
+              frequency_penalty: 0
+              max_tokens: 4096
+              presence_penalty: 0
+              temperature: 0.3
+              top_p: 0.9
+            mode: chat
+            name: deepseek-chat
+            provider: deepseek
+          prompt_template:
+            - id: system-prompt
+              role: system
+              text: >-
+                你是一个 AOSP（Android Open Source Project）代码分析专家。
+                用户会询问关于 AOSP 源代码的问题，系统会通过代码搜索引擎检索相关代码片段提供给你作为上下文。
+
+                请根据提供的代码片段回答用户的问题。回答时请注意：
+                1. 引用具体的文件路径和行号
+                2. 解释代码的功能和逻辑
+                3. 如果代码片段不足以完整回答问题，请说明并给出你的分析
+                4. 使用中文回答
+
+                以下是检索到的代码片段：
+                {{#context#}}
+            - id: user-prompt
+              role: user
+              text: '{{#sys.query#}}'
+          selected: false
+          title: LLM
+          type: llm
+          vision:
+            enabled: false
+        height: 98
+        id: llm_node
+        position:
+          x: 680
+          y: 282
+        positionAbsolute:
+          x: 680
+          y: 282
+        type: custom
+        width: 244
+
+      # ─── 回答节点 ───
+      - data:
+          answer: '{{#llm_node.text#}}'
+          desc: ''
+          selected: false
+          title: 回答
+          type: answer
+        height: 107
+        id: answer_node
+        position:
+          x: 980
+          y: 282
+        positionAbsolute:
+          x: 980
+          y: 282
+        type: custom
+        width: 244
