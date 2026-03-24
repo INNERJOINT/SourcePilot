@@ -200,3 +200,93 @@ def _build_content_snippet(file_match: dict[str, Any]) -> str:
 
     return "\n".join(lines_output)
 
+
+async def fetch_file_content(
+    repo: str,
+    filepath: str,
+    start_line: int = 1,
+    end_line: int | None = None,
+) -> dict:
+    """
+    从 Zoekt /print 端点获取文件完整内容。
+
+    Args:
+        repo: 仓库名（如 'frameworks/base'）
+        filepath: 文件路径（如 'core/java/android/os/Process.java'）
+        start_line: 起始行（从 1 开始，默认 1）
+        end_line: 结束行（默认读取全部）
+
+    Returns:
+        dict with keys: content, total_lines, repo, filepath, start_line, end_line
+    """
+    import re
+    import html as html_module
+
+    params = {"r": repo, "f": filepath}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{ZOEKT_URL}/print", params=params)
+
+            if resp.status_code == 418:
+                raise FileNotFoundError(
+                    f"文件未找到: repo={repo!r}, filepath={filepath!r}。"
+                    "请用 search_file 工具确认正确的 repo 和文件路径。"
+                )
+            resp.raise_for_status()
+            html_text = resp.text
+
+    except httpx.HTTPStatusError as e:
+        logger.error("Zoekt /print HTTP error: %s", e)
+        raise
+    except httpx.RequestError as e:
+        logger.error("Zoekt /print request error: %s", e)
+        raise
+
+    # 从所有 <pre> 标签提取文件内容：Zoekt 每行渲染为独立的 <pre> 标签
+    # 每个 pre 内格式: <span class="noselect"><a href="#lN">N</a>: </span>CODE...
+    all_pres = re.findall(r"<pre[^>]*>(.*?)</pre>", html_text, re.DOTALL)
+    if not all_pres:
+        raise ValueError(
+            f"无法解析 Zoekt 响应，未找到 <pre> 标签: repo={repo!r}, filepath={filepath!r}"
+        )
+
+    # 解析每个 pre 块：去除行号 span，提取纯代码文本
+    all_lines = []
+    for pre in all_pres:
+        # 去除行号导航 span: <span class="noselect">...</span>
+        code = re.sub(
+            r'<span[^>]*class="noselect"[^>]*>.*?</span>',
+            "",
+            pre,
+            flags=re.DOTALL,
+        )
+        # 去除所有其他 HTML 标签（高亮 span 等）
+        code = re.sub(r"<[^>]+>", "", code)
+        # 反转义 HTML 实体（&lt; &amp; 等）
+        code = html_module.unescape(code)
+        all_lines.append(code)
+
+    total_lines = len(all_lines)
+
+    # 应用行范围
+    s = max(1, start_line) - 1          # 转为 0-indexed
+    e = end_line if end_line else total_lines
+    e = min(e, total_lines)
+
+    selected = all_lines[s:e]
+
+    # 添加行号前缀（方便 AI 阅读）
+    numbered_lines = [
+        f"L{s + i + 1}: {line}"
+        for i, line in enumerate(selected)
+    ]
+
+    return {
+        "content": "\n".join(numbered_lines),
+        "total_lines": total_lines,
+        "repo": repo,
+        "filepath": filepath,
+        "start_line": s + 1,
+        "end_line": s + len(selected),
+    }

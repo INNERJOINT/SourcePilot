@@ -126,6 +126,38 @@ async def list_tools() -> list[Tool]:
                 "required": ["path"],
             },
         ),
+        Tool(
+            name="get_file_content",
+            description=(
+                "读取 AOSP 代码文件的完整内容（或指定行范围）。"
+                "先用 search_file 找到文件的 repo 和 filepath，再用此工具读取完整内容。"
+                "示例: get_file_content(repo='layoutlib', filepath='bridge/src/android/app/Foo.java')"
+                "示例（读取指定行）: get_file_content(repo='frameworks/base', filepath='core/java/android/os/Process.java', start_line=100, end_line=200)"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "仓库名（从 search_file/search_code 结果的 repo 字段获取）",
+                    },
+                    "filepath": {
+                        "type": "string",
+                        "description": "文件路径（从搜索结果的 path 字段获取，不含 repo 前缀）",
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "起始行号（从 1 开始，默认 1，即文件开头）",
+                        "default": 1,
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "结束行号（默认读取到文件末尾）",
+                    },
+                },
+                "required": ["repo", "filepath"],
+            },
+        ),
     ]
 
 
@@ -141,11 +173,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _handle_search_symbol(arguments)
         elif name == "search_file":
             return await _handle_search_file(arguments)
+        elif name == "get_file_content":
+            return await _handle_get_file_content(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
     except Exception as e:
         logger.error("Tool error: %s", e)
-        return [TextContent(type="text", text=f"搜索出错: {str(e)}")]
+        return [TextContent(type="text", text=f"操作出错: {str(e)}")]
 
 
 # ─── 工具实现 ──────────────────────────────────────────
@@ -195,6 +229,27 @@ async def _handle_search_file(args: dict) -> list[TextContent]:
         query=query, top_k=top_k, score_threshold=0, repos=None,
     )
     return [TextContent(type="text", text=_format_results(path, results))]
+
+
+async def _handle_get_file_content(args: dict) -> list[TextContent]:
+    repo = args["repo"]
+    filepath = args["filepath"]
+    start_line = args.get("start_line", 1)
+    end_line = args.get("end_line", None)
+
+    result = await zoekt_client.fetch_file_content(
+        repo=repo,
+        filepath=filepath,
+        start_line=start_line,
+        end_line=end_line,
+    )
+
+    total = result["total_lines"]
+    s = result["start_line"]
+    e = result["end_line"]
+    header = f"# {repo}/{filepath}  (L{s}-L{e} / 共 {total} 行)\n"
+
+    return [TextContent(type="text", text=header + "```\n" + result["content"] + "\n```")]
 
 
 # ─── 结果格式化 ────────────────────────────────────────
