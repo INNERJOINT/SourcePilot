@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, Resource, ResourceTemplate, ReadResourceResult, TextResourceContents
+from pydantic import AnyUrl
 
 from aosp_search import config
 from aosp_search import zoekt_client
@@ -36,6 +37,81 @@ logger = logging.getLogger(__name__)
 # ─── 创建 MCP Server ──────────────────────────────────
 
 server = Server("aosp-code-search")
+
+
+@server.list_resources()
+async def list_resources() -> list[Resource]:
+    """声明可用的资源列表。
+    
+    暂时返回空列表（动态资源通过 read_resource 按需获取）。
+    """
+    return []
+
+
+@server.read_resource()
+async def read_resource(uri: AnyUrl) -> ReadResourceResult:
+    """通过 URI 读取资源内容。
+
+    支持 URI 格式: aosp://{repo}/{filepath}
+    示例: aosp://frameworks/base/core/java/android/os/Process.java
+    
+    repo 和 filepath 用第一个 '/' 之后的路径分隔：
+    aosp://repo_name/path/to/file.java
+    """
+    uri_str = str(uri)
+    if not uri_str.startswith("aosp://"):
+        raise ValueError(f"不支持的 URI 格式: {uri_str}，请使用 aosp://{{repo}}/{{filepath}}")
+
+    # 解析 repo 和 filepath
+    # aosp://repo/path/to/file → repo="repo", filepath="path/to/file"
+    path_part = uri_str[len("aosp://"):]
+    if "/" not in path_part:
+        raise ValueError(f"URI 格式错误: {uri_str}，需要包含 repo 和 filepath: aosp://{{repo}}/{{filepath}}")
+
+    repo, filepath = path_part.split("/", 1)
+    if not repo or not filepath:
+        raise ValueError(f"URI 格式错误: repo 或 filepath 为空: {uri_str}")
+
+    logger.info("read_resource: repo=%s, filepath=%s", repo, filepath)
+
+    try:
+        result = await zoekt_client.fetch_file_content(repo=repo, filepath=filepath)
+    except FileNotFoundError as e:
+        raise ValueError(str(e))
+
+    content = f"# {repo}/{filepath}  (共 {result['total_lines']} 行)\n\n{result['content']}"
+
+    return ReadResourceResult(
+        contents=[
+            TextResourceContents(
+                uri=uri,
+                mimeType="text/plain",
+                text=content,
+            )
+        ]
+    )
+
+
+@server.list_resource_templates()
+async def list_resource_templates() -> list[ResourceTemplate]:
+    """声明支持的资源 URI 模板。
+    
+    客户端可通过模板构造 URI 来动态读取文件内容。
+    """
+    return [
+        ResourceTemplate(
+            name="aosp-file",
+            uriTemplate="aosp://{repo}/{filepath}",
+            title="AOSP 源码文件",
+            description=(
+                "读取 AOSP 仓库中的完整文件内容。"
+                "repo: 仓库名（如 frameworks/base）；"
+                "filepath: 文件路径（如 core/java/android/os/Process.java）。"
+                "先用 search_file 工具获取正确的 repo 和 filepath。"
+            ),
+            mimeType="text/plain",
+        )
+    ]
 
 
 @server.list_tools()
