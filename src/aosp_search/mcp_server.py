@@ -246,48 +246,96 @@ async def main_stdio():
 
 async def main_streamable_http(host: str, port: int):
     """以 Streamable HTTP 模式启动（供远程客户端通过 HTTP 访问）"""
-    import uuid
+    import contextlib
     import uvicorn
     from starlette.applications import Starlette
-    from starlette.routing import Mount
-    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from starlette.routing import Mount, Route
+    from starlette.responses import JSONResponse
+    from starlette.types import ASGIApp, Receive, Scope, Send
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
     logger.info("Starting AOSP Code Search MCP Server (streamable-http)")
     logger.info("Zoekt URL: %s", config.ZOEKT_URL)
     logger.info("Listening on http://%s:%d/mcp", host, port)
 
-    session_id = uuid.uuid4().hex
+    auth_token = config.MCP_AUTH_TOKEN
+    if auth_token:
+        logger.info("Bearer token authentication ENABLED")
+    else:
+        logger.warning("Bearer token authentication DISABLED (set MCP_AUTH_TOKEN to enable)")
 
-    transport = StreamableHTTPServerTransport(
-        mcp_session_id=session_id,
+    # ─── Session 管理器（每个客户端连接独立的 session）──
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
+        json_response=False,
+        stateless=False,          # 有状态模式，保持 session
     )
 
     async def handle_mcp(scope, receive, send):
-        await transport.handle_request(scope, receive, send)
+        await session_manager.handle_request(scope, receive, send)
+
+    # ─── Bearer Token 鉴权中间件 ───────────────────────
+    class BearerTokenMiddleware:
+        def __init__(self, app: ASGIApp, token: str):
+            self.app = app
+            self.token = token
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send):
+            # lifespan 事件必须透传给内层 app（触发 session_manager.run()）
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            headers = dict(scope.get("headers", []))
+            auth_header = headers.get(b"authorization", b"").decode()
+
+            if not auth_header.startswith("Bearer "):
+                response = JSONResponse(
+                    {"error": "unauthorized", "error_description": "Missing Bearer token"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Bearer realm="mcp"'},
+                )
+                await response(scope, receive, send)
+                return
+
+            if auth_header[7:] != self.token:
+                response = JSONResponse(
+                    {"error": "invalid_token", "error_description": "Invalid Bearer token"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                )
+                await response(scope, receive, send)
+                return
+
+            await self.app(scope, receive, send)
+
+    # ─── lifespan：管理 session_manager 的生命周期 ─────
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with session_manager.run():
+            logger.info("MCP Session Manager running")
+            yield
 
     app = Starlette(
+        lifespan=lifespan,
         routes=[
             Mount("/mcp", app=handle_mcp),
+            Mount("/mcp/", app=handle_mcp),
         ],
     )
 
-    async with transport.connect() as (read_stream, write_stream):
-        task = asyncio.create_task(
-            server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
-        )
-        uvicorn_config = uvicorn.Config(
-            app=app,
-            host=host,
-            port=port,
-            log_level="info",
-        )
-        uvicorn_server = uvicorn.Server(uvicorn_config)
-        await uvicorn_server.serve()
-        task.cancel()
+    # 如果设置了 token，包裹鉴权中间件
+    if auth_token:
+        app = BearerTokenMiddleware(app, auth_token)
+
+    uvicorn_config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        log_level="info",
+    )
+    uvicorn_server = uvicorn.Server(uvicorn_config)
+    await uvicorn_server.serve()
 
 
 if __name__ == "__main__":

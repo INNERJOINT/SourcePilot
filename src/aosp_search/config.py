@@ -26,3 +26,9 @@ NL_API_KEY = os.getenv("NL_API_KEY", "")
 NL_API_BASE = os.getenv("NL_API_BASE", "https://api.deepseek.com/v1")
 NL_TIMEOUT = float(os.getenv("NL_TIMEOUT", "10.0"))
 NL_CACHE_TTL = int(os.getenv("NL_CACHE_TTL", "86400"))
+
+# ─── MCP 鉴权配置 ──────────────────────────────────────
+# Streamable HTTP 模式的 Bearer Token 鉴权
+# 设置后，客户端需在 HTTP 请求中携带 Authorization: Bearer <token>
+MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
+
