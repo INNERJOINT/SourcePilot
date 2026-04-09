@@ -117,6 +117,24 @@ async def list_resource_templates() -> list[ResourceTemplate]:
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """声明可用的工具列表。"""
+    # ─── 通用过滤参数（在多个工具中复用）─────────────
+    common_filter_props = {
+        "lang": {
+            "type": "string",
+            "description": "可选，按编程语言过滤（如 java, python, cpp, go）",
+        },
+        "branch": {
+            "type": "string",
+            "description": "可选，按分支名过滤（如 main, android-14.0.0_r1）",
+        },
+        "case_sensitive": {
+            "type": "string",
+            "enum": ["auto", "yes", "no"],
+            "description": "大小写敏感模式：auto（默认，含大写则敏感）、yes、no",
+            "default": "auto",
+        },
+    }
+
     return [
         Tool(
             name="search_code",
@@ -124,6 +142,7 @@ async def list_tools() -> list[Tool]:
                 "搜索 AOSP 代码库。支持关键词、类名、函数名、文件路径、属性名等。"
                 "返回匹配的代码片段及其文件位置。"
                 "示例: search_code(query='SystemServer startBootstrapServices')"
+                "示例: search_code(query='startActivity', lang='java', repo='frameworks/base')"
             ),
             inputSchema={
                 "type": "object",
@@ -142,6 +161,7 @@ async def list_tools() -> list[Tool]:
                         "description": "返回结果数量，默认 10",
                         "default": 10,
                     },
+                    **common_filter_props,
                 },
                 "required": ["query"],
             },
@@ -152,6 +172,7 @@ async def list_tools() -> list[Tool]:
                 "精确搜索代码符号（类名、函数名、变量名）。"
                 "使用 Zoekt 的 sym: 前缀进行符号搜索。"
                 "示例: search_symbol(symbol='startBootstrapServices')"
+                "示例: search_symbol(symbol='ActivityManager', lang='java')"
             ),
             inputSchema={
                 "type": "object",
@@ -170,6 +191,7 @@ async def list_tools() -> list[Tool]:
                         "description": "返回结果数量，默认 5",
                         "default": 5,
                     },
+                    **common_filter_props,
                 },
                 "required": ["symbol"],
             },
@@ -180,6 +202,7 @@ async def list_tools() -> list[Tool]:
                 "按文件名或路径搜索代码文件。"
                 "使用 Zoekt 的 file: 前缀进行文件搜索。"
                 "示例: search_file(path='SystemServer.java')"
+                "示例: search_file(path='Android.bp', lang='starlark')"
             ),
             inputSchema={
                 "type": "object",
@@ -198,8 +221,61 @@ async def list_tools() -> list[Tool]:
                         "description": "返回结果数量，默认 5",
                         "default": 5,
                     },
+                    **common_filter_props,
                 },
                 "required": ["path"],
+            },
+        ),
+        Tool(
+            name="search_regex",
+            description=(
+                "使用正则表达式搜索代码。适合复杂模式匹配。"
+                "示例: search_regex(pattern='func\\s+\\w+\\s*\\(')"
+                "示例: search_regex(pattern='TODO.*fix', lang='java')"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "正则表达式模式",
+                    },
+                    "repo": {
+                        "type": "string",
+                        "description": "可选，限定搜索的 repo",
+                        "default": "",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "返回结果数量，默认 10",
+                        "default": 10,
+                    },
+                    "lang": common_filter_props["lang"],
+                },
+                "required": ["pattern"],
+            },
+        ),
+        Tool(
+            name="list_repos",
+            description=(
+                "列出 AOSP 代码库中的仓库列表。"
+                "可按关键词过滤仓库名称。"
+                "示例: list_repos(query='frameworks')"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "可选，仓库名过滤关键词",
+                        "default": "",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "返回数量上限，默认 50",
+                        "default": 50,
+                    },
+                },
             },
         ),
         Tool(
@@ -249,6 +325,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _handle_search_symbol(arguments)
         elif name == "search_file":
             return await _handle_search_file(arguments)
+        elif name == "search_regex":
+            return await _handle_search_regex(arguments)
+        elif name == "list_repos":
+            return await _handle_list_repos(arguments)
         elif name == "get_file_content":
             return await _handle_get_file_content(arguments)
         else:
@@ -260,14 +340,40 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 # ─── 工具实现 ──────────────────────────────────────────
 
+def _extract_filters(args: dict) -> dict:
+    """从工具参数中提取通用过滤字段。"""
+    return {
+        "lang": args.get("lang") or None,
+        "branch": args.get("branch") or None,
+        "case_sensitive": args.get("case_sensitive", "auto"),
+    }
+
+
 async def _handle_search_code(args: dict) -> list[TextContent]:
     query = args["query"]
     repo = args.get("repo", "") or None
     top_k = args.get("top_k", 10)
+    filters = _extract_filters(args)
 
-    results = await zoekt_client.search(
-        query=query, top_k=top_k, score_threshold=0, repos=repo,
-    )
+    # NL 增强判断
+    if config.NL_ENABLED:
+        from nl.classifier import classify_query
+        query_type = classify_query(query)
+    else:
+        query_type = "exact"
+
+    logger.info("Query type: %s (NL_ENABLED=%s)", query_type, config.NL_ENABLED)
+
+    if query_type == "natural_language":
+        from aosp_search.nl_search import nl_search
+        results = await nl_search(
+            query=query, top_k=top_k, score_threshold=0,
+            repos=repo, lang=filters.get("lang"), branch=filters.get("branch"),
+        )
+    else:
+        results = await zoekt_client.search(
+            query=query, top_k=top_k, score_threshold=0, repos=repo, **filters,
+        )
     return [TextContent(type="text", text=_format_results(query, results))]
 
 
@@ -275,17 +381,18 @@ async def _handle_search_symbol(args: dict) -> list[TextContent]:
     symbol = args["symbol"]
     repo = args.get("repo", "") or None
     top_k = args.get("top_k", 5)
+    filters = _extract_filters(args)
 
     # 使用 sym: 前缀进行符号搜索
     query = f"sym:{symbol}"
     results = await zoekt_client.search(
-        query=query, top_k=top_k, score_threshold=0, repos=repo,
+        query=query, top_k=top_k, score_threshold=0, repos=repo, **filters,
     )
 
     if not results:
         # 降级：普通搜索
         results = await zoekt_client.search(
-            query=symbol, top_k=top_k, score_threshold=0, repos=repo,
+            query=symbol, top_k=top_k, score_threshold=0, repos=repo, **filters,
         )
 
     return [TextContent(type="text", text=_format_results(symbol, results))]
@@ -295,6 +402,7 @@ async def _handle_search_file(args: dict) -> list[TextContent]:
     path = args["path"]
     extra_query = args.get("query", "")
     top_k = args.get("top_k", 5)
+    filters = _extract_filters(args)
 
     # 使用 file: 前缀
     query = f"file:{path}"
@@ -302,9 +410,43 @@ async def _handle_search_file(args: dict) -> list[TextContent]:
         query = f"file:{path} {extra_query}"
 
     results = await zoekt_client.search(
-        query=query, top_k=top_k, score_threshold=0, repos=None,
+        query=query, top_k=top_k, score_threshold=0, repos=None, **filters,
     )
     return [TextContent(type="text", text=_format_results(path, results))]
+
+
+async def _handle_search_regex(args: dict) -> list[TextContent]:
+    pattern = args["pattern"]
+    repo = args.get("repo", "") or None
+    top_k = args.get("top_k", 10)
+    lang = args.get("lang") or None
+
+    results = await zoekt_client.search_regex(
+        pattern=pattern, top_k=top_k, score_threshold=0,
+        repos=repo, lang=lang,
+    )
+    return [TextContent(type="text", text=_format_results(f"/{pattern}/", results))]
+
+
+async def _handle_list_repos(args: dict) -> list[TextContent]:
+    query = args.get("query", "")
+    top_k = args.get("top_k", 50)
+
+    repos = await zoekt_client.list_repos(query=query, top_k=top_k)
+
+    if not repos:
+        return [TextContent(type="text", text="未找到匹配的仓库。")]
+
+    lines = [f"找到 {len(repos)} 个仓库：\n"]
+    for i, r in enumerate(repos, 1):
+        name = r.get("name", "")
+        url = r.get("url", "")
+        line = f"{i}. {name}"
+        if url:
+            line += f"  ({url})"
+        lines.append(line)
+
+    return [TextContent(type="text", text="\n".join(lines))]
 
 
 async def _handle_get_file_content(args: dict) -> list[TextContent]:

@@ -15,6 +15,12 @@ API_KEY = os.getenv("API_KEY", "your-api-key")
 # 搜索结果上下文窗口：命中行上下各取多少行
 DEFAULT_CONTEXT_LINES = int(os.getenv("DEFAULT_CONTEXT_LINES", "20"))
 
+# ─── Zoekt 高级检索配置 ─────────────────────────────
+# 是否启用 BM25 评分（通过 Zoekt search 参数传入）
+USE_BM25_SCORING = os.getenv("USE_BM25_SCORING", "true").lower() == "true"
+# Zoekt 服务端返回的上下文行数（命中行上下各 N 行）
+NUM_CONTEXT_LINES = int(os.getenv("NUM_CONTEXT_LINES", "3"))
+
 # 服务监听配置
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "445"))

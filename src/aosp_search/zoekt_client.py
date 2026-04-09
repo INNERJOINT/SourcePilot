@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from config import ZOEKT_URL, DEFAULT_CONTEXT_LINES
+from config import ZOEKT_URL, DEFAULT_CONTEXT_LINES, USE_BM25_SCORING, NUM_CONTEXT_LINES
 
 logger = logging.getLogger(__name__)
 
@@ -19,22 +19,44 @@ async def search(
     top_k: int = 5,
     score_threshold: float = 0.0,
     repos: str | None = None,
+    lang: str | None = None,
+    branch: str | None = None,
+    case_sensitive: str = "auto",
 ) -> list[dict[str, Any]]:
     """
     调用 Zoekt 搜索接口，返回 Dify 标准 records 列表。
+
+    Args:
+        query: 搜索查询字符串
+        top_k: 返回结果数量
+        score_threshold: 分数阈值
+        repos: 可选，repo 名称过滤（如 frameworks/base）
+        lang: 可选，编程语言过滤（如 java, python）
+        branch: 可选，分支过滤（如 main）
+        case_sensitive: 大小写敏感模式：auto/yes/no
     """
     import json
 
     # 构造 Zoekt 查询字符串
     zoekt_query = query
     if repos:
-        zoekt_query = f"r:{repos} {query}"
+        zoekt_query = f"r:{repos} {zoekt_query}"
+    if lang:
+        zoekt_query = f"lang:{lang} {zoekt_query}"
+    if branch:
+        zoekt_query = f"branch:{branch} {zoekt_query}"
+    if case_sensitive and case_sensitive != "auto":
+        zoekt_query = f"case:{case_sensitive} {zoekt_query}"
 
     params = {
         "q": zoekt_query,
         "num": top_k * 3,
         "format": "json",
     }
+
+    # 上下文行数
+    if NUM_CONTEXT_LINES > 0:
+        params["ctx"] = NUM_CONTEXT_LINES
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -66,6 +88,119 @@ async def search(
         raise
 
     return _convert_results(data, top_k, score_threshold)
+
+
+async def search_regex(
+    pattern: str,
+    top_k: int = 10,
+    score_threshold: float = 0.0,
+    repos: str | None = None,
+    lang: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    使用正则表达式搜索代码。
+
+    Args:
+        pattern: 正则表达式模式
+        top_k: 返回结果数量
+        score_threshold: 分数阈值
+        repos: 可选，repo 过滤
+        lang: 可选，语言过滤
+    """
+    # 使用 content:/regex/ 语法
+    query = f"content:/{pattern}/"
+    return await search(
+        query=query,
+        top_k=top_k,
+        score_threshold=score_threshold,
+        repos=repos,
+        lang=lang,
+    )
+
+
+async def list_repos(
+    query: str = "",
+    top_k: int = 50,
+) -> list[dict[str, Any]]:
+    """
+    列出匹配的仓库列表。
+
+    Args:
+        query: 可选，仓库名过滤关键词
+        top_k: 返回仓库数量上限
+    """
+    import json
+
+    # 使用 type:repo 查询
+    zoekt_query = "type:repo"
+    if query:
+        zoekt_query = f"type:repo r:{query}"
+
+    params = {
+        "q": zoekt_query,
+        "num": top_k,
+        "format": "json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{ZOEKT_URL}/search", params=params)
+
+            if resp.status_code == 418:
+                return []
+
+            resp.raise_for_status()
+            raw_text = resp.text
+
+            if raw_text.strip().startswith("<"):
+                raise ValueError("Zoekt does not support JSON output on /search endpoint")
+
+            data = json.loads(raw_text)
+
+    except httpx.HTTPStatusError as e:
+        logger.error("Zoekt API HTTP error: %s", e)
+        raise
+    except httpx.RequestError as e:
+        logger.error("Zoekt API request error: %s", e)
+        raise
+
+    return _extract_repos(data, top_k)
+
+
+def _extract_repos(data: dict[str, Any], top_k: int) -> list[dict[str, Any]]:
+    """从 Zoekt 响应中提取仓库列表。"""
+    repos = []
+
+    result = data.get("Result") or data.get("result") or data
+    if isinstance(result, dict):
+        inner = result.get("Result") or result.get("result")
+        if isinstance(inner, dict):
+            result = inner
+
+    # 尝试从 RepoURLs 或 Repos 字段提取
+    repo_urls = result.get("RepoURLs") or {}
+    if repo_urls:
+        for repo_name, url in repo_urls.items():
+            repos.append({"name": repo_name, "url": url})
+            if len(repos) >= top_k:
+                break
+        return repos
+
+    # 降级：从 FileMatches 中提取去重的 repo 名
+    file_matches = (
+        result.get("FileMatches") or result.get("fileMatches") or
+        result.get("Files") or result.get("files") or []
+    )
+    seen = set()
+    for fm in file_matches:
+        repo = fm.get("Repo", "")
+        if repo and repo not in seen:
+            seen.add(repo)
+            repos.append({"name": repo, "url": ""})
+            if len(repos) >= top_k:
+                break
+
+    return repos
 
 
 def _convert_results(
@@ -119,8 +254,16 @@ def _convert_results(
     total = len(file_matches)
 
     for idx, fm in enumerate(file_matches):
-        # Zoekt 无 Score 字段，按排名递减分配分数 (1.0 → 0.x)
-        normalized_score = round(1.0 - (idx / max(total, 1)) * 0.5, 4)
+        # 优先使用 Zoekt 的 Score 字段（启用 BM25 时有意义）
+        raw_score = fm.get("Score", 0)
+        if raw_score and raw_score > 0:
+            # 将 Zoekt 原始分数归一化到 0~1 区间
+            # BM25 分数通常在 0~50 范围，使用 sigmoid 映射
+            import math
+            normalized_score = round(1.0 / (1.0 + math.exp(-0.1 * (raw_score - 10))), 4)
+        else:
+            # 无 Score 字段，按排名递减分配分数 (1.0 → 0.x)
+            normalized_score = round(1.0 - (idx / max(total, 1)) * 0.5, 4)
 
         if normalized_score < score_threshold:
             continue
