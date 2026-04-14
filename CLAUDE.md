@@ -30,14 +30,14 @@ SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh
 # MCP Streamable HTTP mode
 scripts/run_mcp.sh --transport streamable-http --port 8888
 
-# Run SourcePilot tests
-PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py -v
+# Run SourcePilot tests (unit + integration + e2e)
+PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v
 
 # Run MCP tests
-PYTHONPATH=mcp-server pytest tests/test_mcp_server.py -v
+PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 
 # Run all tests
-PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py -v && PYTHONPATH=mcp-server pytest tests/test_mcp_server.py -v
+PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v && PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 ```
 
 ## Architecture
