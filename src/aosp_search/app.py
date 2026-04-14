@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from aosp_search import config
 from aosp_search import zoekt_client
+from aosp_search.audit import setup_audit_logger, audit_tool_call, audit_stage, new_trace_id
 
 # 日志配置
 logging.basicConfig(
@@ -23,6 +24,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# 初始化审计日志（HTTP 模式）
+setup_audit_logger("http")
 
 app = FastAPI(
     title="Zoekt-Dify Query API",
@@ -157,45 +161,61 @@ async def retrieval(body: RetrievalRequest, request: Request):
                     branch_filter = value
 
     # 3. 查询分类 & 搜索
-    try:
-        # 判断查询类型
-        if config.NL_ENABLED:
-            from nl.classifier import classify_query
-            query_type = classify_query(body.query)
-        else:
-            query_type = "exact"
+    audit_args = {
+        "query": body.query,
+        "knowledge_id": body.knowledge_id,
+        "top_k": body.retrieval_setting.top_k,
+        "score_threshold": body.retrieval_setting.score_threshold,
+    }
+    async with audit_tool_call("retrieval", audit_args, "dify") as ctx:
+        try:
+            new_trace_id()
 
-        logger.info("Query type: %s (NL_ENABLED=%s)", query_type, config.NL_ENABLED)
+            # 判断查询类型
+            async with audit_stage("classify", {"query": body.query}) as stg:
+                if config.NL_ENABLED:
+                    from nl.classifier import classify_query
+                    query_type = classify_query(body.query)
+                else:
+                    query_type = "exact"
+                stg.set_result({"query_type": query_type, "nl_enabled": config.NL_ENABLED})
 
-        if query_type == "natural_language":
-            from aosp_search.nl_search import nl_search
-            records = await nl_search(
-                query=body.query,
-                top_k=body.retrieval_setting.top_k,
-                score_threshold=body.retrieval_setting.score_threshold,
-                repos=repos_filter,
-                lang=lang_filter,
-                branch=branch_filter,
+            logger.info("Query type: %s (NL_ENABLED=%s)", query_type, config.NL_ENABLED)
+
+            if query_type == "natural_language":
+                from aosp_search.nl_search import nl_search
+                records = await nl_search(
+                    query=body.query,
+                    top_k=body.retrieval_setting.top_k,
+                    score_threshold=body.retrieval_setting.score_threshold,
+                    repos=repos_filter,
+                    lang=lang_filter,
+                    branch=branch_filter,
+                )
+            else:
+                # 精确查询：直接走 Zoekt
+                async with audit_stage("zoekt_search", {"query": body.query, "repos": repos_filter}) as stg:
+                    records = await zoekt_client.search(
+                        query=body.query,
+                        top_k=body.retrieval_setting.top_k,
+                        score_threshold=body.retrieval_setting.score_threshold,
+                        repos=repos_filter,
+                        lang=lang_filter,
+                        branch=branch_filter,
+                    )
+                    stg.set_result({"records_count": len(records)})
+                    stg.set_result_count(len(records))
+            ctx.set_result_count(len(records))
+        except Exception as e:
+            logger.error("搜索异常: %s", e)
+            ctx.set_error(str(e))
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error_code": 2001,
+                    "error_msg": f"知识库检索失败: {str(e)}",
+                },
             )
-        else:
-            # 精确查询：直接走 Zoekt
-            records = await zoekt_client.search(
-                query=body.query,
-                top_k=body.retrieval_setting.top_k,
-                score_threshold=body.retrieval_setting.score_threshold,
-                repos=repos_filter,
-                lang=lang_filter,
-                branch=branch_filter,
-            )
-    except Exception as e:
-        logger.error("搜索异常: %s", e)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error_code": 2001,
-                "error_msg": f"知识库检索失败: {str(e)}",
-            },
-        )
 
     logger.info("Retrieval returned %d records", len(records))
 

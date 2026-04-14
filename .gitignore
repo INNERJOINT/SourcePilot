@@ -172,6 +172,9 @@ cython_debug/
 ehthumbs.db
 Thumbs.db
 
+# Oh My ClaudeCode
+.omc/
+
 # Project Specific
 test_mcp_endpoints_simple.sh
 /docs/_build/

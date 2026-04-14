@@ -12,6 +12,7 @@ AOSP Code Search MCP Server
 import asyncio
 import json
 import logging
+import re
 import sys
 import os
 
@@ -25,6 +26,7 @@ from pydantic import AnyUrl
 
 from aosp_search import config
 from aosp_search import zoekt_client
+from aosp_search.audit import setup_audit_logger, audit_tool_call, audit_stage, extract_result_count, audit_stats, new_trace_id
 
 # 日志配置（MCP stdio 模式下日志必须输出到 stderr）
 logging.basicConfig(
@@ -54,7 +56,7 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
 
     支持 URI 格式: aosp://{repo}/{filepath}
     示例: aosp://frameworks/base/core/java/android/os/Process.java
-    
+
     repo 和 filepath 用第一个 '/' 之后的路径分隔：
     aosp://repo_name/path/to/file.java
     """
@@ -74,10 +76,13 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
 
     logger.info("read_resource: repo=%s, filepath=%s", repo, filepath)
 
-    try:
-        result = await zoekt_client.fetch_file_content(repo=repo, filepath=filepath)
-    except FileNotFoundError as e:
-        raise ValueError(str(e))
+    async with audit_tool_call("read_resource", {"uri": uri_str, "repo": repo, "filepath": filepath}, "mcp") as ctx:
+        ctx.set_result_count(1)
+        try:
+            result = await zoekt_client.fetch_file_content(repo=repo, filepath=filepath)
+        except FileNotFoundError as e:
+            ctx.set_error(str(e))
+            raise ValueError(str(e))
 
     content = f"# {repo}/{filepath}  (共 {result['total_lines']} 行)\n\n{result['content']}"
 
@@ -318,24 +323,35 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """处理工具调用。"""
     logger.info("Tool call: %s(%s)", name, json.dumps(arguments, ensure_ascii=False))
 
-    try:
-        if name == "search_code":
-            return await _handle_search_code(arguments)
-        elif name == "search_symbol":
-            return await _handle_search_symbol(arguments)
-        elif name == "search_file":
-            return await _handle_search_file(arguments)
-        elif name == "search_regex":
-            return await _handle_search_regex(arguments)
-        elif name == "list_repos":
-            return await _handle_list_repos(arguments)
-        elif name == "get_file_content":
-            return await _handle_get_file_content(arguments)
-        else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
-    except Exception as e:
-        logger.error("Tool error: %s", e)
-        return [TextContent(type="text", text=f"操作出错: {str(e)}")]
+    async with audit_tool_call(name, arguments, "mcp") as ctx:
+        try:
+            new_trace_id()
+            if name == "search_code":
+                result = await _handle_search_code(arguments)
+            elif name == "search_symbol":
+                result = await _handle_search_symbol(arguments)
+            elif name == "search_file":
+                result = await _handle_search_file(arguments)
+            elif name == "search_regex":
+                result = await _handle_search_regex(arguments)
+            elif name == "list_repos":
+                result = await _handle_list_repos(arguments)
+            elif name == "get_file_content":
+                result = await _handle_get_file_content(arguments)
+            else:
+                result = [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+            # 提取结果数
+            if result:
+                count = extract_result_count(name, result[0].text)
+                if count is not None:
+                    ctx.set_result_count(count)
+
+            return result
+        except Exception as e:
+            logger.error("Tool error: %s", e)
+            ctx.set_error(str(e))
+            return [TextContent(type="text", text=f"操作出错: {str(e)}")]
 
 
 # ─── 工具实现 ──────────────────────────────────────────
@@ -356,11 +372,13 @@ async def _handle_search_code(args: dict) -> list[TextContent]:
     filters = _extract_filters(args)
 
     # NL 增强判断
-    if config.NL_ENABLED:
-        from nl.classifier import classify_query
-        query_type = classify_query(query)
-    else:
-        query_type = "exact"
+    async with audit_stage("classify", {"query": query}) as stg:
+        if config.NL_ENABLED:
+            from nl.classifier import classify_query
+            query_type = classify_query(query)
+        else:
+            query_type = "exact"
+        stg.set_result({"query_type": query_type, "nl_enabled": config.NL_ENABLED})
 
     logger.info("Query type: %s (NL_ENABLED=%s)", query_type, config.NL_ENABLED)
 
@@ -371,9 +389,12 @@ async def _handle_search_code(args: dict) -> list[TextContent]:
             repos=repo, lang=filters.get("lang"), branch=filters.get("branch"),
         )
     else:
-        results = await zoekt_client.search(
-            query=query, top_k=top_k, score_threshold=0, repos=repo, **filters,
-        )
+        async with audit_stage("zoekt_search", {"query": query, "repos": repo}) as stg:
+            results = await zoekt_client.search(
+                query=query, top_k=top_k, score_threshold=0, repos=repo, **filters,
+            )
+            stg.set_result({"records_count": len(results)})
+            stg.set_result_count(len(results))
     return [TextContent(type="text", text=_format_results(query, results))]
 
 
@@ -506,15 +527,27 @@ def _format_results(query: str, results: list[dict]) -> str:
 
 async def main_stdio():
     """以 stdio 模式启动（供 Claude Code 等本地工具直接调用）"""
+    setup_audit_logger("stdio")
     logger.info("Starting AOSP Code Search MCP Server (stdio)")
     logger.info("Zoekt URL: %s", config.ZOEKT_URL)
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    summary_task = None
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            if config.AUDIT_ENABLED and config.AUDIT_SUMMARY_INTERVAL > 0:
+                summary_task = asyncio.create_task(audit_stats.periodic_summary())
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+    finally:
+        if summary_task is not None:
+            summary_task.cancel()
+            try:
+                await summary_task
+            except asyncio.CancelledError:
+                pass
 
 
 async def main_streamable_http(host: str, port: int):
@@ -527,6 +560,7 @@ async def main_streamable_http(host: str, port: int):
     from starlette.types import ASGIApp, Receive, Scope, Send
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
+    setup_audit_logger("http")
     logger.info("Starting AOSP Code Search MCP Server (streamable-http)")
     logger.info("Zoekt URL: %s", config.ZOEKT_URL)
     logger.info("Listening on http://%s:%d/mcp", host, port)
@@ -585,9 +619,20 @@ async def main_streamable_http(host: str, port: int):
     # ─── lifespan：管理 session_manager 的生命周期 ─────
     @contextlib.asynccontextmanager
     async def lifespan(app):
+        summary_task = None
         async with session_manager.run():
             logger.info("MCP Session Manager running")
-            yield
+            if config.AUDIT_ENABLED and config.AUDIT_SUMMARY_INTERVAL > 0:
+                summary_task = asyncio.create_task(audit_stats.periodic_summary())
+            try:
+                yield
+            finally:
+                if summary_task is not None:
+                    summary_task.cancel()
+                    try:
+                        await summary_task
+                    except asyncio.CancelledError:
+                        pass
 
     app = Starlette(
         lifespan=lifespan,

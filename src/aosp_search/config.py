@@ -38,3 +38,13 @@ NL_CACHE_TTL = int(os.getenv("NL_CACHE_TTL", "86400"))
 # 设置后，客户端需在 HTTP 请求中携带 Authorization: Bearer <token>
 MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
 
+# ─── 审计日志配置 ──────────────────────────────────────
+# 审计日志总开关
+AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
+# 慢查询阈值（毫秒），超过此值标记为 slow=true
+AUDIT_SLOW_QUERY_MS = int(os.getenv("AUDIT_SLOW_QUERY_MS", "3000"))
+# 审计日志文件路径（空字符串表示由 transport 模式决定默认值）
+AUDIT_LOG_FILE = os.getenv("AUDIT_LOG_FILE", "")
+# 周期性摘要间隔（秒），0 表示禁用
+AUDIT_SUMMARY_INTERVAL = int(os.getenv("AUDIT_SUMMARY_INTERVAL", "300"))
+
