@@ -1,7 +1,7 @@
 """
 自然语言增强搜索 — 共享模块
 
-供 app.py (Dify API) 和 mcp_server.py (MCP Server) 共同调用。
+供 mcp_server.py (MCP Server) 调用。
 流程：LLM Rewrite → 多路 Zoekt 并行查询 → RRF 融合 → Feature Rerank
 """
 

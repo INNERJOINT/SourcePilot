@@ -4,17 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AOSP Code Search adapter — bridges Zoekt code search with Dify's external knowledge base API and exposes search capabilities via MCP (Model Context Protocol). The project serves two interfaces:
+AOSP Code Search — bridges Zoekt code search with AI coding tools via MCP (Model Context Protocol).
 
-1. **Dify Query API** (`app.py`): FastAPI server implementing Dify's external knowledge base retrieval spec (`POST /retrieval`) on port 445
-2. **MCP Server** (`mcp_server.py`): MCP server for AI coding tools (Claude Code, Cursor, etc.) with stdio and Streamable HTTP transport modes
+**MCP Server** (`mcp_server.py`): MCP server for AI coding tools (Claude Code, Cursor, etc.) with stdio and Streamable HTTP transport modes
 
 ## Commands
 
 ```bash
-# Run Dify Query API (port 445, requires root or cap_net_bind_service)
-PYTHONPATH=src scripts/run.sh
-
 # Run MCP Server (stdio mode, for local AI tools)
 PYTHONPATH=src scripts/run_mcp.sh
 
@@ -33,10 +29,11 @@ PYTHONPATH=src pytest tests/test_zoekt_enhancements.py::TestSearch::test_basic_s
 
 ```
 src/aosp_search/
-├── app.py            # Dify Query API (FastAPI) — POST /retrieval endpoint
 ├── mcp_server.py     # MCP Server — tools: search_code, search_symbol, search_file, search_regex, list_repos, get_file_content
 ├── zoekt_client.py   # Zoekt HTTP client — search(), search_regex(), list_repos(), fetch_file_content()
-├── config.py         # All config via env vars (ZOEKT_URL, API_KEY, NL_*, MCP_AUTH_TOKEN, etc.)
+├── config.py         # All config via env vars (ZOEKT_URL, NL_*, MCP_AUTH_TOKEN, AUDIT_*, etc.)
+├── audit.py          # Structured JSON audit logging for tool calls and search stages
+├── nl_search.py      # NL enhanced search pipeline (shared module)
 └── nl/               # Natural language enhancement pipeline
     ├── classifier.py # Query intent: 'exact' vs 'natural_language' (rule-based)
     ├── rewriter.py   # LLM query rewrite (DeepSeek by default) with keyword fallback on timeout
@@ -48,9 +45,7 @@ src/aosp_search/
 
 ### Request Flow
 
-**Dify path**: `POST /retrieval` → auth check → classify query → exact: `zoekt_client.search()` / NL: rewrite → parallel Zoekt queries → RRF merge → feature rerank → response
-
-**MCP path**: tool call → `zoekt_client.*()` → format results as LLM-friendly text. MCP also supports `aosp://` resource URIs for reading file content via `read_resource`.
+**MCP path**: tool call → classify query → exact: `zoekt_client.search()` / NL: rewrite → parallel Zoekt queries → RRF merge → feature rerank → format results as LLM-friendly text. MCP also supports `aosp://` resource URIs for reading file content via `read_resource`.
 
 ### Key Design Decisions
 

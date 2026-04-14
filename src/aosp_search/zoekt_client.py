@@ -1,7 +1,7 @@
 """
 Zoekt 搜索客户端
 
-封装 Zoekt webserver 的 JSON API，将搜索结果转换为 Dify 外部知识库所需的 records 格式。
+封装 Zoekt webserver 的 JSON API，将搜索结果转换为标准 records 格式。
 """
 
 import logging
@@ -24,7 +24,7 @@ async def search(
     case_sensitive: str = "auto",
 ) -> list[dict[str, Any]]:
     """
-    调用 Zoekt 搜索接口，返回 Dify 标准 records 列表。
+    调用 Zoekt 搜索接口，返回标准 records 列表。
 
     Args:
         query: 搜索查询字符串
@@ -209,7 +209,7 @@ def _convert_results(
     score_threshold: float,
 ) -> list[dict[str, Any]]:
     """
-    将 Zoekt 原始 JSON 响应转换为 Dify records 格式。
+    将 Zoekt 原始 JSON 响应转换为标准 records 格式。
 
     Zoekt /api/search 返回格式示例:
     {

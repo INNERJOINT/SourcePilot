@@ -20,7 +20,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "aosp_se
 
 # 设定环境变量（在 import 之前）
 os.environ.setdefault("ZOEKT_URL", "http://mock-zoekt:6070")
-os.environ.setdefault("API_KEY", "test-key")
 os.environ.setdefault("NL_ENABLED", "false")
 
 

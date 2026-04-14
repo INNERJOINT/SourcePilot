@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "aosp_se
 
 # 设定环境变量（在 import config 之前）
 os.environ["ZOEKT_URL"] = "http://mock-zoekt:6070"
-os.environ["API_KEY"] = "test-key"
 os.environ["NL_ENABLED"] = "false"
 
 from aosp_search import zoekt_client
