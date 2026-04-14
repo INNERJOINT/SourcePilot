@@ -12,6 +12,12 @@ AOSP Code Search — two independent services communicating via HTTP API:
 ## Commands
 
 ```bash
+# Environment setup (copy template, edit values)
+cp .env.example .env
+
+# Start full stack (zoekt + SourcePilot + MCP) — reads from .env
+scripts/run_all.sh
+
 # Start both services (auto-starts SourcePilot as subprocess)
 scripts/run_mcp.sh
 

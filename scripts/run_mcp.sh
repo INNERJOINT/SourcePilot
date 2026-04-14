@@ -24,6 +24,9 @@ set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
+# 加载 .env 配置（如果存在）
+source "$DIR/_env.sh"
+
 # 使用 pyenv 虚拟环境
 VENV_PYTHON="/opt/pyenv/versions/dify_py3_env/bin/python3"
 if [ ! -x "$VENV_PYTHON" ]; then
