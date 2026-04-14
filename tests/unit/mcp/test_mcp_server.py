@@ -6,17 +6,9 @@ MCP 层通过 httpx 调用 SourcePilot，不再直接访问 Zoekt。
 """
 
 import json
-import sys
-import os
 import pytest
 import respx
 import httpx
-
-# 确保能 import mcp-server 模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp-server"))
-
-# 设定环境变量（在 import 之前）
-os.environ["SOURCEPILOT_URL"] = "http://mock-sourcepilot:9000"
 
 from mcp_server import call_tool
 

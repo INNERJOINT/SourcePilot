@@ -14,14 +14,6 @@ import tempfile
 
 import pytest
 
-# 确保能 import 项目模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-# 设定环境变量（在 import 之前）
-os.environ.setdefault("ZOEKT_URL", "http://mock-zoekt:6070")
-os.environ.setdefault("NL_ENABLED", "false")
-
-
 from observability.audit import (
     AuditContext,
     AuditStats,
@@ -200,6 +192,7 @@ class TestStatsSummary:
     """测试 7: AuditStats 正确累计。"""
 
     def test_stats_aggregation(self):
+        config.AUDIT_ENABLED = True
         stats = AuditStats()
 
         stats.record("search_code", 100.0, False, False)
@@ -217,6 +210,7 @@ class TestStatsSummary:
         assert summary["per_tool"]["list_repos"]["count"] == 1
 
     def test_stats_reset(self):
+        config.AUDIT_ENABLED = True
         stats = AuditStats()
         stats.record("search_code", 100.0, False, False)
         stats.reset()

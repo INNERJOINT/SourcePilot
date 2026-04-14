@@ -7,18 +7,9 @@ SourcePilot 内部测试
 
 import json
 import math
-import sys
-import os
 import pytest
 import respx
 import httpx
-
-# 确保能 import 项目模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-# 设定环境变量（在 import config 之前）
-os.environ["ZOEKT_URL"] = "http://mock-zoekt:6070"
-os.environ["NL_ENABLED"] = "false"
 
 from adapters.zoekt import ZoektAdapter
 import config
