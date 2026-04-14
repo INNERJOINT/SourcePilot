@@ -4,59 +4,96 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AOSP Code Search — bridges Zoekt code search with AI coding tools via MCP (Model Context Protocol).
+AOSP Code Search — two independent services communicating via HTTP API:
 
-**MCP Server** (`mcp_server.py`): MCP server for AI coding tools (Claude Code, Cursor, etc.) with stdio and Streamable HTTP transport modes
+1. **SourcePilot** (`src/`) — Hybrid RAG search engine with Starlette HTTP API
+2. **MCP Access Layer** (`mcp-server/`) — Thin MCP protocol proxy delegating to SourcePilot via httpx
 
 ## Commands
 
 ```bash
-# Run MCP Server (stdio mode, for local AI tools)
-PYTHONPATH=src scripts/run_mcp.sh
+# Start both services (auto-starts SourcePilot as subprocess)
+scripts/run_mcp.sh
 
-# Run MCP Server (Streamable HTTP mode, port 8888)
-PYTHONPATH=src scripts/run_mcp.sh --transport streamable-http --port 8888
+# Start SourcePilot standalone
+scripts/run_sourcepilot.sh
 
-# Run tests
-PYTHONPATH=src pytest tests/ -v
+# Start MCP with external SourcePilot
+SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh
 
-# Run a single test class or method
-PYTHONPATH=src pytest tests/test_zoekt_enhancements.py::TestSearch -v
-PYTHONPATH=src pytest tests/test_zoekt_enhancements.py::TestSearch::test_basic_search -v
+# MCP Streamable HTTP mode
+scripts/run_mcp.sh --transport streamable-http --port 8888
+
+# Run SourcePilot tests
+PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py -v
+
+# Run MCP tests
+PYTHONPATH=mcp-server pytest tests/test_mcp_server.py -v
+
+# Run all tests
+PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py -v && PYTHONPATH=mcp-server pytest tests/test_mcp_server.py -v
 ```
 
 ## Architecture
 
 ```
-src/aosp_search/
-├── mcp_server.py     # MCP Server — tools: search_code, search_symbol, search_file, search_regex, list_repos, get_file_content
-├── zoekt_client.py   # Zoekt HTTP client — search(), search_regex(), list_repos(), fetch_file_content()
-├── config.py         # All config via env vars (ZOEKT_URL, NL_*, MCP_AUTH_TOKEN, AUDIT_*, etc.)
-├── audit.py          # Structured JSON audit logging for tool calls and search stages
-├── nl_search.py      # NL enhanced search pipeline (shared module)
-└── nl/               # Natural language enhancement pipeline
-    ├── classifier.py # Query intent: 'exact' vs 'natural_language' (rule-based)
-    ├── rewriter.py   # LLM query rewrite (DeepSeek by default) with keyword fallback on timeout
-    ├── merger.py     # RRF (Reciprocal Rank Fusion) multi-route result merging
-    ├── reranker.py   # Feature-based lightweight rerank (no GPU, <5ms)
-    ├── cache.py      # LRU cache + concept_map.json for high-frequency AOSP queries
-    └── concept_map.json  # Maps Chinese NL concepts → AOSP symbol names
+src/                              # SourcePilot — Hybrid RAG Search Engine
+├── app.py                        # Starlette HTTP API (7 endpoints, port 9000)
+├── gateway/                      # Layer 1: Query Gateway (business logic)
+│   ├── gateway.py                # Main orchestrator: classify → NL pipeline or direct search
+│   ├── router.py                 # Query routing & parallel dispatch
+│   ├── fusion.py                 # RRF cross-engine fusion
+│   ├── ranker.py                 # Feature-based reranking
+│   └── nl/                       # NL sub-module
+│       ├── classifier.py         # Query intent classification
+│       ├── rewriter.py           # LLM query rewrite
+│       ├── cache.py              # LRU cache + concept_map
+│       └── concept_map.json
+├── adapters/                     # Layer 2: Adapter Layer (pluggable backends)
+│   ├── base.py                   # SearchAdapter ABC
+│   ├── zoekt.py                  # ZoektAdapter — Zoekt HTTP client
+│   └── feishu.py                 # FeishuAdapter placeholder
+├── observability/                # Cross-cutting: Observability
+│   └── audit.py                  # Structured JSON audit logging
+└── config/                       # Cross-cutting: Configuration
+    ├── base.py                   # Env var config
+    └── backends.py               # Backend registry
+
+mcp-server/                       # MCP Access Layer — Protocol Proxy
+├── mcp_server.py                 # Entry-point dispatcher (stdio/HTTP)
+├── requirements.txt
+└── entry/
+    ├── handlers.py               # MCP Server + tools + httpx client → SourcePilot
+    ├── mcp_stdio.py              # stdio transport
+    └── mcp_http.py               # HTTP transport + BearerTokenMiddleware
 ```
 
 ### Request Flow
 
-**MCP path**: tool call → classify query → exact: `zoekt_client.search()` / NL: rewrite → parallel Zoekt queries → RRF merge → feature rerank → format results as LLM-friendly text. MCP also supports `aosp://` resource URIs for reading file content via `read_resource`.
+**MCP path**: tool call → `mcp-server/entry/handlers.py` → httpx POST → `src/app.py` → `gateway.search()` → classify → ZoektAdapter → format results
+
+**Direct SourcePilot path**: HTTP POST → `src/app.py` → `gateway.search()` → classify → ZoektAdapter → JSON response
 
 ### Key Design Decisions
 
-- `zoekt_client.py` imports `config` as a bare module (not `aosp_search.config`) — this works because `sys.path` is manipulated at runtime. Scripts set `PYTHONPATH=src`, and `mcp_server.py` inserts its own directory into `sys.path`.
-- Zoekt score normalization uses sigmoid mapping: `1/(1+exp(-0.1*(score-10)))` to map BM25 scores (typically 0–50) into 0–1 range.
-- Zoekt `/print` endpoint returns HTML, not JSON. `fetch_file_content()` parses `<pre>` tags and strips HTML to extract source code.
+- Two projects communicate via HTTP API (localhost:9000). No shared imports.
+- MCP layer uses httpx.AsyncClient (module-level singleton, timeout=30s) to call SourcePilot.
+- X-Trace-Id header propagates trace IDs across services.
+- Audit/config fully in SourcePilot; MCP layer uses standard logging only.
+- All SourcePilot imports use paths relative to `src/` (`from config import ...`, `from gateway.nl.rewriter import ...`).
+- All MCP imports use paths relative to `mcp-server/` (`from entry.handlers import ...`).
+- Layered dependency within SourcePilot: gateway → adapters → config/observability. No upward dependencies.
+- Zoekt score normalization uses sigmoid mapping: `1/(1+exp(-0.1*(score-10)))` inside `ZoektAdapter` to map BM25 scores (typically 0-50) into 0-1 range.
+- Zoekt `/print` endpoint returns HTML, not JSON. `ZoektAdapter.fetch_file_content()` parses `<pre>` tags and strips HTML to extract source code.
 - MCP Streamable HTTP mode uses Starlette with `BearerTokenMiddleware` wrapping the session manager. The middleware must pass through `lifespan` events (non-http scope types).
+- `SearchAdapter` ABC enables pluggable backends. New backends implement `search()`, `get_content()`, `health_check()`.
 
 ## Environment
 
 - Python virtualenv: `/opt/pyenv/versions/dify_py3_env/bin/python3`
-- All configuration is via environment variables (see `config.py`)
-- Tests use `respx` to mock Zoekt HTTP responses — no real Zoekt server needed
+- Two PYTHONPATH roots: `src/` for SourcePilot, `mcp-server/` for MCP
+- SourcePilot tests: `PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py`
+- MCP tests: `PYTHONPATH=mcp-server pytest tests/test_mcp_server.py`
+- Key env vars: ZOEKT_URL, SOURCEPILOT_URL (default http://localhost:9000), MCP_AUTH_TOKEN
+- Tests use `respx` to mock HTTP responses -- no real Zoekt server needed
 - The project language is primarily Chinese (comments, docs, error messages, NL pipeline)

@@ -16,14 +16,13 @@ import pytest
 
 # 确保能 import 项目模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "aosp_search"))
 
 # 设定环境变量（在 import 之前）
 os.environ.setdefault("ZOEKT_URL", "http://mock-zoekt:6070")
 os.environ.setdefault("NL_ENABLED", "false")
 
 
-from aosp_search.audit import (
+from observability.audit import (
     AuditContext,
     AuditStats,
     JsonFormatter,
@@ -35,7 +34,7 @@ from aosp_search.audit import (
     reset_audit_logger,
     setup_audit_logger,
 )
-from aosp_search import config
+import config
 
 
 # ─── Fixtures ─────────────────────────────────────────

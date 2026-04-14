@@ -40,4 +40,3 @@ AUDIT_SLOW_QUERY_MS = int(os.getenv("AUDIT_SLOW_QUERY_MS", "3000"))
 AUDIT_LOG_FILE = os.getenv("AUDIT_LOG_FILE", "")
 # 周期性摘要间隔（秒），0 表示禁用
 AUDIT_SUMMARY_INTERVAL = int(os.getenv("AUDIT_SUMMARY_INTERVAL", "300"))
-

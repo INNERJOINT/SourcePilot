@@ -1,8 +1,4 @@
-"""
-RRF (Reciprocal Rank Fusion) 多路召回融合
-
-将多路 Zoekt 搜索结果按排名融合去重。
-"""
+"""Cross-engine result fusion via Reciprocal Rank Fusion."""
 
 from collections import defaultdict
 

@@ -5,7 +5,7 @@ MCP 审计日志模块
 支持性能调优和运营监控。
 
 用法:
-    from aosp_search.audit import setup_audit_logger, audit_tool_call, audit_stats
+    from observability.audit import setup_audit_logger, audit_tool_call, audit_stats
 
     setup_audit_logger("stdio")  # 或 "http"
 
@@ -26,10 +26,11 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
-from aosp_search import config
+import config
 
 
 # ─── 请求级 trace_id ────────────────────────────────────
+# TODO: extract trace_id management to observability/tracing.py when OTel/spans are added
 
 _trace_id: ContextVar[str] = ContextVar("audit_trace_id", default="")
 

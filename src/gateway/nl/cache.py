@@ -13,7 +13,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-NL_CACHE_TTL = int(os.getenv("NL_CACHE_TTL", "86400"))  # 默认 24h
+from config import NL_CACHE_TTL
 
 # ─── LRU 缓存 ──────────────────────────────────────
 _cache: dict[str, tuple[float, list]] = {}

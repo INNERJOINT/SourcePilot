@@ -1,8 +1,8 @@
 """
-Zoekt Client & MCP Server 自动化测试
+SourcePilot 内部测试
 
 使用 respx 模拟 Zoekt HTTP 响应，无需运行真实的 Zoekt 服务。
-测试覆盖所有 zoekt_client 函数和 MCP 工具。
+测试覆盖 ZoektAdapter 的搜索、正则搜索、仓库列表、文件内容获取及代码片段构建。
 """
 
 import json
@@ -15,14 +15,27 @@ import httpx
 
 # 确保能 import 项目模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "aosp_search"))
 
 # 设定环境变量（在 import config 之前）
 os.environ["ZOEKT_URL"] = "http://mock-zoekt:6070"
 os.environ["NL_ENABLED"] = "false"
 
-from aosp_search import zoekt_client
-from aosp_search import config
+from adapters.zoekt import ZoektAdapter
+import config
+
+# Create a module-level adapter for backward-compat test access
+_default_adapter = ZoektAdapter(zoekt_url=config.ZOEKT_URL)
+
+
+class _ZoektClientCompat:
+    """Shim to let tests use zoekt_client.search(...) style calls."""
+    async def search(self, *a, **kw): return await _default_adapter.search_zoekt(*a, **kw)
+    async def search_regex(self, *a, **kw): return await _default_adapter.search_regex(*a, **kw)
+    async def list_repos(self, *a, **kw): return await _default_adapter.list_repos(*a, **kw)
+    async def fetch_file_content(self, *a, **kw): return await _default_adapter.fetch_file_content(*a, **kw)
+    def _build_content_snippet(self, *a, **kw): return _default_adapter._build_content_snippet(*a, **kw)
+
+zoekt_client = _ZoektClientCompat()
 
 
 # ─── Mock 数据 ────────────────────────────────────────
@@ -501,226 +514,3 @@ class TestBuildContentSnippet:
         assert "L20:" in result
         assert "line10" in result
         assert "line20" in result
-
-
-# ─── MCP Server 工具测试 ─────────────────────────────
-
-class TestMCPTools:
-    """测试 MCP Server 工具路由和格式化"""
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_code(self):
-        """MCP search_code 工具调用"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            result = await call_tool("search_code", {"query": "startBootstrapServices"})
-
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "startBootstrapServices" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_code_with_filters(self):
-        """MCP search_code 工具支持过滤参数"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            await call_tool("search_code", {
-                "query": "startActivity",
-                "lang": "java",
-                "branch": "main",
-                "case_sensitive": "yes",
-            })
-
-            request = route.calls[0].request
-            q_param = str(request.url.params.get("q", ""))
-            assert "lang:java" in q_param
-            assert "branch:main" in q_param
-            assert "case:yes" in q_param
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_symbol(self):
-        """MCP search_symbol 工具使用 sym: 前缀"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            await call_tool("search_symbol", {"symbol": "ActivityManager"})
-
-            request = route.calls[0].request
-            q_param = str(request.url.params.get("q", ""))
-            assert "sym:ActivityManager" in q_param
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_file(self):
-        """MCP search_file 工具使用 file: 前缀"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            await call_tool("search_file", {"path": "SystemServer.java"})
-
-            request = route.calls[0].request
-            q_param = str(request.url.params.get("q", ""))
-            assert "file:SystemServer.java" in q_param
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_regex(self):
-        """MCP search_regex 工具"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            result = await call_tool("search_regex", {"pattern": r"TODO.*fix"})
-
-            assert len(result) == 1
-            assert result[0].type == "text"
-            request = route.calls[0].request
-            q_param = str(request.url.params.get("q", ""))
-            assert "content:/" in q_param
-
-    @pytest.mark.asyncio
-    async def test_mcp_list_repos(self):
-        """MCP list_repos 工具"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-            )
-
-            result = await call_tool("list_repos", {"query": "frameworks"})
-
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "frameworks/base" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_get_file_content(self):
-        """MCP get_file_content 工具"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            respx.get(f"{config.ZOEKT_URL}/print").mock(
-                return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)
-            )
-
-            result = await call_tool("get_file_content", {
-                "repo": "frameworks/base",
-                "filepath": "test.java",
-            })
-
-            assert len(result) == 1
-            assert "package com.android.server" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_unknown_tool(self):
-        """未知工具返回错误消息"""
-        from aosp_search.mcp_server import call_tool
-
-        result = await call_tool("nonexistent_tool", {})
-        assert "Unknown tool" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_empty_results(self):
-        """无结果时返回友好提示"""
-        from aosp_search.mcp_server import call_tool
-
-        with respx.mock:
-            respx.get(f"{config.ZOEKT_URL}/search").mock(
-                return_value=httpx.Response(200, json=MOCK_EMPTY_RESPONSE)
-            )
-
-            result = await call_tool("search_code", {"query": "xyz_nonexistent"})
-            assert "未找到" in result[0].text
-
-
-# ─── MCP NL 增强搜索测试 ───────────────────────────────
-
-class TestMCPNLSearch:
-    """测试 MCP Server search_code 的 NL 增强路径"""
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_code_nl_enabled(self):
-        """NL_ENABLED=true + 自然语言查询 → 走 NL 管道"""
-        from unittest.mock import patch, AsyncMock
-        from aosp_search.mcp_server import call_tool
-
-        original_nl = config.NL_ENABLED
-        config.NL_ENABLED = True
-        try:
-            mock_nl = AsyncMock(return_value=[
-                {"title": "frameworks/base/Test.java", "content": "test code",
-                 "score": 0.9, "metadata": {"repo": "frameworks/base", "path": "Test.java"}},
-            ])
-            with patch("aosp_search.nl_search.nl_search", mock_nl) as patched:
-                # 使用 import 后直接 patch mcp_server 中的延迟导入
-                with patch.dict("sys.modules", {}):
-                    pass
-                # 直接 patch nl_search 模块级函数
-                import aosp_search.nl_search
-                with patch.object(aosp_search.nl_search, "nl_search", mock_nl):
-                    result = await call_tool("search_code", {"query": "Android 启动流程怎么初始化"})
-
-                    assert mock_nl.called
-                    assert result[0].type == "text"
-        finally:
-            config.NL_ENABLED = original_nl
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_code_nl_exact_passthrough(self):
-        """NL_ENABLED=true + 精确查询 → 直接走 zoekt_client"""
-        from aosp_search.mcp_server import call_tool
-
-        original_nl = config.NL_ENABLED
-        config.NL_ENABLED = True
-        try:
-            with respx.mock:
-                route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                    return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-                )
-
-                result = await call_tool("search_code", {"query": "startBootstrapServices"})
-
-                assert route.called
-                assert "startBootstrapServices" in result[0].text
-        finally:
-            config.NL_ENABLED = original_nl
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_code_nl_disabled(self):
-        """NL_ENABLED=false → 直接走 zoekt_client，不触发 NL"""
-        from aosp_search.mcp_server import call_tool
-
-        original_nl = config.NL_ENABLED
-        config.NL_ENABLED = False
-        try:
-            with respx.mock:
-                route = respx.get(f"{config.ZOEKT_URL}/search").mock(
-                    return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
-                )
-
-                result = await call_tool("search_code", {"query": "Android 启动流程怎么初始化"})
-
-                assert route.called
-                assert result[0].type == "text"
-        finally:
-            config.NL_ENABLED = original_nl

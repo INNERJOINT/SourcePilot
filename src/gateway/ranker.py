@@ -1,9 +1,6 @@
-"""
-Feature-based 轻量 Rerank
+"""Feature-based lightweight reranking."""
 
-基于简单特征对融合后的候选结果重新排序。
-不依赖 GPU 或外部模型，延迟 < 5ms。
-"""
+import re
 
 
 def feature_rerank(
@@ -32,7 +29,6 @@ def feature_rerank(
     # 提取中英文关键词
     query_tokens = set(query_lower.split())
     # 额外提取 CamelCase 中的各单词
-    import re
     camel_words = re.findall(r'[A-Z][a-z]+', query)
     query_tokens.update(w.lower() for w in camel_words)
     # 丢弃过短的 token
