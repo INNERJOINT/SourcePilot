@@ -22,6 +22,8 @@ from observability.audit import (
     audit_stats,
     new_trace_id,
     setup_audit_logger,
+    start_audit_listener,
+    stop_audit_listener,
 )
 
 logging.basicConfig(
@@ -320,6 +322,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
 @contextlib.asynccontextmanager
 async def lifespan(app):
     setup_audit_logger("http")
+    start_audit_listener()
     logger.info("SourcePilot HTTP API starting")
 
     import config
@@ -336,6 +339,7 @@ async def lifespan(app):
                 await summary_task
             except asyncio.CancelledError:
                 pass
+        stop_audit_listener()
         logger.info("SourcePilot HTTP API stopped")
 
 

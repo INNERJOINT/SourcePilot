@@ -18,13 +18,15 @@ import asyncio
 import json
 import logging
 import os
+import queue
+import random
 import re
 import time
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
+from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 
 import config
 
@@ -49,45 +51,86 @@ def get_trace_id() -> str:
 
 # ─── JSON 格式化器 ────────────────────────────────────
 
+
+def _truncate(obj, max_bytes: int = 1024) -> tuple:
+    """JSON 序列化后超过 max_bytes 则截断，返回 (value, truncated_flag)。"""
+    try:
+        serialized = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        serialized = str(obj)
+    if len(serialized.encode("utf-8")) <= max_bytes:
+        return obj, False
+    return serialized[:max_bytes] + "...", True
+
+
 class JsonFormatter(logging.Formatter):
-    """将 LogRecord 格式化为单行 JSON。"""
+    """将 LogRecord 格式化为单行 JSON，按 event 类型使用不同 schema。"""
 
     def format(self, record: logging.LogRecord) -> str:
-        data = {
+        event = getattr(record, "event", "unknown")
+
+        # 公共字段
+        data: dict = {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3],
             "trace_id": getattr(record, "trace_id", "") or get_trace_id(),
-            "event": getattr(record, "event", "unknown"),
-            "interface": getattr(record, "interface", ""),
-            "tool": getattr(record, "tool", ""),
-            "arguments": getattr(record, "arguments", {}),
+            "event": event,
             "duration_ms": getattr(record, "duration_ms", 0),
-            "result_count": getattr(record, "result_count", None),
             "status": getattr(record, "status", "ok"),
             "slow": getattr(record, "slow", False),
         }
 
-        # pipeline_stage 事件的额外字段
-        stage = getattr(record, "stage", None)
-        if stage:
-            data["stage"] = stage
-            data["metadata"] = getattr(record, "metadata", {})
-            data["result"] = getattr(record, "result", {})
+        if event == "tool_call":
+            args_val = getattr(record, "arguments", {})
+            args_val, args_truncated = _truncate(args_val)
+            data["interface"] = getattr(record, "interface", "")
+            data["tool"] = getattr(record, "tool", "")
+            data["arguments"] = args_val
+            if args_truncated:
+                data["arguments_truncated"] = True
+            data["result_count"] = getattr(record, "result_count", None)
+
+        elif event == "pipeline_stage":
+            data["stage"] = getattr(record, "stage", "")
+            data["stage_args"] = getattr(record, "stage_args", {})
+            stage_result = getattr(record, "stage_result", {})
+            stage_result, result_truncated = _truncate(stage_result)
+            data["stage_result"] = stage_result
+            if result_truncated:
+                data["stage_result_truncated"] = True
+
+        elif event == "audit_summary":
+            extra_fields = getattr(record, "extra_fields", None)
+            if extra_fields:
+                data.update(extra_fields)
 
         error_message = getattr(record, "error_message", None)
         if error_message:
             data["error_message"] = error_message
 
-        # 周期性摘要的额外字段
-        extra_fields = getattr(record, "extra_fields", None)
-        if extra_fields:
-            data.update(extra_fields)
-
         return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+# ─── 非阻塞队列 Handler ─────────────────────────────────
+
+class _NonBlockingQueueHandler(QueueHandler):
+    """QueueHandler 子类：队列满时静默丢弃，不阻塞 event loop。"""
+
+    def __init__(self, q: queue.Queue):
+        super().__init__(q)
+        self.dropped_count = 0
+
+    def enqueue(self, record: logging.LogRecord) -> None:
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            self.dropped_count += 1
 
 
 # ─── 审计日志器设置 ───────────────────────────────────
 
 _audit_logger: logging.Logger | None = None
+_queue_listener: QueueListener | None = None
+_queue_handler: _NonBlockingQueueHandler | None = None
 
 
 def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
@@ -101,12 +144,11 @@ def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
     Returns:
         配置好的 audit logger。
     """
-    global _audit_logger
+    global _audit_logger, _queue_listener, _queue_handler
     if _audit_logger is not None:
         return _audit_logger
 
     if not config.AUDIT_ENABLED:
-        # 禁用时返回一个不输出任何内容的 logger
         logger = logging.getLogger("audit")
         logger.propagate = False
         logger.addHandler(logging.NullHandler())
@@ -115,33 +157,49 @@ def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
         return logger
 
     logger = logging.getLogger("audit")
-    logger.propagate = False  # 关键：防止 root logger 重复输出
+    logger.propagate = False
     logger.setLevel(logging.INFO)
 
     formatter = JsonFormatter()
 
-    # 确定输出目标
+    # 确定实际输出目标
     log_file = config.AUDIT_LOG_FILE
     if not log_file and transport_mode == "stdio":
         log_file = "audit.log"
 
     if log_file:
-        handler = RotatingFileHandler(
+        real_handler = RotatingFileHandler(
             log_file,
-            maxBytes=50 * 1024 * 1024,  # 50 MB
+            maxBytes=50 * 1024 * 1024,
             backupCount=5,
             encoding="utf-8",
         )
     else:
-        # HTTP 模式默认写 stderr
         import sys
-        handler = logging.StreamHandler(sys.stderr)
+        real_handler = logging.StreamHandler(sys.stderr)
 
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    real_handler.setFormatter(formatter)
+
+    # 通过 QueueHandler + QueueListener 异步化写入
+    q: queue.Queue = queue.Queue(maxsize=10000)
+    _queue_handler = _NonBlockingQueueHandler(q)
+    _queue_listener = QueueListener(q, real_handler, respect_handler_level=True)
+    logger.addHandler(_queue_handler)
 
     _audit_logger = logger
     return logger
+
+
+def start_audit_listener():
+    """启动 QueueListener 后台线程（在 app lifespan 中调用）。"""
+    if _queue_listener is not None:
+        _queue_listener.start()
+
+
+def stop_audit_listener():
+    """停止 QueueListener 后台线程（在 app lifespan 中调用）。"""
+    if _queue_listener is not None:
+        _queue_listener.stop()
 
 
 def get_audit_logger() -> logging.Logger | None:
@@ -151,7 +209,14 @@ def get_audit_logger() -> logging.Logger | None:
 
 def reset_audit_logger():
     """重置审计 logger（仅用于测试）。"""
-    global _audit_logger
+    global _audit_logger, _queue_listener, _queue_handler
+    if _queue_listener is not None:
+        try:
+            _queue_listener.stop()
+        except Exception:
+            pass
+        _queue_listener = None
+    _queue_handler = None
     if _audit_logger is not None:
         for h in _audit_logger.handlers[:]:
             _audit_logger.removeHandler(h)
@@ -267,6 +332,7 @@ async def audit_stage(stage: str, metadata: dict | None = None):
     finally:
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
         status = "error" if ctx.error_message else "ok"
+        slow = duration_ms > config.AUDIT_SLOW_QUERY_MS
 
         logger = get_audit_logger()
         if logger and logger.isEnabledFor(logging.INFO):
@@ -276,30 +342,36 @@ async def audit_stage(stage: str, metadata: dict | None = None):
                     "event": "pipeline_stage",
                     "trace_id": get_trace_id(),
                     "stage": stage,
-                    "metadata": metadata or {},
-                    "result": ctx.result or {},
-                    "interface": "",
-                    "tool": "",
-                    "arguments": {},
+                    "stage_args": metadata or {},
+                    "stage_result": ctx.result or {},
                     "duration_ms": duration_ms,
                     "result_count": ctx.result_count,
                     "status": status,
                     "error_message": ctx.error_message,
-                    "slow": duration_ms > config.AUDIT_SLOW_QUERY_MS,
+                    "slow": slow,
                 },
             )
+
+        # 将 stage 级别指标纳入统计
+        audit_stats.record(stage, duration_ms, status == "error", slow)
 
 
 # ─── 审计统计 ─────────────────────────────────────────
 
 class AuditStats:
-    """轻量级审计统计聚合器。"""
+    """轻量级审计统计聚合器，支持 per-tool 错误率、百分位延迟、趋势历史。"""
+
+    RESERVOIR_SIZE = 1000
+    HISTORY_SIZE = 12  # 周期快照数（默认 5min × 12 = 1h）
 
     def __init__(self):
         self.total_calls = 0
         self.total_errors = 0
         self.slow_queries = 0
         self._per_tool: dict[str, dict] = {}
+        self._latency_reservoir: dict[str, list[float]] = {}
+        self._reservoir_n: dict[str, int] = {}  # Algorithm R 的总计数
+        self._summary_history: list[dict] = []
 
     def record(self, tool: str, duration_ms: float, is_error: bool, is_slow: bool):
         if not config.AUDIT_ENABLED:
@@ -311,16 +383,54 @@ class AuditStats:
             self.slow_queries += 1
 
         if tool not in self._per_tool:
-            self._per_tool[tool] = {"count": 0, "total_ms": 0.0}
+            self._per_tool[tool] = {"count": 0, "total_ms": 0.0, "errors": 0}
+            self._latency_reservoir[tool] = []
+            self._reservoir_n[tool] = 0
         self._per_tool[tool]["count"] += 1
         self._per_tool[tool]["total_ms"] += duration_ms
+        if is_error:
+            self._per_tool[tool]["errors"] += 1
+
+        # Algorithm R reservoir sampling
+        self._reservoir_n[tool] += 1
+        n = self._reservoir_n[tool]
+        reservoir = self._latency_reservoir[tool]
+        if len(reservoir) < self.RESERVOIR_SIZE:
+            reservoir.append(duration_ms)
+        else:
+            j = random.randint(0, n - 1)
+            if j < self.RESERVOIR_SIZE:
+                reservoir[j] = duration_ms
+
+    @staticmethod
+    def _compute_percentiles(samples: list[float]) -> dict:
+        """从样本计算 p50/p95/p99。样本不足时返回可用值。"""
+        if not samples:
+            return {"p50_ms": 0, "p95_ms": 0, "p99_ms": 0}
+        s = sorted(samples)
+        n = len(s)
+        return {
+            "p50_ms": round(s[n * 50 // 100], 1),
+            "p95_ms": round(s[min(n * 95 // 100, n - 1)], 1),
+            "p99_ms": round(s[min(n * 99 // 100, n - 1)], 1),
+        }
 
     def summary(self) -> dict:
         per_tool = {}
         for tool, stats in self._per_tool.items():
             count = stats["count"]
             avg_ms = round(stats["total_ms"] / count, 1) if count > 0 else 0
-            per_tool[tool] = {"count": count, "avg_ms": avg_ms}
+            error_rate = round(stats["errors"] / count, 4) if count > 0 else 0
+            percentiles = self._compute_percentiles(
+                self._latency_reservoir.get(tool, [])
+            )
+            per_tool[tool] = {
+                "count": count,
+                "avg_ms": avg_ms,
+                "errors": stats["errors"],
+                "error_rate": error_rate,
+                **percentiles,
+            }
 
         return {
             "total_calls": self.total_calls,
@@ -329,16 +439,33 @@ class AuditStats:
             "per_tool": per_tool,
         }
 
+    def trend(self) -> list[dict]:
+        """返回最近 N 个周期的摘要快照（用于趋势对比）。"""
+        return list(self._summary_history)
+
     def reset(self):
+        """重置当前周期计数（不清除趋势历史）。"""
         self.total_calls = 0
         self.total_errors = 0
         self.slow_queries = 0
         self._per_tool.clear()
+        self._latency_reservoir.clear()
+        self._reservoir_n.clear()
 
     def log_summary(self):
-        """输出一条摘要审计记录并重置计数。"""
+        """输出一条摘要审计记录，保存快照到历史，然后重置计数。"""
         if self.total_calls == 0:
             return
+
+        snapshot = self.summary()
+        snapshot["timestamp"] = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )[:-3]
+
+        # 维护环形缓冲区
+        self._summary_history.append(snapshot)
+        if len(self._summary_history) > self.HISTORY_SIZE:
+            self._summary_history = self._summary_history[-self.HISTORY_SIZE:]
 
         logger = get_audit_logger()
         if logger and logger.isEnabledFor(logging.INFO):
@@ -346,16 +473,12 @@ class AuditStats:
                 "",
                 extra={
                     "event": "audit_summary",
-                    "interface": "all",
-                    "tool": "",
-                    "arguments": {},
                     "duration_ms": 0,
-                    "result_count": None,
                     "status": "ok",
                     "slow": False,
                     "extra_fields": {
                         "pid": os.getpid(),
-                        **self.summary(),
+                        **snapshot,
                     },
                 },
             )

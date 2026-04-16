@@ -18,6 +18,8 @@ from observability.audit import (
     AuditContext,
     AuditStats,
     JsonFormatter,
+    _NonBlockingQueueHandler,
+    _truncate,
     audit_tool_call,
     audit_stage,
     extract_result_count,
@@ -25,6 +27,8 @@ from observability.audit import (
     get_trace_id,
     reset_audit_logger,
     setup_audit_logger,
+    start_audit_listener,
+    stop_audit_listener,
 )
 import config
 
@@ -244,7 +248,7 @@ class TestExtractResultCount:
 
 
 class TestAuditLogFile:
-    """测试审计日志写入文件。"""
+    """测试审计日志写入文件（通过 QueueListener）。"""
 
     @pytest.mark.asyncio
     async def test_file_handler(self):
@@ -255,11 +259,15 @@ class TestAuditLogFile:
             config.AUDIT_ENABLED = True
             config.AUDIT_LOG_FILE = log_path
             setup_audit_logger("stdio")
+            start_audit_listener()
 
             async with audit_tool_call("search_code", {"query": "file_test"}, "mcp") as ctx:
                 ctx.set_result_count(3)
 
-            # 读取文件验证
+            # 给 QueueListener 后台线程时间处理记录
+            await asyncio.sleep(0.1)
+            stop_audit_listener()
+
             with open(log_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
             assert len(lines) >= 1
@@ -302,7 +310,7 @@ class TestAuditStage:
 
     @pytest.mark.asyncio
     async def test_stage_basic(self):
-        """audit_stage 记录包含 stage、metadata、result。"""
+        """audit_stage 记录包含 stage、stage_args、stage_result。"""
         capture = _setup_with_capture()
         new_trace_id()
 
@@ -312,8 +320,8 @@ class TestAuditStage:
         data = json.loads(capture.records[0])
         assert data["event"] == "pipeline_stage"
         assert data["stage"] == "classify"
-        assert data["result"]["query_type"] == "exact"
-        assert data["metadata"]["query"] == "test"
+        assert data["stage_result"]["query_type"] == "exact"
+        assert data["stage_args"]["query"] == "test"
         assert data["duration_ms"] >= 0
         assert data["status"] == "ok"
 
@@ -363,3 +371,218 @@ class TestAuditStage:
             stg.set_result({"query_type": "exact"})
 
         assert len(capture.records) == 0
+
+
+# ─── 新增测试 ─────────────────────────────────────────
+
+
+class TestAuditStatsEnhanced:
+    """测试增强版 AuditStats：per-tool 错误计数、reservoir sampling、百分位。"""
+
+    def test_per_tool_error_count(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        stats.record("search_code", 100.0, True, False)
+        stats.record("search_code", 200.0, False, False)
+        stats.record("search_symbol", 50.0, True, False)
+
+        summary = stats.summary()
+        assert summary["per_tool"]["search_code"]["errors"] == 1
+        assert summary["per_tool"]["search_code"]["error_rate"] == 0.5
+        assert summary["per_tool"]["search_symbol"]["errors"] == 1
+        assert summary["per_tool"]["search_symbol"]["error_rate"] == 1.0
+
+    def test_percentile_computation(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        for i in range(1, 101):
+            stats.record("test_tool", float(i), False, False)
+
+        summary = stats.summary()
+        tool = summary["per_tool"]["test_tool"]
+        # 100 values: 1.0..100.0; index 50/100=50 → value 51.0
+        assert tool["p50_ms"] == 51.0
+        assert tool["p95_ms"] == 96.0
+        assert tool["p99_ms"] == 100.0
+
+    def test_percentile_single_sample(self):
+        """p99 with <2 samples should not crash."""
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        stats.record("t", 42.0, False, False)
+
+        summary = stats.summary()
+        assert summary["per_tool"]["t"]["p50_ms"] == 42.0
+        assert summary["per_tool"]["t"]["p99_ms"] == 42.0
+
+    def test_percentile_empty(self):
+        result = AuditStats._compute_percentiles([])
+        assert result == {"p50_ms": 0, "p95_ms": 0, "p99_ms": 0}
+
+
+class TestReservoirSampling:
+    """测试 reservoir sampling 属性。"""
+
+    def test_reservoir_capped_at_size(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        for i in range(2000):
+            stats.record("tool", float(i), False, False)
+
+        assert len(stats._latency_reservoir["tool"]) == AuditStats.RESERVOIR_SIZE
+
+    def test_reservoir_all_values_when_under_size(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        for i in range(50):
+            stats.record("tool", float(i), False, False)
+
+        assert len(stats._latency_reservoir["tool"]) == 50
+
+
+class TestSummaryHistory:
+    """测试趋势历史环形缓冲区。"""
+
+    def test_trend_returns_snapshots(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        stats.record("t", 10.0, False, False)
+        stats.log_summary()
+        stats.record("t", 20.0, False, False)
+        stats.log_summary()
+
+        trend = stats.trend()
+        assert len(trend) == 2
+        assert trend[0]["per_tool"]["t"]["avg_ms"] == 10.0
+        assert trend[1]["per_tool"]["t"]["avg_ms"] == 20.0
+
+    def test_reset_preserves_history(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        stats.record("t", 10.0, False, False)
+        stats.log_summary()
+        stats.reset()
+
+        assert len(stats.trend()) == 1
+        assert stats.total_calls == 0
+
+    def test_ring_buffer_capped(self):
+        config.AUDIT_ENABLED = True
+        stats = AuditStats()
+        for i in range(20):
+            stats.record("t", float(i), False, False)
+            stats.log_summary()
+
+        assert len(stats.trend()) == AuditStats.HISTORY_SIZE
+
+
+class TestJsonFormatterSchema:
+    """测试 tool_call 和 pipeline_stage 的不同 schema。"""
+
+    @pytest.mark.asyncio
+    async def test_tool_call_has_interface_tool_arguments(self):
+        capture = _setup_with_capture()
+        async with audit_tool_call("search_code", {"query": "q"}, "mcp") as ctx:
+            ctx.set_result_count(1)
+        data = json.loads(capture.records[0])
+        assert "interface" in data
+        assert "tool" in data
+        assert "arguments" in data
+        assert "result_count" in data
+        assert "stage" not in data
+        assert "stage_args" not in data
+        assert "stage_result" not in data
+
+    @pytest.mark.asyncio
+    async def test_pipeline_stage_has_stage_fields(self):
+        capture = _setup_with_capture()
+        new_trace_id()
+        async with audit_stage("classify", {"query": "q"}) as stg:
+            stg.set_result({"ok": True})
+        data = json.loads(capture.records[0])
+        assert "stage" in data
+        assert "stage_args" in data
+        assert "stage_result" in data
+        assert "interface" not in data
+        assert "tool" not in data
+        assert "arguments" not in data
+
+
+class TestTruncation:
+    """测试大字段截断保护。"""
+
+    def test_truncate_small_value(self):
+        val, truncated = _truncate({"key": "short"})
+        assert truncated is False
+        assert val == {"key": "short"}
+
+    def test_truncate_large_value(self):
+        big = {"data": "x" * 2000}
+        val, truncated = _truncate(big, max_bytes=100)
+        assert truncated is True
+        assert isinstance(val, str)
+        assert len(val) <= 104
+
+    @pytest.mark.asyncio
+    async def test_large_arguments_truncated_in_log(self):
+        capture = _setup_with_capture()
+        big_args = {"query": "x" * 2000}
+        async with audit_tool_call("search_code", big_args, "mcp") as ctx:
+            ctx.set_result_count(1)
+        data = json.loads(capture.records[0])
+        assert data.get("arguments_truncated") is True
+
+    @pytest.mark.asyncio
+    async def test_large_stage_result_truncated_in_log(self):
+        capture = _setup_with_capture()
+        new_trace_id()
+        async with audit_stage("rewrite", {"query": "q"}) as stg:
+            stg.set_result({"queries": ["x" * 500 for _ in range(10)]})
+        data = json.loads(capture.records[0])
+        assert data.get("stage_result_truncated") is True
+
+
+class TestQueueHandler:
+    """测试 QueueHandler 集成。"""
+
+    def test_logger_uses_non_blocking_handler(self):
+        config.AUDIT_ENABLED = True
+        config.AUDIT_LOG_FILE = ""
+        reset_audit_logger()
+        logger = setup_audit_logger("http")
+        handlers = [h for h in logger.handlers if isinstance(h, _NonBlockingQueueHandler)]
+        assert len(handlers) == 1
+
+
+class TestQueueDropOnFull:
+    """测试队列满时静默丢弃。"""
+
+    def test_drop_on_full(self):
+        import queue as queue_mod
+        q = queue_mod.Queue(maxsize=2)
+        handler = _NonBlockingQueueHandler(q)
+
+        record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
+        handler.enqueue(record)
+        handler.enqueue(record)
+        handler.enqueue(record)
+        assert handler.dropped_count == 1
+        assert q.qsize() == 2
+
+
+class TestAuditStageRecord:
+    """测试 audit_stage 将指标纳入 AuditStats。"""
+
+    @pytest.mark.asyncio
+    async def test_stage_feeds_audit_stats(self):
+        _setup_with_capture()
+        config.AUDIT_ENABLED = True
+        from observability.audit import audit_stats
+        audit_stats.reset()
+        new_trace_id()
+
+        async with audit_stage("classify", {"query": "test"}) as stg:
+            stg.set_result({"query_type": "exact"})
+
+        assert audit_stats.total_calls >= 1
+        assert "classify" in audit_stats._per_tool
