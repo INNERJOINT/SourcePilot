@@ -2,6 +2,8 @@
 
 import re
 
+import config
+
 
 def feature_rerank(
     query: str,
@@ -16,6 +18,7 @@ def feature_rerank(
     2. 内容中关键词命中密度
     3. 文件类型优先级（.java > .cpp > 其他）
     4. RRF 原始分数
+    5. Dense 语义匹配 bonus
 
     Args:
         query: 用户原始查询
@@ -62,6 +65,11 @@ def feature_rerank(
             if hvp in title:
                 score += 0.03
                 break
+
+        # 特征 5：Dense 语义匹配 bonus
+        meta = c.get("metadata", {})
+        if meta.get("source") == "dense":
+            score += config.DENSE_RERANK_BOOST
 
         scored.append((score, c))
 

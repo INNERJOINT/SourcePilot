@@ -6,6 +6,10 @@ BACKENDS = {
         "enabled": True,
         "adapter": "adapters.zoekt.ZoektAdapter",
     },
+    "dense": {
+        "enabled": False,  # 通过 DENSE_ENABLED 环境变量控制
+        "adapter": "adapters.dense.DenseAdapter",
+    },
     # "feishu": {
     #     "enabled": False,
     #     "adapter": "adapters.feishu.FeishuAdapter",

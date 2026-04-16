@@ -31,6 +31,16 @@ NL_CACHE_TTL = int(os.getenv("NL_CACHE_TTL", "86400"))
 # 设置后，客户端需在 HTTP 请求中携带 Authorization: Bearer <token>
 MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
 
+# ─── Dense 向量检索配置 ──────────────────────────────────
+DENSE_ENABLED = os.getenv("DENSE_ENABLED", "false").lower() == "true"
+DENSE_VECTOR_DB_URL = os.getenv("DENSE_VECTOR_DB_URL", "http://localhost:19530")
+DENSE_COLLECTION_NAME = os.getenv("DENSE_COLLECTION_NAME", "aosp_code")
+DENSE_EMBEDDING_URL = os.getenv("DENSE_EMBEDDING_URL", "http://localhost:8080/v1")
+DENSE_EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "unixcoder-base")
+DENSE_EMBEDDING_DIM = int(os.getenv("DENSE_EMBEDDING_DIM", "768"))
+DENSE_TOP_K = int(os.getenv("DENSE_TOP_K", "20"))
+DENSE_RERANK_BOOST = float(os.getenv("DENSE_RERANK_BOOST", "0.05"))
+
 # ─── 审计日志配置 ──────────────────────────────────────
 # 审计日志总开关
 AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
