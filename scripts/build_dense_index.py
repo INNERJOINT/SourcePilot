@@ -13,11 +13,16 @@ import argparse
 import asyncio
 import hashlib
 import logging
-import sys
+import os
 import time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+SOURCE_EXTENSIONS = {
+    ".java", ".kt", ".py", ".c", ".cc", ".cpp", ".h", ".hpp",
+    ".aidl", ".rs", ".go",
+}
 
 
 def sliding_window_chunks(
@@ -101,73 +106,53 @@ def _infer_language(path: str) -> str:
     return "unknown"
 
 
-async def fetch_file_list(adapter, repos: str, top_k: int = 5000) -> list[dict]:
-    """从 Zoekt 获取 repo 的文件列表。"""
-    results = await adapter.search_zoekt(
-        query=f"r:{repos} .",
-        top_k=top_k,
-        score_threshold=0,
-    )
-    return results
+def scan_source_files(source_dir: str, repo: str) -> list[dict]:
+    """扫描本地目录，返回源码文件列表。"""
+    files = []
+    for root, _dirs, filenames in os.walk(source_dir):
+        for fname in filenames:
+            ext = os.path.splitext(fname)[1]
+            if ext not in SOURCE_EXTENSIONS:
+                continue
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, source_dir)
+            files.append({"repo": repo, "path": rel, "full_path": full})
+    return files
 
 
-async def fetch_and_chunk_file(adapter, repo: str, filepath: str, window_size: int, overlap: int) -> list[dict]:
-    """获取文件内容并切分为 chunks。"""
+def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dict]:
+    """读取本地文件并切分为 chunks。"""
     try:
-        result = await adapter.fetch_file_content(repo=repo, filepath=filepath)
-        content = result.get("content", "")
-        # 去掉行号前缀（L123: ...）
-        lines = []
-        for line in content.split("\n"):
-            if line.startswith("L") and ": " in line[:10]:
-                lines.append(line.split(": ", 1)[1])
-            else:
-                lines.append(line)
-        clean_content = "\n".join(lines)
-        return sliding_window_chunks(clean_content, repo, filepath, window_size, overlap)
+        with open(entry["full_path"], encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return sliding_window_chunks(content, entry["repo"], entry["path"], window_size, overlap)
     except Exception as e:
-        logger.warning("Failed to fetch %s/%s: %s", repo, filepath, e)
+        logger.warning("Failed to read %s: %s", entry["full_path"], e)
         return []
 
 
 async def build_index(args):
     """主索引构建流程。"""
     from adapters.embedding import EmbeddingClient
-    from adapters.zoekt import ZoektAdapter
-    from config import DENSE_COLLECTION_NAME, DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL, ZOEKT_URL
+    from config import DENSE_COLLECTION_NAME, DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
 
-    zoekt = ZoektAdapter(zoekt_url=ZOEKT_URL)
     embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=DENSE_EMBEDDING_MODEL)
 
-    # 1. 获取文件列表
-    logger.info("Fetching file list for repos=%s ...", args.repos)
-    file_results = await fetch_file_list(zoekt, repos=args.repos)
-    logger.info("Found %d file matches", len(file_results))
-
-    # 去重：提取 unique (repo, path) 对
-    seen = set()
-    files = []
-    for r in file_results:
-        meta = r.get("metadata", {})
-        repo = meta.get("repo", "")
-        path = meta.get("path", "")
-        key = (repo, path)
-        if key not in seen and repo and path:
-            seen.add(key)
-            files.append({"repo": repo, "path": path})
-
-    logger.info("Unique files to index: %d", len(files))
+    # 1. 扫描本地文件
+    logger.info("Scanning source files in %s ...", args.source_dir)
+    files = scan_source_files(args.source_dir, repo=args.repo_name)
+    logger.info("Found %d source files", len(files))
     if not files:
-        logger.error("No files found. Check repos filter and Zoekt connectivity.")
+        logger.error("No source files found in %s", args.source_dir)
         return
 
-    # 2. 获取文件内容并切分
-    logger.info("Fetching and chunking files (window=%d, overlap=%d) ...", args.window_size, args.overlap)
+    # 2. 切分 chunks
+    logger.info("Chunking files (window=%d, overlap=%d) ...", args.window_size, args.overlap)
     all_chunks = []
     for i, f in enumerate(files):
-        chunks = await fetch_and_chunk_file(zoekt, f["repo"], f["path"], args.window_size, args.overlap)
+        chunks = read_and_chunk_file(f, args.window_size, args.overlap)
         all_chunks.extend(chunks)
-        if (i + 1) % 100 == 0:
+        if (i + 1) % 500 == 0:
             logger.info("  processed %d/%d files, %d chunks so far", i + 1, len(files), len(all_chunks))
 
     logger.info("Total chunks: %d", len(all_chunks))
@@ -175,24 +160,46 @@ async def build_index(args):
         logger.error("No chunks generated. Check file content retrieval.")
         return
 
-    # 3. 批量 embedding
-    logger.info("Generating embeddings (batch_size=%d) ...", args.batch_size)
-    all_vectors = []
+    # 3. 批量 embedding（并发）
+    logger.info("Generating embeddings (batch_size=%d, concurrency=%d) ...", args.batch_size, args.concurrency)
+    all_vectors = [None] * len(all_chunks)
     texts = [c["content"] for c in all_chunks]
+    sem = asyncio.Semaphore(args.concurrency)
+    failed_count = 0
+
+    async def embed_batch(batch_start, batch_end):
+        nonlocal failed_count
+        batch = [t[:1500] for t in texts[batch_start:batch_end]]
+        async with sem:
+            for attempt in range(3):
+                try:
+                    vectors = await embedding.embed(batch)
+                    for i, v in enumerate(vectors):
+                        all_vectors[batch_start + i] = v
+                    return
+                except Exception as e:
+                    if attempt == 2:
+                        logger.error("Embedding failed at batch %d-%d after 3 retries: %s", batch_start, batch_end, e)
+                        for i in range(len(batch)):
+                            all_vectors[batch_start + i] = [0.0] * DENSE_EMBEDDING_DIM
+                        failed_count += len(batch)
+                    else:
+                        await asyncio.sleep(2 ** attempt)
+
+    tasks = []
     for batch_start in range(0, len(texts), args.batch_size):
         batch_end = min(batch_start + args.batch_size, len(texts))
-        batch = texts[batch_start:batch_end]
-        try:
-            vectors = await embedding.embed(batch)
-            all_vectors.extend(vectors)
-        except Exception as e:
-            logger.error("Embedding failed at batch %d-%d: %s", batch_start, batch_end, e)
-            # 为失败的 batch 填充零向量
-            all_vectors.extend([[0.0] * DENSE_EMBEDDING_DIM] * len(batch))
-        if (batch_start + args.batch_size) % (args.batch_size * 10) == 0:
-            logger.info("  embedded %d/%d chunks", min(batch_end, len(texts)), len(texts))
+        tasks.append(embed_batch(batch_start, batch_end))
 
-    logger.info("Embedding complete: %d vectors", len(all_vectors))
+    # 分组执行并报告进度
+    chunk_size = 500
+    for group_start in range(0, len(tasks), chunk_size):
+        group = tasks[group_start:group_start + chunk_size]
+        await asyncio.gather(*group)
+        done = min((group_start + chunk_size) * args.batch_size, len(texts))
+        logger.info("  embedded %d/%d chunks", done, len(texts))
+
+    logger.info("Embedding complete: %d vectors (%d failed)", len(all_vectors), failed_count)
 
     # 4. 写入 Milvus
     logger.info("Writing to Milvus (collection=%s) ...", DENSE_COLLECTION_NAME)
@@ -219,11 +226,9 @@ async def build_index(args):
             schema=schema,
         )
         # 创建向量索引
-        client.create_index(
-            collection_name=DENSE_COLLECTION_NAME,
-            field_name="vector",
-            index_params={"index_type": "IVF_FLAT", "metric_type": "COSINE", "params": {"nlist": 128}},
-        )
+        index_params = client.prepare_index_params()
+        index_params.add_index(field_name="vector", index_type="IVF_FLAT", metric_type="COSINE", params={"nlist": 128})
+        client.create_index(collection_name=DENSE_COLLECTION_NAME, index_params=index_params)
         logger.info("Created collection '%s' with IVF_FLAT index", DENSE_COLLECTION_NAME)
 
     # 批量插入
@@ -253,15 +258,21 @@ async def build_index(args):
         if (batch_start + insert_batch_size) % (insert_batch_size * 5) == 0:
             logger.info("  inserted %d/%d chunks", total_inserted, len(all_chunks))
 
+    # Flush to persist data
+    client.flush(DENSE_COLLECTION_NAME)
+    logger.info("Flushed collection")
+
     logger.info("Index build complete: %d chunks inserted into '%s'", total_inserted, DENSE_COLLECTION_NAME)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Build dense vector index for AOSP code")
-    parser.add_argument("--repos", default="frameworks/base", help="Repo filter (default: frameworks/base)")
-    parser.add_argument("--window-size", type=int, default=100, help="Sliding window size in lines (default: 100)")
-    parser.add_argument("--overlap", type=int, default=50, help="Overlap lines (default: 50)")
-    parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size (default: 32)")
+    parser.add_argument("--source-dir", default="/mnt/code/ACE/frameworks/base", help="Local source directory to index")
+    parser.add_argument("--repo-name", default="frameworks/base", help="Repo name stored in metadata (default: frameworks/base)")
+    parser.add_argument("--window-size", type=int, default=30, help="Sliding window size in lines (default: 30)")
+    parser.add_argument("--overlap", type=int, default=10, help="Overlap lines (default: 10)")
+    parser.add_argument("--batch-size", type=int, default=64, help="Embedding batch size (default: 64)")
+    parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
     args = parser.parse_args()
 
     start = time.time()

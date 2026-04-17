@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 class EmbeddingClient:
     """Embedding 服务 HTTP 客户端，兼容 OpenAI embedding API 格式。"""
 
-    def __init__(self, base_url: str, model: str, timeout: float = 10.0):
+    def __init__(self, base_url: str, model: str, timeout: float = 120.0):
         self._base_url = base_url.rstrip("/")
         self._model = model
-        self._timeout = timeout
+        self._client = httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """批量文本 embedding。
@@ -34,13 +37,12 @@ class EmbeddingClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(
-                    f"{self._base_url}/embeddings",
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await self._client.post(
+                f"{self._base_url}/embeddings",
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
         except httpx.HTTPStatusError as e:
             logger.error("Embedding API HTTP error: %s", e)
             raise
