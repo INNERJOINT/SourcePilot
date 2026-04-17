@@ -24,22 +24,9 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 source "$DIR/_env.sh"
 
 # ── 配置 ──────────────────────────────────────────────
-ZOEKT_INDEX_PATH="${ZOEKT_INDEX_PATH:-}"
 ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
 MCP_TRANSPORT="${MCP_TRANSPORT:-streamable-http}"
 MCP_PORT="${MCP_PORT:-8888}"
-
-if [ -z "$ZOEKT_INDEX_PATH" ]; then
-    echo "Error: ZOEKT_INDEX_PATH 未设置" >&2
-    echo "请在 .env 中设置或通过环境变量传入，例如：" >&2
-    echo "  ZOEKT_INDEX_PATH=/mnt/code/ACE/.repo/.zoekt/ $0" >&2
-    exit 1
-fi
-
-if [ ! -d "$ZOEKT_INDEX_PATH" ]; then
-    echo "Error: ZOEKT_INDEX_PATH 目录不存在: $ZOEKT_INDEX_PATH" >&2
-    exit 1
-fi
 
 # ── 进程管理 ──────────────────────────────────────────
 PIDS=()
@@ -52,7 +39,6 @@ cleanup() {
             kill "$pid" 2>/dev/null || true
         fi
     done
-    # 等待优雅退出，然后强制终止
     sleep 1
     for pid in "${PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
@@ -67,23 +53,45 @@ trap cleanup EXIT INT TERM
 MAX_RETRIES=30
 
 # ── 1. 启动 zoekt-webserver ──────────────────────────
-echo "启动 zoekt-webserver (index: $ZOEKT_INDEX_PATH)..." >&2
-zoekt-webserver -index "$ZOEKT_INDEX_PATH" &
-PIDS+=($!)
-ZOEKT_PID=${PIDS[-1]}
+# 检测 Docker 模式下的 zoekt 是否已在运行
+ZOEKT_DOCKER=false
+if curl -sf "$ZOEKT_URL/" >/dev/null 2>&1; then
+    echo "检测到 zoekt-webserver 已在运行 ($ZOEKT_URL)，跳过原生启动" >&2
+    ZOEKT_DOCKER=true
+fi
 
-# 等待 zoekt 就绪
-for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf "$ZOEKT_URL/" >/dev/null 2>&1; then
-        echo "zoekt-webserver 就绪 (PID $ZOEKT_PID)" >&2
-        break
-    fi
-    if [ "$i" -eq "$MAX_RETRIES" ]; then
-        echo "Error: zoekt-webserver 启动超时 (${MAX_RETRIES}s)" >&2
+if [ "$ZOEKT_DOCKER" = false ]; then
+    # 原生模式：需要 ZOEKT_INDEX_PATH
+    ZOEKT_INDEX_PATH="${ZOEKT_INDEX_PATH:-}"
+    if [ -z "$ZOEKT_INDEX_PATH" ]; then
+        echo "Error: ZOEKT_INDEX_PATH 未设置" >&2
+        echo "请在 .env 中设置或通过环境变量传入，例如：" >&2
+        echo "  ZOEKT_INDEX_PATH=/mnt/code/ACE/.repo/.zoekt/ $0" >&2
         exit 1
     fi
-    sleep 1
-done
+    if [ ! -d "$ZOEKT_INDEX_PATH" ]; then
+        echo "Error: ZOEKT_INDEX_PATH 目录不存在: $ZOEKT_INDEX_PATH" >&2
+        exit 1
+    fi
+
+    echo "启动 zoekt-webserver (index: $ZOEKT_INDEX_PATH)..." >&2
+    zoekt-webserver -index "$ZOEKT_INDEX_PATH" &
+    PIDS+=($!)
+    ZOEKT_PID=${PIDS[-1]}
+
+    # 等待 zoekt 就绪
+    for i in $(seq 1 $MAX_RETRIES); do
+        if curl -sf "$ZOEKT_URL/" >/dev/null 2>&1; then
+            echo "zoekt-webserver 就绪 (PID $ZOEKT_PID)" >&2
+            break
+        fi
+        if [ "$i" -eq "$MAX_RETRIES" ]; then
+            echo "Error: zoekt-webserver 启动超时 (${MAX_RETRIES}s)" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+fi
 
 # ── 2. 启动 SourcePilot ──────────────────────────────
 echo "启动 SourcePilot (port 9000)..." >&2
@@ -125,7 +133,11 @@ MCP_PID=${PIDS[-1]}
 echo "" >&2
 echo "════════════════════════════════════════════" >&2
 echo "  所有服务已启动：" >&2
+if [ "$ZOEKT_DOCKER" = true ]; then
+echo "    zoekt-webserver  (Docker, already running)  ($ZOEKT_URL)" >&2
+else
 echo "    zoekt-webserver  PID $ZOEKT_PID  ($ZOEKT_URL)" >&2
+fi
 echo "    SourcePilot      PID $SP_PID   (http://localhost:9000)" >&2
 if [ "$MCP_TRANSPORT" != "stdio" ]; then
 echo "    MCP Server       PID $MCP_PID   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2

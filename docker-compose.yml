@@ -1,0 +1,44 @@
+include:
+  - path: dense-deploy/docker-compose.yml
+
+services:
+  zoekt-webserver:
+    build: ./zoekt-deploy
+    volumes:
+      - ${ZOEKT_INDEX_PATH:-/mnt/code/ACE/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT:-6070}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  zoekt-indexserver:
+    build: ./zoekt-deploy
+    entrypoint: ["zoekt-git-index"]
+    command: ["-index", "/data/index", "/data/repo/"]
+    volumes:
+      - ${ZOEKT_REPO_PATH:-/mnt/code/ACE/.repo}:/data/repo:ro
+      - zoekt_index:/data/index
+    networks:
+      - sourcepilot-net
+    profiles:
+      - tools
+
+networks:
+  sourcepilot-net:
+    name: sourcepilot-net
+    driver: bridge
+
+volumes:
+  zoekt_index:
