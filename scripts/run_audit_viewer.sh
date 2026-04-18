@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
 done
 
 # 默认日志路径与数据库路径
-export AUDIT_LOG_PATH="${AUDIT_LOG_PATH:-$DIR/audit.log}"
+export AUDIT_LOG_PATH="${AUDIT_LOG_PATH:-$PROJ_ROOT/audit.log}"
 export AUDIT_DB_PATH="${AUDIT_DB_PATH:-$APP_DIR/data/audit.db}"
 export AUDIT_VIEWER_HOST="$HOST"
 export AUDIT_VIEWER_PORT="$PORT"
