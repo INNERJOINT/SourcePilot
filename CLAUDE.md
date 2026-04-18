@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AOSP Code Search — two independent services communicating via HTTP API:
+AOSP Code Search — three independent services:
 
 1. **SourcePilot** (`src/`) — Hybrid RAG search engine with Starlette HTTP API
 2. **MCP Access Layer** (`mcp-server/`) — Thin MCP protocol proxy delegating to SourcePilot via httpx
+3. **Audit Viewer** (`audit-viewer/`) — FastAPI + React SPA for browsing SourcePilot's `audit.log` (port 9100). Tails JSONL into SQLite, exposes Dashboard / Events / Trace / Search. Read-only against `audit.log`. See `audit-viewer/README.md`.
 
 ## Commands
 

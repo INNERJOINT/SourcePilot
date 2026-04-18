@@ -23,6 +23,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  audit-viewer:
+    build: ./audit-viewer
+    volumes:
+      - ${AUDIT_LOG_PATH:-./audit.log}:/data/audit.log:ro
+      - audit_viewer_data:/data
+    ports:
+      - "${AUDIT_VIEWER_PORT:-9100}:9100"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9100/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   zoekt-indexserver:
     build: ./zoekt-deploy
     entrypoint: ["zoekt-git-index"]
@@ -42,3 +64,4 @@ networks:
 
 volumes:
   zoekt_index:
+  audit_viewer_data:
