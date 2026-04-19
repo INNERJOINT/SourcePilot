@@ -326,6 +326,31 @@ class TestAuditStage:
         assert data["status"] == "ok"
 
     @pytest.mark.asyncio
+    async def test_stage_result_not_truncated(self):
+        """pipeline_stage 的 stage_result 不再受 _truncate 限制，
+        records 数组应原样落盘（即便单条记录超过 1KB 默认阈值）。"""
+        capture = _setup_with_capture()
+        new_trace_id()
+
+        big_records = [
+            {"file": f"src/file_{i}.py", "line": i, "score": 0.9,
+             "snippet": "X" * 200}
+            for i in range(20)
+        ]
+
+        async with audit_stage("zoekt_search", {"query": "test"}) as stg:
+            stg.set_result({"records_count": len(big_records), "records": big_records})
+
+        data = json.loads(capture.records[0])
+        assert data["event"] == "pipeline_stage"
+        assert "stage_result_truncated" not in data
+        assert data["stage_result"]["records_count"] == 20
+        assert isinstance(data["stage_result"]["records"], list)
+        assert len(data["stage_result"]["records"]) == 20
+        assert data["stage_result"]["records"][0]["file"] == "src/file_0.py"
+        assert data["stage_result"]["records"][19]["snippet"] == "X" * 200
+
+    @pytest.mark.asyncio
     async def test_stage_error(self):
         """audit_stage 异常时记录 error。"""
         capture = _setup_with_capture()
@@ -533,13 +558,17 @@ class TestTruncation:
         assert data.get("arguments_truncated") is True
 
     @pytest.mark.asyncio
-    async def test_large_stage_result_truncated_in_log(self):
+    async def test_large_stage_result_not_truncated(self):
+        """新策略：pipeline_stage 不再截断 stage_result，
+        即便序列化后远超 _truncate 默认 1KB，也应原样落盘。"""
         capture = _setup_with_capture()
         new_trace_id()
         async with audit_stage("rewrite", {"query": "q"}) as stg:
             stg.set_result({"queries": ["x" * 500 for _ in range(10)]})
         data = json.loads(capture.records[0])
-        assert data.get("stage_result_truncated") is True
+        assert "stage_result_truncated" not in data
+        assert len(data["stage_result"]["queries"]) == 10
+        assert data["stage_result"]["queries"][0] == "x" * 500
 
 
 class TestQueueHandler:

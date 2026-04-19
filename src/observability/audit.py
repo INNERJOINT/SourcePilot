@@ -92,11 +92,8 @@ class JsonFormatter(logging.Formatter):
         elif event == "pipeline_stage":
             data["stage"] = getattr(record, "stage", "")
             data["stage_args"] = getattr(record, "stage_args", {})
-            stage_result = getattr(record, "stage_result", {})
-            stage_result, result_truncated = _truncate(stage_result)
-            data["stage_result"] = stage_result
-            if result_truncated:
-                data["stage_result_truncated"] = True
+            # 用户决策：pipeline_stage 不截断，保留完整 records 数组以便审计
+            data["stage_result"] = getattr(record, "stage_result", {})
 
         elif event == "audit_summary":
             extra_fields = getattr(record, "extra_fields", None)

@@ -51,7 +51,7 @@ async def _search_with_audit(query: str, route_index: int, **kwargs) -> list[dic
     """单路 Zoekt 搜索，带 audit_stage 记录。"""
     async with audit_stage("zoekt_search", {"query": query, "route_index": route_index}) as stg:
         records = await _default_adapter.search_zoekt(query=query, **kwargs)
-        stg.set_result({"records_count": len(records)})
+        stg.set_result({"records_count": len(records), "records": records})
         stg.set_result_count(len(records))
         return records
 
@@ -93,7 +93,7 @@ async def search(
                 query=query, top_k=top_k, score_threshold=score_threshold,
                 repos=repos, lang=lang, branch=branch, case_sensitive=case_sensitive,
             )
-            stg.set_result({"records_count": len(results)})
+            stg.set_result({"records_count": len(results), "records": results})
             stg.set_result_count(len(results))
         return results
 
@@ -132,7 +132,7 @@ async def _nl_search(
                 score_threshold=score_threshold, repos=repos,
                 lang=lang, branch=branch,
             )
-            stg.set_result({"records_count": len(records)})
+            stg.set_result({"records_count": len(records), "records": records})
             stg.set_result_count(len(records))
         return records
 
@@ -202,7 +202,7 @@ async def _nl_search(
                 score_threshold=score_threshold, repos=repos,
                 lang=lang, branch=branch,
             )
-            stg.set_result({"records_count": len(records)})
+            stg.set_result({"records_count": len(records), "records": records})
             stg.set_result_count(len(records))
         return records
 
@@ -250,7 +250,7 @@ async def _dense_search_with_audit(query: str, repos: str | None = None) -> list
                 dense.search_by_embedding(query, top_k=config.DENSE_TOP_K, repos=repos),
                 timeout=config.NL_TIMEOUT,
             )
-            stg.set_result({"records_count": len(results)})
+            stg.set_result({"records_count": len(results), "records": results})
             stg.set_result_count(len(results))
             return results
         except Exception as e:
@@ -283,7 +283,7 @@ async def search_symbol(
                 repos=repos, lang=lang, branch=branch, case_sensitive=case_sensitive,
             )
 
-        stg.set_result({"records_count": len(results), "fallback": used_fallback})
+        stg.set_result({"records_count": len(results), "records": results, "fallback": used_fallback})
         stg.set_result_count(len(results))
     return results
 
@@ -306,7 +306,7 @@ async def search_file(
             query=query, top_k=top_k, score_threshold=0,
             repos=None, lang=lang, branch=branch, case_sensitive=case_sensitive,
         )
-        stg.set_result({"records_count": len(results)})
+        stg.set_result({"records_count": len(results), "records": results})
         stg.set_result_count(len(results))
     return results
 
@@ -323,7 +323,7 @@ async def search_regex(
             pattern=pattern, top_k=top_k, score_threshold=0,
             repos=repos, lang=lang,
         )
-        stg.set_result({"records_count": len(results)})
+        stg.set_result({"records_count": len(results), "records": results})
         stg.set_result_count(len(results))
     return results
 
@@ -335,7 +335,7 @@ async def list_repos(
     """List matching repos."""
     async with audit_stage("list_repos", {"query": query}) as stg:
         results = await _default_adapter.list_repos(query=query, top_k=top_k)
-        stg.set_result({"records_count": len(results)})
+        stg.set_result({"records_count": len(results), "records": results})
         stg.set_result_count(len(results))
     return results
 
