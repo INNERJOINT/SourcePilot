@@ -27,6 +27,8 @@ source "$DIR/_env.sh"
 ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
 MCP_TRANSPORT="${MCP_TRANSPORT:-streamable-http}"
 MCP_PORT="${MCP_PORT:-8888}"
+AUDIT_VIEWER_PORT="${AUDIT_VIEWER_PORT:-9100}"
+AUDIT_VIEWER_ENABLED="${AUDIT_VIEWER_ENABLED:-true}"
 
 # ── 进程管理 ──────────────────────────────────────────
 PIDS=()
@@ -129,6 +131,34 @@ fi
 PIDS+=($!)
 MCP_PID=${PIDS[-1]}
 
+# ── 4. 启动 audit-viewer ─────────────────────────────
+AV_PID=""
+AV_RUNNING=false
+if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
+    if curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1; then
+        echo "检测到 audit-viewer 已在运行 (port ${AUDIT_VIEWER_PORT})，跳过启动" >&2
+        AV_RUNNING=true
+    else
+        echo "启动 audit-viewer (port ${AUDIT_VIEWER_PORT})..." >&2
+        AUDIT_VIEWER_PORT="$AUDIT_VIEWER_PORT" "$DIR/../audit-viewer/scripts/run_audit_viewer.sh" &
+        PIDS+=($!)
+        AV_PID=${PIDS[-1]}
+
+        for i in $(seq 1 $MAX_RETRIES); do
+            if curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1; then
+                echo "audit-viewer 就绪 (PID $AV_PID)" >&2
+                AV_RUNNING=true
+                break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+                echo "Warning: audit-viewer 启动超时 (${MAX_RETRIES}s)，继续运行其他服务" >&2
+                break
+            fi
+            sleep 1
+        done
+    fi
+fi
+
 # ── 启动完成 ──────────────────────────────────────────
 echo "" >&2
 echo "════════════════════════════════════════════" >&2
@@ -143,6 +173,15 @@ if [ "$MCP_TRANSPORT" != "stdio" ]; then
 echo "    MCP Server       PID $MCP_PID   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
 else
 echo "    MCP Server       PID $MCP_PID   (stdio)" >&2
+fi
+if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
+    if [ -n "$AV_PID" ]; then
+        echo "    audit-viewer     PID $AV_PID   (http://localhost:${AUDIT_VIEWER_PORT})" >&2
+    elif [ "$AV_RUNNING" = true ]; then
+        echo "    audit-viewer     (already running)  (http://localhost:${AUDIT_VIEWER_PORT})" >&2
+    else
+        echo "    audit-viewer     (启动失败/超时)" >&2
+    fi
 fi
 echo "" >&2
 echo "  按 Ctrl+C 停止所有服务" >&2
