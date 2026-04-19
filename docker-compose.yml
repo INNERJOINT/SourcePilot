@@ -25,9 +25,15 @@ services:
 
   audit-viewer:
     build: ./audit-viewer
+    # 与 SourcePilot 共用同一份 audit.log，并把 SQLite 镜像库 bind 到
+    # 宿主 ./audit-viewer/data，使容器与原生 scripts/run_audit_viewer.sh
+    # 写到同一个 audit.db 路径，避免双轨。
+    environment:
+      AUDIT_LOG_PATH: /var/log/sourcepilot/audit.log
+      AUDIT_DB_PATH: /data/audit.db
     volumes:
-      - ${AUDIT_LOG_PATH:-./audit.log}:/data/audit.log:ro
-      - audit_viewer_data:/data
+      - ${AUDIT_LOG_PATH:-./audit.log}:/var/log/sourcepilot/audit.log:ro
+      - ./audit-viewer/data:/data
     ports:
       - "${AUDIT_VIEWER_PORT:-9100}:9100"
     networks:
@@ -64,4 +70,3 @@ networks:
 
 volumes:
   zoekt_index:
-  audit_viewer_data:

@@ -37,11 +37,16 @@ AUDIT_VIEWER_FRONTEND_DIST=./frontend/dist \
 # → http://127.0.0.1:9100
 ```
 
-Or via Docker Compose:
+Or via Docker Compose (from repo root):
 
 ```bash
 docker compose up -d audit-viewer
 ```
+
+The compose service bind-mounts:
+
+- `${AUDIT_LOG_PATH:-./audit.log}` (host) → `/var/log/sourcepilot/audit.log` (read-only) — same file SourcePilot writes
+- `./audit-viewer/data` (host) → `/data` — keeps the SQLite mirror DB at the same path used by `scripts/run_audit_viewer.sh`, so containerized and native runs share one `audit.db`.
 
 ## Configuration
 
