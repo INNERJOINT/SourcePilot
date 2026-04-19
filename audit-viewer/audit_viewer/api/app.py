@@ -5,6 +5,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config
@@ -28,11 +29,25 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix="/api")
 
     if config.FRONTEND_DIST.exists():
-        app.mount(
-            "/",
-            StaticFiles(directory=str(config.FRONTEND_DIST), html=True),
-            name="spa",
-        )
+        index_html = config.FRONTEND_DIST / "index.html"
+
+        # /assets/* and other built asset subdirs — served verbatim
+        assets_dir = config.FRONTEND_DIST / "assets"
+        if assets_dir.exists():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=str(assets_dir)),
+                name="assets",
+            )
+
+        # SPA fallback: any non-/api path -> index.html so BrowserRouter deep
+        # links (/trace/<id>, /events, ...) survive refresh.
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(full_path: str) -> FileResponse:  # pragma: no cover - trivial
+            candidate = config.FRONTEND_DIST / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(index_html)
     else:
         log.warning("Frontend dist not found at %s — SPA not served", config.FRONTEND_DIST)
 
