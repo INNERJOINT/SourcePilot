@@ -55,10 +55,20 @@ trap cleanup EXIT INT TERM
 MAX_RETRIES=30
 
 # ── 1. 启动 zoekt-webserver ──────────────────────────
-# 检测 Docker 模式下的 zoekt 是否已在运行
+# 检测 Docker 模式下的 zoekt 是否已在运行；若是，重启容器以保证使用最新配置
 ZOEKT_DOCKER=false
 if curl -sf "$ZOEKT_URL/" >/dev/null 2>&1; then
-    echo "检测到 zoekt-webserver 已在运行 ($ZOEKT_URL)，跳过原生启动" >&2
+    if docker compose -f "$DIR/../docker-compose.yml" ps --status running --services 2>/dev/null | grep -qx 'zoekt-webserver'; then
+        echo "检测到 zoekt-webserver 容器已在运行，重启容器..." >&2
+        docker compose -f "$DIR/../docker-compose.yml" restart zoekt-webserver >/dev/null
+        for i in $(seq 1 $MAX_RETRIES); do
+            curl -sf "$ZOEKT_URL/" >/dev/null 2>&1 && { echo "zoekt-webserver 重启就绪" >&2; break; }
+            [ "$i" -eq "$MAX_RETRIES" ] && { echo "Error: zoekt-webserver 重启后健康检查超时" >&2; exit 1; }
+            sleep 1
+        done
+    else
+        echo "检测到 zoekt-webserver 已在运行 ($ZOEKT_URL，非 compose)，跳过原生启动" >&2
+    fi
     ZOEKT_DOCKER=true
 fi
 
@@ -136,8 +146,18 @@ AV_PID=""
 AV_RUNNING=false
 if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
     if curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1; then
-        echo "检测到 audit-viewer 已在运行 (port ${AUDIT_VIEWER_PORT})，跳过启动" >&2
-        AV_RUNNING=true
+        if docker compose -f "$DIR/../docker-compose.yml" ps --status running --services 2>/dev/null | grep -qx 'audit-viewer'; then
+            echo "检测到 audit-viewer 容器已在运行，重启容器..." >&2
+            docker compose -f "$DIR/../docker-compose.yml" restart audit-viewer >/dev/null
+            for i in $(seq 1 $MAX_RETRIES); do
+                curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1 && { echo "audit-viewer 重启就绪" >&2; AV_RUNNING=true; break; }
+                [ "$i" -eq "$MAX_RETRIES" ] && { echo "Warning: audit-viewer 重启后健康检查超时" >&2; break; }
+                sleep 1
+            done
+        else
+            echo "检测到 audit-viewer 已在运行 (port ${AUDIT_VIEWER_PORT}，非 compose)，跳过启动" >&2
+            AV_RUNNING=true
+        fi
     else
         echo "启动 audit-viewer (port ${AUDIT_VIEWER_PORT})..." >&2
         AUDIT_VIEWER_PORT="$AUDIT_VIEWER_PORT" "$DIR/../audit-viewer/scripts/run_audit_viewer.sh" &
