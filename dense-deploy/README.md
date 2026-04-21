@@ -1,71 +1,71 @@
-# Dense Deploy — Milvus + Embedding 服务部署
+# Dense Deploy — Milvus + Embedding Service
 
-为 SourcePilot 的向量检索功能提供 Milvus 向量数据库和 embedding 服务的 Docker 部署。
+Docker deployment for the Milvus vector database and embedding service that power SourcePilot's vector-retrieval feature.
 
-## 快速启动
+## Quickstart
 
 ```bash
 cd dense-deploy
 
-# 1. 启动服务（首次构建 embedding 镜像需要较长时间）
+# 1. Start services (first-time embedding image build takes a while)
 docker compose up -d
 
-# 2. 检查服务状态
+# 2. Check service health
 ./scripts/healthcheck.sh
 
-# 3. 构建向量索引（需要 Zoekt 服务运行中）
+# 3. Build the vector index (requires a running Zoekt service)
 ZOEKT_URL=http://localhost:6070 ./scripts/build_index.sh --repos frameworks/base
 
-# 4. 在 SourcePilot 中启用 dense 后端
+# 4. Enable the dense backend in SourcePilot
 export DENSE_ENABLED=true
 ```
 
-## 服务组件
+## Service Components
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| Milvus | 19530 (gRPC), 9091 (REST) | 向量数据库 |
+| Service | Port | Description |
+|---------|------|-------------|
+| Milvus | 19530 (gRPC), 9091 (REST) | Vector database |
 | Embedding Server | 8080 | OpenAI-compatible embedding API |
-| MinIO | 9000, 9001 (console) | Milvus 对象存储后端 |
-| etcd | 2379 | Milvus 元数据存储 |
+| MinIO | 9000, 9001 (console) | Milvus object-storage backend |
+| etcd | 2379 | Milvus metadata store |
 
-## 环境变量
+## Environment Variables
 
-参见 `.env.example`。复制并修改：
+See `.env.example`. Copy and edit it:
 
 ```bash
 cp .env.example .env
 ```
 
-主要变量：
+Key variables:
 
-- `EMBEDDING_MODEL` — 模型名称（默认 `microsoft/unixcoder-base`）
-- `EMBEDDING_DIM` — 向量维度（默认 768）
-- `EMBEDDING_PORT` — embedding 服务端口（默认 8080）
-- `MILVUS_PORT` — Milvus gRPC 端口（默认 19530）
+- `EMBEDDING_MODEL` — model name (default `microsoft/unixcoder-base`)
+- `EMBEDDING_DIM` — vector dimension (default 768)
+- `EMBEDDING_PORT` — embedding service port (default 8080)
+- `MILVUS_PORT` — Milvus gRPC port (default 19530)
 
-## 更换模型
+## Changing Models
 
-更换 embedding 模型后**必须重建索引**，否则搜索结果将不正确：
+After switching embedding models you **must rebuild the index**, otherwise search results will be incorrect:
 
 ```bash
-# 1. 修改 .env 中的 EMBEDDING_MODEL 和 EMBEDDING_DIM
-# 2. 更新 MODEL_VERSION 文件
+# 1. Update EMBEDDING_MODEL and EMBEDDING_DIM in .env
+# 2. Update the MODEL_VERSION file
 echo "model=new-model dim=1024" > MODEL_VERSION
-# 3. 重建 embedding 镜像
+# 3. Rebuild the embedding image
 docker compose build embedding-server
 docker compose up -d embedding-server
-# 4. 清空旧 collection 并重建索引
+# 4. Drop the old collection and rebuild the index
 ./scripts/build_index.sh --repos frameworks/base
 ```
 
-## GPU 支持
+## GPU Support
 
-docker-compose.yml 默认配置了 NVIDIA GPU 资源预留。如果没有 GPU，注释掉 `deploy.resources` 段即可使用 CPU 运行。
+`docker-compose.yml` reserves NVIDIA GPU resources by default. If you have no GPU, comment out the `deploy.resources` block to run on CPU.
 
-## 与 SourcePilot 集成
+## Integrating with SourcePilot
 
-服务启动后，在 SourcePilot 环境中设置：
+After the services are up, set in the SourcePilot environment:
 
 ```bash
 export DENSE_ENABLED=true

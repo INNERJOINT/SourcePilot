@@ -1,63 +1,64 @@
-# AOSP Code Search MCP 接入层
+# AOSP Code Search — MCP Access Layer
 
-MCP (Model Context Protocol) 协议代理，为 AI 编码工具（Claude Code、Cursor 等）提供 AOSP 代码搜索能力。
+An MCP (Model Context Protocol) proxy that exposes AOSP code search to AI coding tools such as Claude Code and Cursor.
 
-本服务是一个薄代理层，自身不包含搜索业务逻辑，所有搜索请求通过 HTTP 转发给 SourcePilot 后端服务处理。
+This service is a thin proxy: it contains no search business logic and forwards every search request over HTTP to the SourcePilot backend.
 
-## 架构
+## Architecture
 
 ```
-AI 工具 (Claude Code / Cursor / ...)
+AI tools (Claude Code / Cursor / ...)
         |
-        |  MCP 协议 (stdio 或 Streamable HTTP)
+        |  MCP protocol (stdio or Streamable HTTP)
         v
 +----------------------------------------------+
-|  mcp_server.py  入口分发                      |
-|  ├── entry/mcp_stdio.py   stdio 传输          |
-|  └── entry/mcp_http.py    HTTP 传输 + 鉴权    |
+|  mcp_server.py  entry-point dispatcher        |
+|  ├── entry/mcp_stdio.py   stdio transport     |
+|  └── entry/mcp_http.py    HTTP transport +    |
+|                           auth                |
 +----------------------------------------------+
 |  entry/handlers.py                            |
-|  ├── MCP Server + 6 个工具定义                |
-|  ├── aosp:// 资源 URI 读取                    |
-|  ├── 结果格式化（LLM 友好文本）               |
-|  └── httpx 客户端 → SourcePilot API           |
+|  ├── MCP Server + 6 tool definitions          |
+|  ├── aosp:// resource URI reads               |
+|  ├── result formatting (LLM-friendly text)    |
+|  └── httpx client → SourcePilot API           |
 +----------------------------------------------+
         |
-        |  HTTP (默认 http://localhost:9000)
+        |  HTTP (default http://localhost:9000)
         v
 +----------------------------------------------+
 |  SourcePilot (src/)                           |
-|  混合 RAG 检索引擎                             |
+|  Hybrid RAG search engine                     |
 +----------------------------------------------+
 ```
 
-## 前置依赖
+## Prerequisites
 
-**必须先启动 SourcePilot 服务**，MCP 接入层依赖其 HTTP API：
+**SourcePilot must be running first** — the MCP access layer depends on its HTTP API:
 
 ```bash
-# 启动 SourcePilot（默认 0.0.0.0:9000）
+# Start SourcePilot (defaults to 0.0.0.0:9000)
 scripts/run_sourcepilot.sh
 ```
 
-## 配置
+## Configuration
 
-| 环境变量 | 默认值 | 说明 |
-|---------|--------|------|
-| `SOURCEPILOT_URL` | `http://localhost:9000` | SourcePilot 后端服务地址 |
-| `MCP_AUTH_TOKEN` | `""` | Streamable HTTP 模式的 Bearer Token 鉴权，为空则不启用鉴权 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SOURCEPILOT_URL` | `http://localhost:9000` | SourcePilot backend address |
+| `MCP_AUTH_TOKEN` | `""` | Bearer-token auth for Streamable HTTP mode; empty disables auth |
 
-## 启动
+## Running
 
-### stdio 模式（本地 AI 工具）
+### stdio mode (local AI tools)
 
-供 Claude Code、Cursor 等本地工具通过 stdin/stdout 直接调用：
+For local tools such as Claude Code or Cursor that speak MCP over stdin/stdout:
 
 ```bash
 scripts/run_mcp.sh
 ```
 
-在 Claude Code 配置中添加：
+Add to your Claude Code config:
 
 ```json
 {
@@ -69,23 +70,23 @@ scripts/run_mcp.sh
 }
 ```
 
-### Streamable HTTP 模式（远程访问）
+### Streamable HTTP mode (remote access)
 
-供远程客户端通过 HTTP 访问，端点为 `/mcp`：
+For remote clients connecting over HTTP; endpoint is `/mcp`:
 
 ```bash
 scripts/run_mcp.sh --transport streamable-http --port 8888
 ```
 
-若设置了 `MCP_AUTH_TOKEN`，客户端需在请求中携带 `Authorization: Bearer <token>`。
+When `MCP_AUTH_TOKEN` is set, clients must include `Authorization: Bearer <token>`.
 
-## MCP 工具
+## MCP Tools
 
-提供 6 个搜索工具：
+Six search tools are exposed:
 
 ### search_code
 
-搜索 AOSP 代码库。支持关键词、类名、函数名、文件路径、属性名等。当 SourcePilot 开启 NL 增强时，自然语言查询会自动触发语义级检索。
+Search the AOSP codebase. Supports keywords, class names, function names, file paths, attribute names, and more. When SourcePilot has NL enhancement enabled, natural-language queries automatically trigger semantic retrieval.
 
 ```
 search_code(query="SystemServer startBootstrapServices", lang="java", repo="frameworks/base")
@@ -93,7 +94,7 @@ search_code(query="SystemServer startBootstrapServices", lang="java", repo="fram
 
 ### search_symbol
 
-精确搜索代码符号（类名、函数名、变量名），使用 Zoekt `sym:` 前缀。
+Exact search for code symbols (class names, function names, variable names) using the Zoekt `sym:` prefix.
 
 ```
 search_symbol(symbol="ActivityManagerService", lang="java")
@@ -101,7 +102,7 @@ search_symbol(symbol="ActivityManagerService", lang="java")
 
 ### search_file
 
-按文件名或路径搜索代码文件，使用 Zoekt `file:` 前缀。
+Search for code files by name or path using the Zoekt `file:` prefix.
 
 ```
 search_file(path="SystemServer.java", query="startBootstrapServices")
@@ -109,7 +110,7 @@ search_file(path="SystemServer.java", query="startBootstrapServices")
 
 ### search_regex
 
-使用正则表达式搜索代码，适合复杂模式匹配。
+Regex-based code search for complex pattern matching.
 
 ```
 search_regex(pattern="func\\s+\\w+\\s*\\(", lang="go")
@@ -117,7 +118,7 @@ search_regex(pattern="func\\s+\\w+\\s*\\(", lang="go")
 
 ### list_repos
 
-列出 AOSP 代码库中的仓库列表，可按关键词过滤。
+List repositories in the AOSP codebase, optionally filtered by keyword.
 
 ```
 list_repos(query="frameworks")
@@ -125,24 +126,24 @@ list_repos(query="frameworks")
 
 ### get_file_content
 
-读取 AOSP 代码文件的完整内容或指定行范围。先用 `search_file` 找到文件的 `repo` 和 `filepath`，再用此工具读取。
+Read the full contents of an AOSP source file or a specified line range. Use `search_file` first to locate the file's `repo` and `filepath`, then read it with this tool.
 
 ```
 get_file_content(repo="frameworks/base", filepath="core/java/android/os/Process.java", start_line=100, end_line=200)
 ```
 
-## MCP 资源
+## MCP Resources
 
-支持 `aosp://` 资源 URI，可直接通过 MCP Resources 协议读取 AOSP 源码文件：
+The `aosp://` resource URI is supported and can be read directly through the MCP Resources protocol:
 
 ```
 aosp://{repo}/{filepath}
 ```
 
-示例：
+Example:
 
 ```
 aosp://frameworks/base/core/java/android/os/Process.java
 ```
 
-URI 模板已通过 `list_resource_templates` 声明，AI 工具可自动发现。
+The URI template is advertised via `list_resource_templates`, so AI tools can discover it automatically.
