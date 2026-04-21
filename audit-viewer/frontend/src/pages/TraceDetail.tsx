@@ -36,7 +36,7 @@ export default function TraceDetail() {
         <h2 className="font-semibold mb-3">Waterfall</h2>
         <div className="space-y-1">
           {data.events.map((e) => {
-            const offset = ((e.ts_ms - data.started_ms) / total) * 100;
+            const offset = ((e.ts_ms - e.duration_ms - data.started_ms) / total) * 100;
             const width = Math.max(0.5, (e.duration_ms / total) * 100);
             const label = e.tool ?? e.stage ?? e.event;
             return (
@@ -69,7 +69,7 @@ export default function TraceDetail() {
             <details key={e.id} className="border rounded p-2">
               <summary className="cursor-pointer text-sm">
                 <span className="font-mono">
-                  {new Date(e.ts_ms).toLocaleTimeString()}
+                  {new Date(e.ts_ms - e.duration_ms).toLocaleTimeString()}
                 </span>{" "}
                 · {e.event} · {e.tool ?? e.stage ?? "—"} · {e.status} ·{" "}
                 {e.duration_ms.toFixed(1)}ms

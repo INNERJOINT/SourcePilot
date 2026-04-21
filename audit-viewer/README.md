@@ -54,7 +54,7 @@ The compose service bind-mounts:
 |-------------------------------|------------------------|--------------------------------------|
 | `AUDIT_LOG_PATH`              | `audit.log`            | Source JSONL — opened read-only      |
 | `AUDIT_DB_PATH`               | `./data/audit.db`      | SQLite WAL                           |
-| `AUDIT_VIEWER_HOST`           | `127.0.0.1`            | Bind address                         |
+| `AUDIT_VIEWER_HOST`           | `0.0.0.0`              | Bind address                         |
 | `AUDIT_VIEWER_PORT`           | `9100`                 |                                      |
 | `AUDIT_VIEWER_FRONTEND_DIST`  | `./frontend/dist`      | Static files                         |
 | `RETENTION_DAYS`              | `30`                   |                                      |

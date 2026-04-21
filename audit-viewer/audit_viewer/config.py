@@ -5,7 +5,7 @@ from pathlib import Path
 AUDIT_LOG_PATH = Path(os.getenv("AUDIT_LOG_PATH", "audit.log")).resolve()
 AUDIT_DB_PATH = Path(os.getenv("AUDIT_DB_PATH", "audit.db")).resolve()
 
-AUDIT_VIEWER_HOST = os.getenv("AUDIT_VIEWER_HOST", "127.0.0.1")
+AUDIT_VIEWER_HOST = os.getenv("AUDIT_VIEWER_HOST", "0.0.0.0")
 AUDIT_VIEWER_PORT = int(os.getenv("AUDIT_VIEWER_PORT", "9100"))
 
 RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "30"))

@@ -24,8 +24,8 @@ async def trace_detail(trace_id: str, conn=Depends(get_db)):
         if not rows:
             return None
         events = [row_to_dict(r) for r in rows]
-        started = events[0]["ts_ms"]
-        ended = max(e["ts_ms"] + e["duration_ms"] for e in events)
+        started = min(e["ts_ms"] - e["duration_ms"] for e in events)
+        ended = max(e["ts_ms"] for e in events)
         has_error = any(e["status"] != "ok" for e in events)
         return {
             "trace_id": trace_id,
