@@ -34,14 +34,47 @@ The services share nothing but HTTP and the audit log. Each can be run, tested, 
 
 **Request flow** (MCP path): tool call → `mcp-server/entry/handlers.py` → httpx → `src/app.py` → `gateway.search()` → classify → (Zoekt ‖ Dense) → RRF fusion → rerank → JSON.
 
+## Prerequisites
+
+| Dependency | Purpose | Check |
+|---|---|---|
+| Python 3 virtualenv | Runtime for SourcePilot, MCP, audit-viewer | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
+| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `zoekt-deploy/` |
+| Node.js + npm | Build audit-viewer frontend (optional) | `node --version` |
+| curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
+
+Optional (for dense/semantic search): Milvus vector DB + embedding service. See `.env.example` for `DENSE_*` variables.
+
 ## Quick start
 
+**1. Clone and configure environment**
+
 ```bash
-cp .env.example .env          # edit ZOEKT_URL, ZOEKT_INDEX_PATH, NL_MODEL, etc.
-scripts/run_all.sh            # zoekt + SourcePilot + MCP + audit-viewer
+cp .env.example .env
 ```
 
-Targeted launches:
+Edit `.env` — at minimum set:
+- `ZOEKT_INDEX_PATH` — path to your local Zoekt index directory
+- `NL_API_KEY` — API key for the NL rewrite model (if `NL_ENABLED=true`)
+
+**2. Start all services**
+
+```bash
+scripts/run_all.sh
+```
+
+This launches (in order): zoekt-webserver → SourcePilot (port 9000) → MCP Server (port 8888) → audit-viewer (port 9100). Press `Ctrl+C` to stop all.
+
+**3. Verify**
+
+```bash
+curl http://localhost:9000/api/health          # SourcePilot health check
+curl -X POST http://localhost:9000/api/search \
+  -H "content-type: application/json" \
+  -d '{"query":"binder_open","top_k":3}'       # test search
+```
+
+**Targeted launches** (start individual services):
 
 ```bash
 scripts/run_sourcepilot.sh                                   # SourcePilot alone
@@ -50,6 +83,23 @@ SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh     # MCP against exter
 scripts/run_mcp.sh --transport streamable-http --port 8888   # MCP Streamable HTTP
 scripts/run_audit_viewer.sh                                  # audit-viewer alone
 ```
+
+## Scripts reference
+
+> For detailed flags and environment variables, see [CLAUDE.md](CLAUDE.md).
+
+| Category | Script | Purpose |
+|---|---|---|
+| **Runtime** | `run_all.sh` | One-command full stack (Zoekt + SourcePilot + MCP + audit-viewer) |
+| | `run_sourcepilot.sh` | Start SourcePilot HTTP API (port 9000) |
+| | `run_mcp.sh` | Start MCP Server (stdio or Streamable HTTP) |
+| | `run_audit_viewer.sh` | Start audit-viewer FastAPI + React SPA (port 9100) |
+| | `_env.sh` | Shared `.env` loader, sourced by all `run_*.sh` scripts |
+| **Indexing** | `reindex.sh` | Trigger Zoekt index rebuild via Docker |
+| | `build_dense_index.py` | Build Milvus vector index from local source files |
+| **Testing & Evaluation** | `smoke_queries.sh` | End-to-end smoke test with audit verification |
+| | `test_dense.sh` | Verify dense search pipeline is triggered |
+| | `eval_hybrid.py` | A/B comparison: hybrid (Zoekt+Dense) vs pure Zoekt |
 
 ## HTTP API (SourcePilot, port 9000)
 
@@ -101,6 +151,8 @@ PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v \
 ```
 
 Tests use `respx` to mock Zoekt — no live backend required.
+
+For full testing documentation, see [docs/testing/README.md](docs/testing/README.md).
 
 ## Environment
 
