@@ -7,6 +7,9 @@
 # 新数据追加到已有 Milvus collection，不影响已索引的仓库。
 set -uo pipefail  # 注意：不使用 -e，单个 repo 失败时继续处理其余 repo
 
+# shellcheck source=./_indexing_lib.sh
+source "$(dirname "$0")/_indexing_lib.sh"
+
 AOSP_ROOT="${AOSP_ROOT:-/mnt/code/ACE}"
 SKIP_EXISTING=false
 BUILD_SCRIPT="$(cd "$(dirname "$0")/../dense-deploy" && pwd)/scripts/build_index.sh"
@@ -65,10 +68,21 @@ for entry in "${REPOS[@]}"; do
     fi
 
     echo "===== INDEX  $repo_name ====="
-    if "$BUILD_SCRIPT" --source-dir "$source_dir" --repo-name "$repo_name"; then
+    start_indexing_job "$repo_name" dense
+    job_exit=0
+    if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
+        echo "DRY_RUN  $repo_name (skipping docker)"
+    elif "$BUILD_SCRIPT" --source-dir "$source_dir" --repo-name "$repo_name" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"; then
+        : # success — handled below
+    else
+        job_exit=$?
+    fi
+    if [[ $job_exit -eq 0 ]]; then
+        finish_indexing_job success 0
         ((SUCCEEDED++))
         echo "DONE  $repo_name"
     else
+        finish_indexing_job fail $job_exit
         ((FAILED++))
         echo "FAIL  $repo_name"
     fi

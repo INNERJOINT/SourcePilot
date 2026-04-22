@@ -104,3 +104,73 @@ mcp-server/                       # MCP Access Layer — Protocol Proxy
 - Key env vars: ZOEKT_URL, SOURCEPILOT_URL (default http://localhost:9000), MCP_AUTH_TOKEN
 - Tests use `respx` to mock HTTP responses -- no real Zoekt server needed
 - The project language is primarily Chinese (comments, docs, error messages, NL pipeline)
+
+## Indexing Admin (audit-viewer extension)
+
+Embedded in `audit-viewer/` (port 9100, `/repos` route). Manages AOSP indexing jobs for three backends.
+
+### Two separate databases — DO NOT conflate
+
+| DB file | Purpose | Writer |
+|---|---|---|
+| `audit-viewer/data/audit.db` | Audit log mirror (existing) | `audit_viewer.ingester` tails `audit.log` |
+| `audit-viewer/data/indexing.db` | Indexing job metadata (new) | **Only** FastAPI process via HTTP callbacks |
+
+`audit.db` is never written by the indexing subsystem. `indexing.db` is never read by the audit ingester.
+
+### Script hooks
+
+All three wrapper scripts call `python -m audit_viewer.indexing_cli` at job boundaries:
+
+```bash
+# Pattern in each wrapper script:
+JOB_ID=$(python -m audit_viewer.indexing_cli start \
+  --repo-path "$REPO" --backend "$BACKEND" --log-path "$LOG" \
+  --internal-token "$INDEXING_INTERNAL_TOKEN")
+trap 'python -m audit_viewer.indexing_cli finish --job-id "$JOB_ID" \
+  --status fail --exit-code $? --internal-token "$INDEXING_INTERNAL_TOKEN"' EXIT
+# ... run indexer ...
+python -m audit_viewer.indexing_cli finish --job-id "$JOB_ID" --status success --exit-code 0 \
+  --internal-token "$INDEXING_INTERNAL_TOKEN"
+trap - EXIT
+```
+
+The CLI uses HTTP (`POST /api/indexing/jobs/internal-start` and `POST /api/indexing/jobs/{id}/finish`)
+authenticated with `X-Indexing-Internal-Token`. SQLite is **never written directly** by the CLI.
+
+### Internal token
+
+Set `INDEXING_INTERNAL_TOKEN` in `.env` (same value used by wrapper scripts and audit-viewer):
+
+```bash
+INDEXING_INTERNAL_TOKEN=change-me-to-random-token
+```
+
+### Backend SDK isolation
+
+`pymilvus` and `neo4j-driver` are **not** installed in audit-viewer's Python env.
+Heavy operations (hard-delete, entity-count) run inside indexer containers:
+
+```bash
+docker compose --profile indexer run --rm dense-indexer python -m scripts.dense_drop REPO
+docker compose --profile indexer run --rm graph-indexer python -m scripts.graph_drop REPO
+```
+
+### Commands
+
+```bash
+# Start audit-viewer (includes indexing admin)
+scripts/run_audit_viewer.sh
+
+# Run audit-viewer tests (includes indexing DB + API + e2e)
+cd audit-viewer && PYTHONPATH=. pytest tests/ -v
+
+# Verify no heavy deps in viewer venv
+cd audit-viewer && PYTHONPATH=. pytest tests/test_no_heavy_deps.py -v
+
+# Syntax-check wrapper scripts
+bash -n scripts/build_dense_index_batch.sh scripts/build_graph_index.sh scripts/reindex.sh
+
+# Dry-run a script (only fires CLI hooks, no docker)
+INDEXING_DRY_RUN=1 bash scripts/build_graph_index.sh frameworks/base
+```

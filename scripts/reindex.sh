@@ -12,6 +12,9 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 cd "$DIR"
 
+# shellcheck source=./_indexing_lib.sh
+source "$(dirname "$0")/_indexing_lib.sh"
+
 # 加载 .env 配置（如果存在）
 if [ -f "$DIR/.env" ]; then
     source "$DIR/scripts/_env.sh"
@@ -25,5 +28,19 @@ if [ ! -d "$REPO_PATH" ]; then
 fi
 
 echo "开始索引重建 (repo: $REPO_PATH)..." >&2
-docker compose run --rm zoekt-indexserver
+start_indexing_job "$REPO_PATH" zoekt
+
+if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
+    echo "[reindex] DRY_RUN — skipping docker compose"
+    trap - EXIT
+    finish_indexing_job success 0
+    echo "索引重建完成(dry-run): $(date)" >&2
+    exit 0
+fi
+
+docker compose run --rm zoekt-indexserver 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
+_reindex_exit=${PIPESTATUS[0]}
+trap - EXIT
+finish_indexing_job "$([ "$_reindex_exit" -eq 0 ] && echo success || echo fail)" "$_reindex_exit"
 echo "索引重建完成: $(date)" >&2
+exit "$_reindex_exit"
