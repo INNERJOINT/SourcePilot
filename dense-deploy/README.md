@@ -13,12 +13,37 @@ docker compose up -d
 # 2. Check service health
 ./scripts/healthcheck.sh
 
-# 3. Build the vector index (requires a running Zoekt service)
-ZOEKT_URL=http://localhost:6070 ./scripts/build_index.sh --repos frameworks/base
+# 3. Build the vector index — runs inside the containerized dense-indexer
+#    (requires AOSP_SOURCE_ROOT in the project root .env — default /mnt/code/ACE)
+./scripts/build_index.sh \
+    --source-dir /mnt/code/ACE/frameworks/base \
+    --repo-name frameworks/base
 
 # 4. Enable the dense backend in SourcePilot
 export DENSE_ENABLED=true
 ```
+
+## 容器内索引（Containerized Indexing）
+
+自 2026-04 起，`build_dense_index.py` 不再直接跑在宿主机；`./scripts/build_index.sh`
+已改写为 `docker compose --profile indexer run --rm dense-indexer` 的薄包装层，
+自动把 `--source-dir <host path>` 翻译为容器内 `/src/<subpath>`。
+
+```bash
+# 一次性构建（默认 profile 不会拉起 indexer）
+cd dense-deploy
+AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_index.sh \
+    --source-dir /mnt/code/ACE/frameworks/base \
+    --repo-name frameworks/base \
+    --batch-size 32
+
+# 或直接调用 compose（需把路径手动写成容器内路径 /src/...）
+docker compose --profile indexer run --rm dense-indexer \
+    --source-dir /src/frameworks/base --repo-name frameworks/base
+```
+
+约束：`--source-dir` 必须落在 `$AOSP_SOURCE_ROOT` 下，否则 wrapper 会报错退出
+（避免静默索引空内容）。宿主机上无需再安装 `pymilvus`。
 
 ## Service Components
 
@@ -56,7 +81,9 @@ echo "model=new-model dim=1024" > MODEL_VERSION
 docker compose build embedding-server
 docker compose up -d embedding-server
 # 4. Drop the old collection and rebuild the index
-./scripts/build_index.sh --repos frameworks/base
+./scripts/build_index.sh \
+    --source-dir /mnt/code/ACE/frameworks/base \
+    --repo-name frameworks/base
 ```
 
 ## GPU Support

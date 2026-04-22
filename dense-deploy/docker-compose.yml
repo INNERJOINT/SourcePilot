@@ -89,6 +89,28 @@ services:
     networks:
       - sourcepilot-net
 
+  dense-indexer:
+    build:
+      context: ..
+      dockerfile: dense-deploy/indexer/Dockerfile
+    profiles: ["indexer"]
+    restart: "no"
+    depends_on:
+      milvus:
+        condition: service_healthy
+      embedding-server:
+        condition: service_healthy
+    environment:
+      DENSE_VECTOR_DB_URL: http://milvus:19530
+      DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
+      DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
+      DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
+      DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
+    volumes:
+      - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
+    networks:
+      - sourcepilot-net
+
 volumes:
   etcd_data:
     external: true

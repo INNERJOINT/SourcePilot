@@ -1,0 +1,50 @@
+# Repo-root .dockerignore — keep indexer build contexts slim
+# The build context for dense/graph indexers is the repo root (..).
+# Exclude everything that is not scripts/ or src/ to avoid bloating images
+# or accidentally pulling AOSP source symlinks placed at the repo root.
+
+.git/
+.gitignore
+.github/
+
+# Secrets and env files
+.env
+.env.*
+*.key
+*.pem
+
+# Python / editor caches
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.vscode/
+.idea/
+
+# Audit artefacts and local runtime state
+audit.log
+audit-viewer/
+*.log
+.omc/
+
+# Other services that the indexers do not need
+mcp-server/
+tests/
+
+# Deploy stack working data (compose volumes)
+dense-deploy/data/
+graph-deploy/data/
+
+# Docs that waste context
+*.md
+!src/**/*.md
+
+# Large binary / archive files
+*.tar
+*.tar.gz
+*.zip
+*.whl

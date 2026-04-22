@@ -49,11 +49,28 @@ NEO4J_PASSWORD=sourcepilot
 
 ## 构建图谱索引
 
+自 2026-04 起，索引构建通过容器化的 `graph-indexer` service（同 compose 的 `indexer` profile）完成：
+
 ```bash
-# 在 Neo4j 启动并健康后，运行索引脚本
+# 前置：neo4j 健康；AOSP 源码通过 $AOSP_SOURCE_ROOT 挂入容器 /src
 cd /mnt/code/T2/Dify
-PYTHONPATH=src python scripts/build_graph_index.py --repos frameworks/base
+AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_graph_index.sh \
+    --source-root /mnt/code/ACE/frameworks/base \
+    --languages java,cpp,python \
+    --max-files 500
 ```
+
+wrapper 会把宿主机路径翻译为 `/src/<subpath>` 后调用：
+
+```bash
+docker compose -f graph-deploy/docker-compose.yml --profile indexer \
+    run --rm graph-indexer \
+    --source-root /src/frameworks/base \
+    --languages java
+```
+
+默认情况下 `docker compose up -d` 只启动 `neo4j`；`indexer` profile 是按需触发的一次性 Job，跑完即退出。
+宿主机上不再需要安装 `neo4j` / `tree-sitter-*`。
 
 ## 备份
 
@@ -72,7 +89,9 @@ docker compose down -v
 docker compose up -d
 
 # 3. 等待健康检查通过后重新索引
-PYTHONPATH=src python scripts/build_graph_index.py --repos frameworks/base
+cd /mnt/code/T2/Dify
+AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_graph_index.sh \
+    --source-root /mnt/code/ACE/frameworks/base --languages java,cpp,python
 ```
 
 ## APOC 插件

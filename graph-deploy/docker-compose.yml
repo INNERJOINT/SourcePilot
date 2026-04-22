@@ -25,6 +25,22 @@ services:
       retries: 5
       start_period: 40s
 
+  graph-indexer:
+    build:
+      context: ..
+      dockerfile: graph-deploy/indexer/Dockerfile
+    profiles: ["indexer"]
+    restart: "no"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      GRAPH_NEO4J_URI: bolt://neo4j:7687
+      GRAPH_NEO4J_USER: ${GRAPH_NEO4J_USER:-neo4j}
+      GRAPH_NEO4J_PASSWORD: ${GRAPH_NEO4J_PASSWORD:-sourcepilot}
+    volumes:
+      - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
+
 volumes:
   neo4j_data:
   neo4j_logs:
