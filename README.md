@@ -39,7 +39,7 @@ The services share nothing but HTTP and the audit log. Each can be run, tested, 
 | Dependency | Purpose | Check |
 |---|---|---|
 | Python 3 virtualenv | Runtime for SourcePilot, MCP, audit-viewer | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
-| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `zoekt-deploy/` |
+| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/zoekt/` |
 | Node.js + npm | Build audit-viewer frontend (optional) | `node --version` |
 | curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
 
@@ -130,8 +130,7 @@ mcp-server/                    MCP Access Layer
 
 audit-viewer/                  FastAPI + React SPA (see audit-viewer/README.md)
 
-dense-deploy/                  Milvus + embedding service compose
-zoekt-deploy/                  Zoekt webserver + indexserver compose
+deploy/                        Merged Milvus + Neo4j + Zoekt + indexer compose
 scripts/                       Orchestration, smoke tests, index build, A/B eval
 tests/                         unit / integration / e2e
 ```

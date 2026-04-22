@@ -1,6 +1,7 @@
 """Dense (Milvus) backend integrator.
 
-NO pymilvus import here — heavy ops run inside the dense-indexer container.
+NO pymilvus import here — heavy ops run inside the dense-indexer container
+(see deploy/dense/indexer/Dockerfile).
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from typing import Optional
 
 from .base import IndexingBackend, BackendError
 
-_COMPOSE_FILE = "dense-deploy/docker-compose.yml"
+_COMPOSE_FILE = "deploy/docker-compose.yml"
 _SERVICE = "dense-indexer"
 
 

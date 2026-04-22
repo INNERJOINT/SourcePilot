@@ -2,7 +2,7 @@
 # 向量索引构建 — 通过 docker compose 调起 dense-indexer 容器
 #
 # 用法:
-#   ./dense-deploy/scripts/build_index.sh \
+#   ./deploy/dense/scripts/build_index.sh \
 #       --source-dir /mnt/code/ACE/frameworks/base \
 #       --repo-name frameworks/base \
 #       [--batch-size 32] [其他 build_dense_index.py 参数]
@@ -17,10 +17,11 @@
 #   - .env 中设置了 AOSP_SOURCE_ROOT（或使用默认 /mnt/code/ACE）。
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$0")/.." && pwd)
-PROJ_ROOT=$(cd "$DIR/.." && pwd)
+DIR=$(cd "$(dirname "$0")/.." && pwd)             # deploy/dense
+PROJ_ROOT=$(cd "$DIR/../.." && pwd)                # repo root
+COMPOSE_FILE="$PROJ_ROOT/deploy/docker-compose.yml"
 
-# 加载 .env（项目根优先，dense-deploy 覆盖）
+# 加载 .env（项目根优先，deploy/dense 覆盖）
 for envfile in "$PROJ_ROOT/.env" "$DIR/.env"; do
     if [ -f "$envfile" ]; then
         set -a
@@ -86,6 +87,6 @@ done
 echo "[dense-indexer] AOSP_SOURCE_ROOT=$AOSP_SOURCE_ROOT  ARGS=${ARGS[*]:-<none>}"
 
 exec docker compose \
-    -f "$DIR/docker-compose.yml" \
+    -f "$COMPOSE_FILE" \
     --profile indexer \
     run --rm dense-indexer "${ARGS[@]}"

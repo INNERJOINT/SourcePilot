@@ -119,10 +119,10 @@ if [ "$GRAPH_ENABLED" = "true" ]; then
         echo "检测到 Neo4j 已在运行 (port $NEO4J_PORT)，跳过启动" >&2
     else
         echo "启动 Neo4j (docker compose)..." >&2
-        docker compose -f "$DIR/../graph-deploy/docker-compose.yml" up -d
+        docker compose -f "$DIR/../deploy/docker-compose.yml" up -d neo4j
         # 等待 Neo4j 就绪
         for i in $(seq 1 $MAX_RETRIES); do
-            if docker compose -f "$DIR/../graph-deploy/docker-compose.yml" exec -T neo4j \
+            if docker compose -f "$DIR/../deploy/docker-compose.yml" exec -T neo4j \
                 cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" 'RETURN 1' >/dev/null 2>&1; then
                 echo "Neo4j 就绪" >&2
                 break

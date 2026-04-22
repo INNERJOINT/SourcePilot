@@ -36,8 +36,8 @@ mcp-server/
 tests/
 
 # Deploy stack working data (compose volumes)
-dense-deploy/data/
-graph-deploy/data/
+deploy/dense/data/
+deploy/graph/data/
 
 # Docs that waste context
 *.md

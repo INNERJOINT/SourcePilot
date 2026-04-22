@@ -1,5 +1,5 @@
 # Dense indexer — one-shot container that runs scripts/build_dense_index.py
-# Build context is the repository root (see dense-deploy/docker-compose.yml).
+# Build context is the repository root (see deploy/docker-compose.yml).
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

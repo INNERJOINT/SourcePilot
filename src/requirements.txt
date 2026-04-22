@@ -1,5 +1,5 @@
 # Versions tracked in /pyproject.toml [project.optional-dependencies.sourcepilot].
-# Kept as a flat list for Dockerfile compatibility (dense-deploy/indexer copies this file).
+# Kept as a flat list for Dockerfile compatibility (deploy/dense/indexer copies this file).
 uvicorn[standard]>=0.27
 httpx>=0.27
 starlette>=0.37

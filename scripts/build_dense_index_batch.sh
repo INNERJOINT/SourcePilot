@@ -12,7 +12,7 @@ source "$(dirname "$0")/_indexing_lib.sh"
 
 AOSP_ROOT="${AOSP_ROOT:-/mnt/code/ACE}"
 SKIP_EXISTING=false
-BUILD_SCRIPT="$(cd "$(dirname "$0")/../dense-deploy" && pwd)/scripts/build_index.sh"
+BUILD_SCRIPT="$(cd "$(dirname "$0")/../deploy/dense" && pwd)/scripts/build_index.sh"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

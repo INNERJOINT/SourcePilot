@@ -12,7 +12,8 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/.." && pwd)           # 项目根
-GRAPH_DIR="$DIR/graph-deploy"
+GRAPH_DIR="$DIR/deploy/graph"
+COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
@@ -99,7 +100,7 @@ if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
 fi
 
 docker compose \
-    -f "$GRAPH_DIR/docker-compose.yml" \
+    -f "$COMPOSE_FILE" \
     --profile indexer \
     run --rm graph-indexer "${ARGS[@]}" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
 _graph_exit=${PIPESTATUS[0]}

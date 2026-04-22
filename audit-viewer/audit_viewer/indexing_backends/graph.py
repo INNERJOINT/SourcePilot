@@ -1,6 +1,7 @@
 """Graph (Neo4j) backend integrator.
 
-NO neo4j driver import here — heavy ops run inside the graph-indexer container.
+NO neo4j driver import here — heavy ops run inside the graph-indexer container
+(see deploy/graph/indexer/Dockerfile).
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from typing import Optional
 
 from .base import IndexingBackend, BackendError
 
-_COMPOSE_FILE = "graph-deploy/docker-compose.yml"
+_COMPOSE_FILE = "deploy/docker-compose.yml"
 _SERVICE = "graph-indexer"
 
 
