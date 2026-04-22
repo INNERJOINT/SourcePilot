@@ -105,6 +105,37 @@ if [ "$ZOEKT_DOCKER" = false ]; then
     done
 fi
 
+# ── 1b. 启动 Neo4j（可选，GRAPH_ENABLED=true 时生效）─────
+GRAPH_ENABLED="${GRAPH_ENABLED:-false}"
+NEO4J_BOLT_HOST="${GRAPH_NEO4J_URI:-bolt://localhost:7687}"
+# 从 URI 中提取端口（默认 7687）
+NEO4J_PORT=$(echo "$NEO4J_BOLT_HOST" | grep -oP ':\K[0-9]+$' || echo "7687")
+NEO4J_USER="${GRAPH_NEO4J_USER:-neo4j}"
+NEO4J_PASS="${GRAPH_NEO4J_PASSWORD:-sourcepilot}"
+
+if [ "$GRAPH_ENABLED" = "true" ]; then
+    # 检查 Neo4j Bolt 端口是否已就绪
+    if nc -z localhost "$NEO4J_PORT" 2>/dev/null; then
+        echo "检测到 Neo4j 已在运行 (port $NEO4J_PORT)，跳过启动" >&2
+    else
+        echo "启动 Neo4j (docker compose)..." >&2
+        docker compose -f "$DIR/../graph-deploy/docker-compose.yml" up -d
+        # 等待 Neo4j 就绪
+        for i in $(seq 1 $MAX_RETRIES); do
+            if docker compose -f "$DIR/../graph-deploy/docker-compose.yml" exec -T neo4j \
+                cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASS" 'RETURN 1' >/dev/null 2>&1; then
+                echo "Neo4j 就绪" >&2
+                break
+            fi
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+                echo "Warning: Neo4j 启动超时 (${MAX_RETRIES}s)，图谱检索可能不可用" >&2
+                break
+            fi
+            sleep 1
+        done
+    fi
+fi
+
 # ── 2. 启动 SourcePilot ──────────────────────────────
 echo "启动 SourcePilot (port 9000)..." >&2
 "$DIR/run_sourcepilot.sh" &
@@ -202,6 +233,9 @@ if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
     else
         echo "    audit-viewer     (启动失败/超时)" >&2
     fi
+fi
+if [ "$GRAPH_ENABLED" = "true" ]; then
+    echo "    Neo4j            (bolt://localhost:${NEO4J_PORT})" >&2
 fi
 echo "" >&2
 echo "  按 Ctrl+C 停止所有服务" >&2

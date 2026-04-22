@@ -16,7 +16,7 @@ from gateway.nl.classifier import classify_query
 from gateway.nl.rewriter import rewrite_query
 from gateway.fusion import rrf_merge
 from gateway.ranker import feature_rerank
-from gateway.converters import dense_result_to_dict
+from gateway.converters import dense_result_to_dict, graph_result_to_dict
 from observability.audit import audit_stage
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Default adapter instances
 _default_adapter = ZoektAdapter(zoekt_url=ZOEKT_URL)
 _dense_adapter = None
+_graph_adapter = None
 
 
 def _get_dense_adapter():
@@ -43,6 +44,18 @@ def _get_dense_adapter():
         )
         logger.info("Dense adapter initialized: %s", config.DENSE_VECTOR_DB_URL)
     return _dense_adapter
+
+
+def _get_graph_adapter():
+    """Lazy-init graph adapter when GRAPH_ENABLED=true。"""
+    global _graph_adapter
+    if not config.GRAPH_ENABLED:
+        return None
+    if _graph_adapter is None:
+        from adapters.graph import GraphAdapter
+        _graph_adapter = GraphAdapter()
+        logger.info("Graph adapter initialized")
+    return _graph_adapter
 
 
 # ─── Internal helpers ────────────────────────────────────
@@ -159,42 +172,57 @@ async def _nl_search(
     if has_dense:
         tasks.append(_dense_search_with_audit(query, repos=repos))
 
+    # 2c. Graph 通道：原始 NL query → 图谱关系搜索
+    graph = _get_graph_adapter()
+    has_graph = graph is not None
+    if has_graph:
+        tasks.append(_graph_search_with_audit(query, repos=repos))
+
     zoekt_route_count = len(rewrite_results)
+    lane_idx = _assemble_lane_indices(zoekt_route_count, has_dense, has_graph)
 
     # 3. 并行执行所有任务
     async with audit_stage("nl_parallel_search", {
         "query": query,
         "zoekt_route_count": zoekt_route_count,
         "dense_enabled": has_dense,
+        "graph_enabled": has_graph,
         "queries": [r["query"] for r in rewrite_results],
     }) as stg:
         all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 4. 分离 Zoekt 和 Dense 结果
+        # 4. 分离 Zoekt、Dense 和 Graph 结果
         zoekt_results_raw = all_results[:zoekt_route_count]
         valid_zoekt = [r for r in zoekt_results_raw if isinstance(r, list)]
         failed_zoekt = [r for r in zoekt_results_raw if isinstance(r, Exception)]
 
         dense_results = []
-        if has_dense and zoekt_route_count < len(all_results):
-            raw_dense = all_results[zoekt_route_count]
+        if lane_idx["dense"] is not None:
+            raw_dense = all_results[lane_idx["dense"]]
             if isinstance(raw_dense, list):
                 dense_results = [dense_result_to_dict(h) for h in raw_dense]
+
+        graph_results = []
+        if lane_idx["graph"] is not None:
+            raw_graph = all_results[lane_idx["graph"]]
+            if isinstance(raw_graph, list):
+                graph_results = [graph_result_to_dict(h) for h in raw_graph]
 
         stg.set_result({
             "zoekt_routes_succeeded": len(valid_zoekt),
             "zoekt_routes_failed": len(failed_zoekt),
             "dense_results": len(dense_results),
+            "graph_results": len(graph_results),
             "per_route_counts": [len(r) for r in valid_zoekt],
             "errors": [str(e) for e in failed_zoekt][:3],
         })
 
     logger.info(
-        "NL multi-query: %d/%d zoekt routes succeeded, %d dense results",
-        len(valid_zoekt), len(zoekt_results_raw), len(dense_results),
+        "NL multi-query: %d/%d zoekt routes succeeded, %d dense results, %d graph results",
+        len(valid_zoekt), len(zoekt_results_raw), len(dense_results), len(graph_results),
     )
 
-    if not valid_zoekt and not dense_results:
+    if not valid_zoekt and not dense_results and not graph_results:
         # 所有路都失败时，降级
         async with audit_stage("fallback_search", {"query": query, "reason": "all_routes_failed"}) as stg:
             records = await _default_adapter.search_zoekt(
@@ -206,8 +234,8 @@ async def _nl_search(
             stg.set_result_count(len(records))
         return records
 
-    # 5. RRF 融合（Zoekt 多路 + Dense 一路）
-    all_lists = valid_zoekt + ([dense_results] if dense_results else [])
+    # 5. RRF 融合（Zoekt 多路 + Dense 一路 + Graph 一路）
+    all_lists = valid_zoekt + ([dense_results] if dense_results else []) + ([graph_results] if graph_results else [])
     async with audit_stage("rrf_merge", {
         "input_lists": len(all_lists),
         "input_total": sum(len(r) for r in all_lists),
@@ -257,6 +285,40 @@ async def _dense_search_with_audit(query: str, repos: str | None = None) -> list
             logger.warning("Dense search failed, degrading to pure Zoekt: %s", e)
             stg.set_result({"error": str(e), "degraded": True})
             return []
+
+
+async def _graph_search_with_audit(query: str, repos: str | None = None) -> list[dict]:
+    """Graph 通道搜索，带 audit 和降级。"""
+    async with audit_stage("graph_search", {"query": query}) as stg:
+        try:
+            graph = _get_graph_adapter()
+            results = await asyncio.wait_for(
+                graph.search_by_graph(query, top_k=config.DENSE_TOP_K, repos=repos),
+                timeout=config.GRAPH_LANE_TIMEOUT_MS / 1000.0,
+            )
+            stg.set_result({"records_count": len(results), "records": results})
+            stg.set_result_count(len(results))
+            return results
+        except Exception as e:
+            logger.warning("Graph search failed, degrading: %s", e)
+            stg.set_result({"error": str(e), "degraded": True})
+            return []
+
+
+def _assemble_lane_indices(
+    zoekt_route_count: int, has_dense: bool, has_graph: bool
+) -> dict[str, int | None]:
+    """计算各 lane 在 asyncio.gather 结果列表中的索引。"""
+    idx = zoekt_route_count
+    dense_idx = None
+    graph_idx = None
+    if has_dense:
+        dense_idx = idx
+        idx += 1
+    if has_graph:
+        graph_idx = idx
+        idx += 1
+    return {"dense": dense_idx, "graph": graph_idx}
 
 
 async def search_symbol(

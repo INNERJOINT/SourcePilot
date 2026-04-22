@@ -1,0 +1,21 @@
+{"_meta":"GraphRAG eval set v1 — 20 queries spanning >=5 packages in frameworks/base. Categories: symbol(具体符号/方法), concept(语义概念), relationship(调用/继承关系). Expected paths are ground-truth files known to exist in AOSP frameworks/base. 包路径多样性: core/java, services/core, media/java, telecomm/java, wifi/java, graphics (>=5 4段前缀).","_count":20}
+{"id":"q01","query":"startActivity intent launching","expected_paths":["frameworks/base/core/java/android/app/Activity.java","frameworks/base/core/java/android/app/ActivityManager.java"],"category":"symbol","notes":"核心 Activity 启动方法"}
+{"id":"q02","query":"ContentResolver query uri","expected_paths":["frameworks/base/core/java/android/content/ContentResolver.java","frameworks/base/core/java/android/content/ContentProvider.java"],"category":"symbol","notes":"Content provider 查询接口"}
+{"id":"q03","query":"View onDraw canvas","expected_paths":["frameworks/base/core/java/android/view/View.java"],"category":"symbol","notes":"View 绘制回调"}
+{"id":"q04","query":"SystemServer startBootstrapServices","expected_paths":["frameworks/base/services/core/java/com/android/server/SystemServer.java"],"category":"symbol","notes":"系统服务启动入口"}
+{"id":"q05","query":"MediaPlayer prepare setDataSource","expected_paths":["frameworks/base/media/java/android/media/MediaPlayer.java"],"category":"symbol","notes":"媒体播放器初始化"}
+{"id":"q06","query":"Activity lifecycle onCreate onResume onPause","expected_paths":["frameworks/base/core/java/android/app/Activity.java"],"category":"concept","notes":"Activity 生命周期完整流程"}
+{"id":"q07","query":"BroadcastReceiver register unregister intent filter","expected_paths":["frameworks/base/core/java/android/content/BroadcastReceiver.java","frameworks/base/core/java/android/content/Context.java"],"category":"concept","notes":"广播注册机制"}
+{"id":"q08","query":"ViewGroup addView layout children","expected_paths":["frameworks/base/core/java/android/view/ViewGroup.java"],"category":"concept","notes":"View 树结构管理"}
+{"id":"q09","query":"WindowManagerService window token","expected_paths":["frameworks/base/services/core/java/com/android/server/wm/WindowManagerService.java"],"category":"symbol","notes":"WMS 窗口令牌管理"}
+{"id":"q10","query":"AudioManager requestAudioFocus","expected_paths":["frameworks/base/media/java/android/media/AudioManager.java"],"category":"symbol","notes":"音频焦点请求"}
+{"id":"q11","query":"Intent putExtra getExtra bundle","expected_paths":["frameworks/base/core/java/android/content/Intent.java"],"category":"concept","notes":"Intent 数据传递机制"}
+{"id":"q12","query":"Looper MessageQueue Handler message dispatch","expected_paths":["frameworks/base/core/java/android/os/Looper.java","frameworks/base/core/java/android/os/Handler.java"],"category":"concept","notes":"消息循环机制"}
+{"id":"q13","query":"PackageManager resolveActivity component","expected_paths":["frameworks/base/core/java/android/content/pm/PackageManager.java"],"category":"symbol","notes":"包管理器 Activity 解析"}
+{"id":"q14","query":"Telecom InCallService connection management","expected_paths":["frameworks/base/telecomm/java/android/telecom/InCallService.java"],"category":"symbol","notes":"电话 InCallService 连接管理"}
+{"id":"q15","query":"ActivityManagerService startService","expected_paths":["frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java"],"category":"symbol","notes":"AMS 服务启动"}
+{"id":"q16","query":"WifiManager connect scan results","expected_paths":["frameworks/base/wifi/java/android/net/wifi/WifiManager.java"],"category":"concept","notes":"WiFi 连接与扫描"}
+{"id":"q17","query":"MotionEvent touch event dispatch","expected_paths":["frameworks/base/core/java/android/view/MotionEvent.java"],"category":"concept","notes":"触摸事件分发链路"}
+{"id":"q18","query":"MediaRecorder start stop audio video recording","expected_paths":["frameworks/base/media/java/android/media/MediaRecorder.java"],"category":"symbol","notes":"媒体录制流程"}
+{"id":"q19","query":"PowerManagerService wakelock acquire release","expected_paths":["frameworks/base/services/core/java/com/android/server/power/PowerManagerService.java"],"category":"symbol","notes":"电源锁管理"}
+{"id":"q20","query":"TelephonyManager getNetworkType signal strength","expected_paths":["frameworks/base/telephony/java/android/telephony/TelephonyManager.java"],"category":"concept","notes":"电话网络类型查询"}

@@ -1,6 +1,30 @@
 """Result format converters for cross-backend compatibility."""
 
 
+def graph_result_to_dict(hit: dict) -> dict:
+    """Graph 检索 hit 转换为 RRF dict 格式。
+
+    使用子文件粒度 (repo/path:start-end) 避免与 Zoekt/Dense 同文件 chunk dedup 折叠。
+    """
+    repo = hit.get("repo", "")
+    path = hit.get("path", "")
+    start = hit.get("start_line")
+    end = hit.get("end_line")
+    title = f"{repo}/{path}:{start}-{end}" if start is not None else f"{repo}/{path}"
+    return {
+        "title": title,
+        "content": hit.get("content", ""),
+        "score": hit.get("score", 0.0),
+        "metadata": {
+            "repo": repo,
+            "path": path,
+            "start_line": start,
+            "end_line": end,
+            "source": "graph",
+        },
+    }
+
+
 def dense_result_to_dict(hit: dict) -> dict:
     """将向量数据库返回的 hit 转换为与 Zoekt 相同的 dict 格式。
 

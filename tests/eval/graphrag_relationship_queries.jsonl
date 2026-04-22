@@ -1,0 +1,8 @@
+{"id":"r01","query":"what calls startActivity","expected_paths":["frameworks/base/core/java/android/app/Activity.java","frameworks/base/core/java/android/app/ActivityManager.java"],"category":"relationship","notes":"调用关系：谁调用 startActivity"}
+{"id":"r02","query":"subclasses of Service","expected_paths":["frameworks/base/core/java/android/app/Service.java"],"category":"relationship","notes":"继承关系：Service 的子类"}
+{"id":"r03","query":"where is Binder used","expected_paths":["frameworks/base/core/java/android/os/Binder.java"],"category":"relationship","notes":"使用关系：Binder 在哪里被引用"}
+{"id":"r04","query":"classes that implement Parcelable","expected_paths":["frameworks/base/core/java/android/os/Parcelable.java"],"category":"relationship","notes":"实现关系：实现 Parcelable 的类"}
+{"id":"r05","query":"what extends Fragment","expected_paths":["frameworks/base/core/java/android/app/Fragment.java"],"category":"relationship","notes":"继承关系：Fragment 的子类"}
+{"id":"r06","query":"who calls onDraw in View","expected_paths":["frameworks/base/core/java/android/view/View.java"],"category":"relationship","notes":"调用链：谁触发 onDraw"}
+{"id":"r07","query":"methods that override onCreate","expected_paths":["frameworks/base/core/java/android/app/Activity.java"],"category":"relationship","notes":"覆写关系：覆写 onCreate 的方法"}
+{"id":"r08","query":"dependencies of ActivityManagerService","expected_paths":["frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java"],"category":"relationship","notes":"依赖关系：AMS 依赖哪些组件"}

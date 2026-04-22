@@ -65,7 +65,18 @@ def _trace_from_request(request: Request) -> str:
 # ─── Endpoints ────────────────────────────────────────
 
 async def health(request: Request) -> JSONResponse:
-    return _ok({"status": "ok", "service": "sourcepilot"})
+    import config
+    backends: dict = {"zoekt": True}
+    if config.DENSE_ENABLED:
+        backends["dense"] = True
+    if config.GRAPH_ENABLED:
+        try:
+            from adapters.graph import GraphAdapter
+            adapter = GraphAdapter()
+            backends["graph"] = await adapter.health_check()
+        except Exception:
+            backends["graph"] = False
+    return _ok({"status": "ok", "service": "sourcepilot", "backends": backends})
 
 
 async def api_search(request: Request) -> JSONResponse:
