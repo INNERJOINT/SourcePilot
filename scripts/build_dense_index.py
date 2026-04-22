@@ -162,13 +162,12 @@ async def build_index(args):
 
     # 3. 批量 embedding（并发）
     logger.info("Generating embeddings (batch_size=%d, concurrency=%d) ...", args.batch_size, args.concurrency)
-    all_vectors = [None] * len(all_chunks)
+    all_vectors: list = [None] * len(all_chunks)
     texts = [c["content"] for c in all_chunks]
     sem = asyncio.Semaphore(args.concurrency)
-    failed_count = 0
+    failed_ranges: list[tuple[int, int]] = []
 
     async def embed_batch(batch_start, batch_end):
-        nonlocal failed_count
         batch = [t[:1500] for t in texts[batch_start:batch_end]]
         async with sem:
             for attempt in range(3):
@@ -179,27 +178,35 @@ async def build_index(args):
                     return
                 except Exception as e:
                     if attempt == 2:
-                        logger.error("Embedding failed at batch %d-%d after 3 retries: %s", batch_start, batch_end, e)
-                        for i in range(len(batch)):
-                            all_vectors[batch_start + i] = [0.0] * DENSE_EMBEDDING_DIM
-                        failed_count += len(batch)
-                    else:
-                        await asyncio.sleep(2 ** attempt)
+                        logger.error("Embedding failed at batch %d-%d after 3 retries: %s — skipping", batch_start, batch_end, e)
+                        failed_ranges.append((batch_start, batch_end))
+                        return
+                    await asyncio.sleep(2 ** attempt)
 
     tasks = []
     for batch_start in range(0, len(texts), args.batch_size):
         batch_end = min(batch_start + args.batch_size, len(texts))
         tasks.append(embed_batch(batch_start, batch_end))
 
-    # 分组执行并报告进度
+    # 分组执行并报告进度；return_exceptions 防止单任务异常冲掉整组
     chunk_size = 500
     for group_start in range(0, len(tasks), chunk_size):
         group = tasks[group_start:group_start + chunk_size]
-        await asyncio.gather(*group)
+        results = await asyncio.gather(*group, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.error("Unexpected exception from embed_batch: %s", r)
         done = min((group_start + chunk_size) * args.batch_size, len(texts))
-        logger.info("  embedded %d/%d chunks", done, len(texts))
+        logger.info("  embedded %d/%d chunks (failed batches so far: %d)", done, len(texts), len(failed_ranges))
 
-    logger.info("Embedding complete: %d vectors (%d failed)", len(all_vectors), failed_count)
+    failed_chunk_count = sum(e - s for s, e in failed_ranges)
+    logger.info(
+        "Embedding complete: %d/%d chunks ok, %d chunks in %d failed batches",
+        len(all_chunks) - failed_chunk_count, len(all_chunks),
+        failed_chunk_count, len(failed_ranges),
+    )
+    if failed_ranges:
+        logger.warning("Failed batch ranges (first 20): %s", failed_ranges[:20])
 
     # 4. 写入 Milvus
     logger.info("Writing to Milvus (collection=%s) ...", DENSE_COLLECTION_NAME)
@@ -231,13 +238,17 @@ async def build_index(args):
         client.create_index(collection_name=DENSE_COLLECTION_NAME, index_params=index_params)
         logger.info("Created collection '%s' with IVF_FLAT index", DENSE_COLLECTION_NAME)
 
-    # 批量插入
+    # 批量插入（跳过 embedding 失败的 chunk）
     insert_batch_size = 1000
     total_inserted = 0
+    total_skipped = 0
     for batch_start in range(0, len(all_chunks), insert_batch_size):
         batch_end = min(batch_start + insert_batch_size, len(all_chunks))
         batch_data = []
         for i in range(batch_start, batch_end):
+            if all_vectors[i] is None:
+                total_skipped += 1
+                continue
             chunk = all_chunks[i]
             batch_data.append({
                 "vector": all_vectors[i],
@@ -249,6 +260,8 @@ async def build_index(args):
                 "language": chunk["language"],
                 "content_hash": chunk["content_hash"],
             })
+        if not batch_data:
+            continue
         try:
             client.insert(collection_name=DENSE_COLLECTION_NAME, data=batch_data)
             total_inserted += len(batch_data)
@@ -262,7 +275,15 @@ async def build_index(args):
     client.flush(DENSE_COLLECTION_NAME)
     logger.info("Flushed collection")
 
-    logger.info("Index build complete: %d chunks inserted into '%s'", total_inserted, DENSE_COLLECTION_NAME)
+    logger.info(
+        "Index build complete: %d inserted, %d skipped (embedding-failed), collection='%s'",
+        total_inserted, total_skipped, DENSE_COLLECTION_NAME,
+    )
+    if failed_ranges:
+        logger.warning(
+            "Build finished with %d failed embedding batches (%d chunks). Re-run on this repo to retry.",
+            len(failed_ranges), failed_chunk_count,
+        )
 
 
 def main():
@@ -271,7 +292,7 @@ def main():
     parser.add_argument("--repo-name", default="frameworks/base", help="Repo name stored in metadata (default: frameworks/base)")
     parser.add_argument("--window-size", type=int, default=30, help="Sliding window size in lines (default: 30)")
     parser.add_argument("--overlap", type=int, default=10, help="Overlap lines (default: 10)")
-    parser.add_argument("--batch-size", type=int, default=64, help="Embedding batch size (default: 64)")
+    parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size (default: 32)")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
     args = parser.parse_args()
 

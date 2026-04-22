@@ -10,16 +10,21 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 PROJ_ROOT=$(cd "$DIR/.." && pwd)
 
-# 加载 .env（如果存在）
-if [ -f "$DIR/.env" ]; then
-    set -a
-    source "$DIR/.env"
-    set +a
-fi
+# 加载 .env（项目根优先，dense-deploy 覆盖）
+for envfile in "$PROJ_ROOT/.env" "$DIR/.env"; do
+    if [ -f "$envfile" ]; then
+        set -a
+        source "$envfile"
+        set +a
+    fi
+done
 
 # 从 compose 端口映射到 DENSE_* 环境变量
 export DENSE_VECTOR_DB_URL="${DENSE_VECTOR_DB_URL:-http://localhost:${MILVUS_PORT:-19530}}"
 export DENSE_EMBEDDING_URL="${DENSE_EMBEDDING_URL:-http://localhost:${EMBEDDING_PORT:-8080}/v1}"
+
+# 从 DENSE_EMBEDDING_URL 反推 EMBEDDING_PORT 供 healthcheck 使用
+export EMBEDDING_PORT="${EMBEDDING_PORT:-$(echo "$DENSE_EMBEDDING_URL" | sed -n 's|.*://[^:]*:\([0-9]*\).*|\1|p')}"
 export DENSE_EMBEDDING_MODEL="${DENSE_EMBEDDING_MODEL:-unixcoder-base}"
 export DENSE_EMBEDDING_DIM="${DENSE_EMBEDDING_DIM:-768}"
 export DENSE_COLLECTION_NAME="${DENSE_COLLECTION_NAME:-aosp_code}"
