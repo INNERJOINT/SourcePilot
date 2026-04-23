@@ -27,12 +27,10 @@ venv/
 
 # Audit artefacts and local runtime state
 audit.log
-sp-cockpit/
 *.log
 .omc/
 
-# Other services that the indexers do not need
-mcp-server/
+# Test files not needed in images
 tests/
 
 # Deploy stack working data (compose volumes)
