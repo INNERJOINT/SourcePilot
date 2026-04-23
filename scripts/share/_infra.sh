@@ -9,10 +9,11 @@
 #   infra_start_zoekt        — detect Docker/native zoekt, start + healthcheck
 #   infra_start_dense        — docker compose up dense stack (etcd/minio/milvus/embedding-server)
 #   infra_start_graph        — docker compose up neo4j
-#   infra_start_cockpit      — start sp-cockpit + healthcheck
+#   infra_start_sourcepilot  — docker compose up sourcepilot-gateway + healthcheck
+#   infra_start_mcp          — docker compose up mcp-server + healthcheck
+#   infra_start_cockpit      — docker compose up sp-cockpit + healthcheck
 #
 # Conventions:
-#   - Each function appends background PIDs to the caller's PIDS array (if declared).
 #   - Each function sets state variables (e.g. ZOEKT_DOCKER) in the caller's scope.
 #   - COMPOSE_FILE is the canonical docker-compose path.
 #   - MAX_RETRIES controls healthcheck timeout (default 30).
@@ -117,29 +118,58 @@ infra_start_graph() {
     done
 }
 
+# ── sourcepilot-gateway ───────────────────────────────────
+infra_start_sourcepilot() {
+    if curl -sf http://localhost:9000/api/health >/dev/null 2>&1; then
+        info "检测到 SourcePilot 已在运行 (port 9000)，跳过启动"
+        return
+    fi
+    info "启动 sourcepilot-gateway (Docker)..."
+    docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
+    for i in $(seq 1 $MAX_RETRIES); do
+        if curl -sf http://localhost:9000/api/health >/dev/null 2>&1; then
+            info "sourcepilot-gateway 就绪 (Docker)"
+            return
+        fi
+        [ "$i" -eq "$MAX_RETRIES" ] && die "sourcepilot-gateway 启动超时 (${MAX_RETRIES}s)"
+        sleep 1
+    done
+}
+
+# ── mcp-server ────────────────────────────────────────────
+infra_start_mcp() {
+    local mcp_port="${MCP_PORT:-8888}"
+    if curl -sf "http://localhost:${mcp_port}/health" >/dev/null 2>&1; then
+        info "检测到 MCP Server 已在运行 (port ${mcp_port})，跳过启动"
+        return
+    fi
+    info "启动 mcp-server (Docker)..."
+    docker compose -f "$COMPOSE_FILE" up -d mcp-server
+    for i in $(seq 1 $MAX_RETRIES); do
+        if curl -sf "http://localhost:${mcp_port}/health" >/dev/null 2>&1; then
+            info "mcp-server 就绪 (Docker)"
+            return
+        fi
+        [ "$i" -eq "$MAX_RETRIES" ] && die "mcp-server 启动超时 (${MAX_RETRIES}s)"
+        sleep 1
+    done
+}
+
 # ── sp-cockpit ────────────────────────────────────────────
 infra_start_cockpit() {
     local cockpit_port="${SP_COCKPIT_PORT:-9100}"
     local cockpit_enabled="${SP_COCKPIT_ENABLED:-true}"
-
-    if [ "$cockpit_enabled" != "true" ]; then
-        return
-    fi
-
+    if [ "$cockpit_enabled" != "true" ]; then return; fi
     if curl -sf "http://localhost:${cockpit_port}/api/health" >/dev/null 2>&1; then
         info "检测到 sp-cockpit 已在运行 (port ${cockpit_port})，跳过启动"
         SP_COCKPIT_RUNNING=true
         return
     fi
-
-    info "启动 sp-cockpit (port ${cockpit_port})..."
-    SP_COCKPIT_PORT="$cockpit_port" "$_INFRA_DIR/../../sp-cockpit/scripts/run_sp_cockpit.sh" &
-    PIDS+=($!)
-    SP_COCKPIT_PID=${PIDS[-1]}
-
+    info "启动 sp-cockpit (Docker, port ${cockpit_port})..."
+    docker compose -f "$COMPOSE_FILE" up -d sp-cockpit
     for i in $(seq 1 $MAX_RETRIES); do
         if curl -sf "http://localhost:${cockpit_port}/api/health" >/dev/null 2>&1; then
-            info "sp-cockpit 就绪 (PID $SP_COCKPIT_PID)"
+            info "sp-cockpit 就绪 (Docker)"
             SP_COCKPIT_RUNNING=true
             return
         fi

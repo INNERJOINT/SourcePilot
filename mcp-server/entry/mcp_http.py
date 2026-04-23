@@ -6,7 +6,7 @@ import logging
 import os
 
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.routing import Mount, Route
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -75,6 +75,9 @@ async def main_streamable_http(host: str, port: int):
     async def handle_mcp(scope, receive, send):
         await session_manager.handle_request(scope, receive, send)
 
+    async def health(request):
+        return JSONResponse({"status": "ok"})
+
     @contextlib.asynccontextmanager
     async def lifespan(app):
         async with session_manager.run():
@@ -84,6 +87,7 @@ async def main_streamable_http(host: str, port: int):
     app = Starlette(
         lifespan=lifespan,
         routes=[
+            Route("/health", health, methods=["GET"]),
             Mount("/mcp", app=handle_mcp),
             Mount("/mcp/", app=handle_mcp),
         ],

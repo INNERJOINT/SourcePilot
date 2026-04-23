@@ -2,13 +2,13 @@
 # ──────────────────────────────────────────────────────
 #  一键重启脚本
 #
-#  停掉占用目标端口的进程后重新启动。
+#  停掉目标容器后重新启动。
 #  用于修改 .env 后让配置生效。
 #
 #  用法：
 #    ./restart.sh                      # 重启全栈（run_all.sh）
 #    ./restart.sh --with-zoekt         # 同时重启 zoekt-webserver
-#    ./restart.sh --only sp            # 只重启 SourcePilot 进程
+#    ./restart.sh --only sp            # 只重启 SourcePilot 容器
 #    ./restart.sh --only mcp           # 只重启 MCP
 #    ./restart.sh --only av            # 只重启 sp-cockpit
 #    ./restart.sh --only sourcepilot   # 重启 SourcePilot 全栈（不含 MCP）
@@ -22,8 +22,8 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd)
 source "$DIR/share/_common.sh"
 source "$DIR/share/_env.sh"
+source "$DIR/share/_infra.sh"
 
-COMPOSE_FILE="$DIR/../deploy/docker-compose.yml"
 MCP_PORT="${MCP_PORT:-8888}"
 SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
 SP_PORT=9000
@@ -85,9 +85,11 @@ case "$ONLY" in
         exit 0
         ;;
     sourcepilot)
-        # 停止 SourcePilot 全栈相关端口（不含 MCP）
-        kill_port "$SP_PORT" "SourcePilot"
-        kill_port "$SP_COCKPIT_PORT" "sp-cockpit"
+        # 停止 SourcePilot 全栈相关容器（不含 MCP）
+        info "[SourcePilot] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
+        info "[sp-cockpit] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
         if [ "$WITH_ZOEKT" = true ]; then
             kill_port "$ZOEKT_PORT_DEFAULT" "zoekt-webserver"
         fi
@@ -100,18 +102,24 @@ case "$ONLY" in
         exec "$DIR/run_sourcepilot.sh"
         ;;
     mcp)
-        kill_port "$MCP_PORT" "MCP"
+        info "[MCP] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop mcp-server 2>/dev/null || true
         ;;
     sp)
-        kill_port "$SP_PORT" "SourcePilot"
+        info "[SourcePilot] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
         ;;
     av)
-        kill_port "$SP_COCKPIT_PORT" "sp-cockpit"
+        info "[sp-cockpit] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
         ;;
     "")
-        kill_port "$MCP_PORT" "MCP"
-        kill_port "$SP_PORT" "SourcePilot"
-        kill_port "$SP_COCKPIT_PORT" "sp-cockpit"
+        info "[MCP] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop mcp-server 2>/dev/null || true
+        info "[SourcePilot] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
+        info "[sp-cockpit] 停止容器..."
+        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
         if [ "$WITH_ZOEKT" = true ]; then
             kill_port "$ZOEKT_PORT_DEFAULT" "zoekt-webserver"
         fi
@@ -132,13 +140,13 @@ info "启动服务..."
 
 case "$ONLY" in
     sp)
-        exec "$DIR/share/_start_sourcepilot.sh"
+        docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
         ;;
     mcp)
-        exec "$DIR/run_mcp.sh"
+        exec "$DIR/run_mcp.sh" --transport streamable-http
         ;;
     av)
-        exec "$DIR/../sp-cockpit/scripts/run_sp_cockpit.sh"
+        exec "$DIR/run_sp_cockpit.sh"
         ;;
     "")
         exec "$DIR/run_all.sh"

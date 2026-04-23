@@ -84,7 +84,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    restart: unless-stopped
+    restart: on-failure:5
     logging:
       driver: json-file
       options:
@@ -115,7 +115,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-    restart: unless-stopped
+    restart: on-failure:5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── MCP Server ──────────────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: deploy/mcp/Dockerfile
+    environment:
+      SOURCEPILOT_URL: ${SOURCEPILOT_URL:-http://sourcepilot-gateway:9000}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+    ports:
+      - "${MCP_PORT:-8888}:8888"
+    depends_on:
+      sourcepilot-gateway:
+        condition: service_healthy
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure:5
     logging:
       driver: json-file
       options:
