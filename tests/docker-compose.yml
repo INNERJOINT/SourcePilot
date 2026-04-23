@@ -3,10 +3,16 @@ name: dify-test
 services:
   zoekt-indexer:
     build: ../deploy/zoekt
-    entrypoint: ["zoekt-git-index"]
-    command: ["-index", "/data/index", "/data/repo"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        apk add --no-cache git
+        cp -r /data/src /data/repo
+        cd /data/repo
+        git init && git add -A && git commit -m "test data"
+        zoekt-git-index -index /data/index /data/repo
     volumes:
-      - ./fixtures/test-repo:/data/repo:ro
+      - ./fixtures/test-repo:/data/src:ro
       - zoekt_index:/data/index
     restart: "no"
 
