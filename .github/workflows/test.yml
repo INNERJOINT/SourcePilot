@@ -81,3 +81,18 @@ jobs:
         working-directory: sp-cockpit/frontend
         run: npm run build
 
+  docker-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose -f tests/docker-compose.yml up -d --build
+
+      - name: Run Docker integration tests
+        run: bash tests/docker-test.sh
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f tests/docker-compose.yml down -v

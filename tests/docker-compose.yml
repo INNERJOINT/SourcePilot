@@ -1,0 +1,61 @@
+name: dify-test
+
+services:
+  zoekt-indexer:
+    build: ../deploy/zoekt
+    entrypoint: ["zoekt-git-index"]
+    command: ["-index", "/data/index", "/data/repo"]
+    volumes:
+      - ./fixtures/test-repo:/data/repo:ro
+      - zoekt_index:/data/index
+    restart: "no"
+
+  zoekt-webserver:
+    build: ../deploy/zoekt
+    command: ["zoekt-webserver", "-index", "/data/index"]
+    volumes:
+      - zoekt_index:/data/index:ro
+    ports:
+      - "6070:6070"
+    depends_on:
+      zoekt-indexer:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6070/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - test-net
+
+  sourcepilot-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/gateway/Dockerfile
+    environment:
+      ZOEKT_URL: http://zoekt-webserver:6070
+      NL_ENABLED: "false"
+      DENSE_ENABLED: "false"
+      GRAPH_ENABLED: "false"
+      AUDIT_ENABLED: "false"
+    ports:
+      - "9000:9000"
+    depends_on:
+      zoekt-webserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - test-net
+
+networks:
+  test-net:
+    driver: bridge
+
+volumes:
+  zoekt_index:

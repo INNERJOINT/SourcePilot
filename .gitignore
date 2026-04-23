@@ -180,5 +180,5 @@ test_mcp_endpoints_simple.sh
 /docs/_build/
 *.log
 
-# TypeScript incremental build artefacts (audit-viewer frontend)
-audit-viewer/frontend/*.tsbuildinfo
+# TypeScript incremental build artefacts (sp-cockpit frontend)
+sp-cockpit/frontend/*.tsbuildinfo

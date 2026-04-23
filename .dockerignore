@@ -27,7 +27,7 @@ venv/
 
 # Audit artefacts and local runtime state
 audit.log
-audit-viewer/
+sp-cockpit/
 *.log
 .omc/
 
