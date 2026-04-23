@@ -12,6 +12,8 @@ AOSP Code Search — a hybrid RAG code search system over Android Open Source Pr
 
 ## Build & Run
 
+Services run as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Use `scripts/` to launch — they handle `docker compose` internally.
+
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 
 ```bash
@@ -20,6 +22,14 @@ scripts/run_sourcepilot.sh      # SourcePilot only
 scripts/run_mcp.sh              # MCP (auto-starts SourcePilot)
 scripts/run_sp_cockpit.sh       # SP Cockpit only
 scripts/restart.sh              # Stop & restart (supports --only sp|mcp|av)
+```
+
+To inspect or debug running services, use Docker directly:
+
+```bash
+docker compose ps                           # List running containers
+docker compose logs -f sourcepilot-gateway  # Tail logs
+docker compose exec sourcepilot-gateway sh  # Shell into container
 ```
 
 ## Testing
