@@ -16,8 +16,8 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 PROJ_ROOT=$(cd "$DIR/.." && pwd)
 APP_DIR="$PROJ_ROOT/sp-cockpit"
 
-source "$DIR/_common.sh"
-source "$DIR/_env.sh"
+source "$DIR/share/_common.sh"
+source "$DIR/share/_env.sh"
 
 VENV_PYTHON="/opt/pyenv/versions/dify_py3_env/bin/python3"
 if [ ! -x "$VENV_PYTHON" ]; then

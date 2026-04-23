@@ -20,8 +20,8 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
-source "$DIR/_common.sh"
-source "$DIR/_env.sh"
+source "$DIR/share/_common.sh"
+source "$DIR/share/_env.sh"
 
 COMPOSE_FILE="$DIR/../deploy/docker-compose.yml"
 MCP_PORT="${MCP_PORT:-8888}"
@@ -132,7 +132,7 @@ info "启动服务..."
 
 case "$ONLY" in
     sp)
-        exec "$DIR/_start_sourcepilot.sh"
+        exec "$DIR/share/_start_sourcepilot.sh"
         ;;
     mcp)
         exec "$DIR/run_mcp.sh"

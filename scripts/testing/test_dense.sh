@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
 
 SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"

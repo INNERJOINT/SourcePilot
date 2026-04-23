@@ -9,7 +9,7 @@
 #   graphrag-audit       — GraphRAG 审计事件端到端验证
 #   indexer-containers   — 验证 dense/graph indexer 在 docker-compose.yml 中定义正确
 set -euo pipefail
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
 
 # ─── graphrag-audit ──────────────────────────────────────────────────────────

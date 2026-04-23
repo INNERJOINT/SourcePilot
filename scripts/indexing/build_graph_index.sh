@@ -11,13 +11,13 @@
 #     否则保持原样（允许用户直接给 /src/... 的容器内路径）。
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$0")/.." && pwd)           # 项目根
+DIR=$(cd "$(dirname "$0")/../.." && pwd)         # 项目根
 GRAPH_DIR="$DIR/deploy/graph"
 COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 
 for envfile in "$DIR/.env" "$GRAPH_DIR/.env"; do
     if [ -f "$envfile" ]; then

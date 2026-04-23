@@ -9,10 +9,10 @@
 #   ZOEKT_REPO_PATH=/other/repo ./scripts/reindex.sh
 
 set -euo pipefail
-DIR=$(cd "$(dirname "$0")/.." && pwd)
+DIR=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$DIR"
 
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
 
 # shellcheck source=./_indexing_lib.sh
@@ -20,7 +20,7 @@ source "$(dirname "$0")/_indexing_lib.sh"
 
 # 加载 .env 配置（如果存在）
 if [ -f "$DIR/.env" ]; then
-    source "$DIR/scripts/_env.sh"
+    source "$DIR/scripts/share/_env.sh"
 fi
 
 REPO_PATH="${ZOEKT_REPO_PATH:-/mnt/code/ACE/.repo}"

@@ -27,7 +27,7 @@ _INFRA_LIB_LOADED=1
 
 # Canonical paths
 _INFRA_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../deploy/docker-compose.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../../deploy/docker-compose.yml}"
 MAX_RETRIES="${MAX_RETRIES:-30}"
 
 # ── zoekt ─────────────────────────────────────────────────
@@ -153,7 +153,7 @@ infra_start_cockpit() {
     fi
 
     info "启动 sp-cockpit (port ${cockpit_port})..."
-    SP_COCKPIT_PORT="$cockpit_port" "$_INFRA_DIR/../sp-cockpit/scripts/run_sp_cockpit.sh" &
+    SP_COCKPIT_PORT="$cockpit_port" "$_INFRA_DIR/../../sp-cockpit/scripts/run_sp_cockpit.sh" &
     PIDS+=($!)
     SP_COCKPIT_PID=${PIDS[-1]}
 

@@ -12,11 +12,11 @@ set -uo pipefail
 
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 
 AOSP_ROOT="${AOSP_ROOT:-/mnt/code/ACE}"
 SKIP_EXISTING=false
-BUILD_SCRIPT="$(cd "$(dirname "$0")/../deploy/dense" && pwd)/scripts/build_index.sh"
+BUILD_SCRIPT="$(cd "$(dirname "$0")/../../deploy/dense" && pwd)/scripts/build_index.sh"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

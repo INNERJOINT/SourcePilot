@@ -10,7 +10,7 @@
 # or exec into the container and run it there.
 set -euo pipefail
 
-source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
 
 if [[ $# -lt 1 ]]; then

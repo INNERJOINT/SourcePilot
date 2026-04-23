@@ -21,16 +21,16 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd)
 
 # 加载共享库
-source "$DIR/_common.sh"
+source "$DIR/share/_common.sh"
 _common_parse_help "$@"
-source "$DIR/_env.sh"
-source "$DIR/_infra.sh"
+source "$DIR/share/_env.sh"
+source "$DIR/share/_infra.sh"
 
 # ── --bare 模式：直接转发给 _start_sourcepilot.sh ─────────
 for arg in "$@"; do
     if [ "$arg" = "--bare" ]; then
         shift
-        exec "$DIR/_start_sourcepilot.sh" "$@"
+        exec "$DIR/share/_start_sourcepilot.sh" "$@"
     fi
 done
 
@@ -75,7 +75,7 @@ infra_start_graph
 
 # ── 4. 启动 SourcePilot ──────────────────────────────
 info "启动 SourcePilot (port 9000)..."
-"$DIR/_start_sourcepilot.sh" &
+"$DIR/share/_start_sourcepilot.sh" &
 PIDS+=($!)
 SP_PID=${PIDS[-1]}
 

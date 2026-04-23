@@ -183,8 +183,8 @@ cd sp-cockpit && PYTHONPATH=. pytest tests/ -v
 cd sp-cockpit && PYTHONPATH=. pytest tests/test_no_heavy_deps.py -v
 
 # Syntax-check wrapper scripts
-bash -n scripts/build_dense_index_batch.sh scripts/build_graph_index.sh scripts/reindex.sh
+bash -n scripts/indexing/build_dense_index_batch.sh scripts/indexing/build_graph_index.sh scripts/indexing/reindex.sh
 
 # Dry-run a script (only fires CLI hooks, no docker)
-INDEXING_DRY_RUN=1 bash scripts/build_graph_index.sh frameworks/base
+INDEXING_DRY_RUN=1 bash scripts/indexing/build_graph_index.sh frameworks/base
 ```

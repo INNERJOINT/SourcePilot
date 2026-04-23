@@ -25,11 +25,11 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd)
 
 # 加载共享库
-source "$DIR/_common.sh"
+source "$DIR/share/_common.sh"
 _common_parse_help "$@"
 
 # 加载 .env 配置（如果存在）
-source "$DIR/_env.sh"
+source "$DIR/share/_env.sh"
 
 # 使用 pyenv 虚拟环境
 VENV_PYTHON="/opt/pyenv/versions/dify_py3_env/bin/python3"
@@ -54,7 +54,7 @@ trap cleanup EXIT
 
 if [ -z "${SOURCEPILOT_URL:-}" ]; then
     echo "SOURCEPILOT_URL not set, starting SourcePilot in background..." >&2
-    "$DIR/_start_sourcepilot.sh" &
+    "$DIR/share/_start_sourcepilot.sh" &
     SOURCEPILOT_PID=$!
 
     # 等待健康检查通过
