@@ -54,7 +54,7 @@ trap cleanup EXIT
 
 if [ -z "${SOURCEPILOT_URL:-}" ]; then
     echo "SOURCEPILOT_URL not set, starting SourcePilot in background..." >&2
-    "$DIR/run_sourcepilot.sh" &
+    "$DIR/_start_sourcepilot.sh" &
     SOURCEPILOT_PID=$!
 
     # 等待健康检查通过

@@ -16,14 +16,28 @@ AOSP Code Search — three independent services:
 # Environment setup (copy template, edit values)
 cp .env.example .env
 
-# Start full stack (zoekt + SourcePilot + MCP) — reads from .env
+# Start full stack (zoekt + dense + graph + SourcePilot + MCP + sp-cockpit) — reads from .env
 scripts/run_all.sh
+
+# Start SourcePilot full stack without MCP (zoekt + dense + graph + SourcePilot + sp-cockpit)
+scripts/run_sourcepilot.sh
+
+# Start SourcePilot bare (uvicorn only)
+scripts/run_sourcepilot.sh --bare
 
 # Start both services (auto-starts SourcePilot as subprocess)
 scripts/run_mcp.sh
 
-# Start SourcePilot standalone
-scripts/run_sourcepilot.sh
+# Restart all services
+scripts/restart.sh
+
+# Restart SourcePilot full stack (without MCP)
+scripts/restart.sh --only sourcepilot
+
+# Restart individual services
+scripts/restart.sh --only sp          # SourcePilot process only
+scripts/restart.sh --only dense       # Dense stack (docker compose)
+scripts/restart.sh --only graph       # Neo4j (docker compose)
 
 # Start MCP with external SourcePilot
 SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh
