@@ -12,23 +12,24 @@ AOSP Code Search — a hybrid RAG code search system over Android Open Source Pr
 
 ## Build & Run
 
-Services run as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Use `scripts/` to launch — they handle `docker compose` internally.
+Infrastructure (Zoekt, Milvus, Neo4j) runs as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 
 ```bash
-scripts/run_all.sh              # Full stack: Zoekt → SourcePilot → MCP → SP Cockpit
+scripts/run_all_dev.sh          # Dev mode: infra via Docker, apps as bare processes
+scripts/run_all.sh              # Full stack (all Docker): Zoekt → SourcePilot → MCP → SP Cockpit
 scripts/run_sourcepilot.sh      # SourcePilot only
 scripts/run_mcp.sh              # MCP (auto-starts SourcePilot)
 scripts/run_sp_cockpit.sh       # SP Cockpit only
 scripts/restart.sh              # Stop & restart (supports --only sp|mcp|av)
 ```
 
-To inspect or debug running services, use Docker directly:
+To inspect or debug running services, **first check the local bare process** (stdout/stderr in the terminal running `run_all_dev.sh`). If the service is not running locally, fall back to Docker:
 
 ```bash
 docker compose ps                           # List running containers
-docker compose logs -f sourcepilot-gateway  # Tail logs
+docker compose logs -f sourcepilot-gateway  # Tail logs (fallback when service runs in Docker)
 docker compose exec sourcepilot-gateway sh  # Shell into container
 ```
 

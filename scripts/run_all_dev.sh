@@ -118,7 +118,7 @@ if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
     else
         export SP_COCKPIT_AUDIT_LOG_PATH="${SP_COCKPIT_AUDIT_LOG_PATH:-$PROJ_ROOT/audit.log}"
         export SP_COCKPIT_AUDIT_DB_PATH="${SP_COCKPIT_AUDIT_DB_PATH:-$PROJ_ROOT/sp-cockpit/data/audit.db}"
-        export SP_COCKPIT_HOST="${SP_COCKPIT_HOST:-127.0.0.1}"
+        export SP_COCKPIT_HOST="${SP_COCKPIT_HOST:-0.0.0.0}"
         export SP_COCKPIT_PORT="$SP_COCKPIT_PORT"
         export SP_COCKPIT_FRONTEND_DIST="${SP_COCKPIT_FRONTEND_DIST:-$PROJ_ROOT/sp-cockpit/frontend/dist}"
 

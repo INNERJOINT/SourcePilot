@@ -35,7 +35,7 @@ for arg in "$@"; do
             VENV_PYTHON="python3"
         fi
 
-        HOST="${SP_COCKPIT_HOST:-127.0.0.1}"
+        HOST="${SP_COCKPIT_HOST:-0.0.0.0}"
         PORT="${SP_COCKPIT_PORT:-9100}"
         BUILD_FRONTEND=0
         SERVE_FRONTEND=1
