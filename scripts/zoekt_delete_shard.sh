@@ -1,4 +1,4 @@
-#!/usr/bin/env env bash
+#!/usr/bin/env bash
 # zoekt_delete_shard.sh — Manual fallback to delete a Zoekt shard for a repo.
 #
 # Usage: scripts/zoekt_delete_shard.sh <repo_name>
@@ -9,6 +9,9 @@
 # Run this script on the host that runs the zoekt-indexserver container,
 # or exec into the container and run it there.
 set -euo pipefail
+
+source "$(dirname "$0")/_common.sh"
+_common_parse_help "$@"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <repo_name>" >&2
@@ -24,9 +27,11 @@ if [[ ! -d "$INDEX_DIR" ]]; then
   exit 1
 fi
 
-SHARDS=("$INDEX_DIR"/${REPO}.*.zoekt 2>/dev/null || true)
+shopt -s nullglob
+SHARDS=("$INDEX_DIR"/"${REPO}".*.zoekt)
+shopt -u nullglob
 
-if [[ ${#SHARDS[@]} -eq 0 ]] || [[ ! -e "${SHARDS[0]}" ]]; then
+if [[ ${#SHARDS[@]} -eq 0 ]]; then
   echo "No shards found for repo: $REPO in $INDEX_DIR" >&2
   exit 1
 fi

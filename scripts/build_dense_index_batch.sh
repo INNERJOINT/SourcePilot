@@ -5,10 +5,14 @@
 #   ./scripts/build_dense_index_batch.sh [--aosp-root /mnt/code/ACE] [--skip-existing]
 #
 # 新数据追加到已有 Milvus collection，不影响已索引的仓库。
-set -uo pipefail  # 注意：不使用 -e，单个 repo 失败时继续处理其余 repo
+#
+# NOTE: -e intentionally omitted — batch-continue contract: single repo failure
+# must not abort remaining repos.
+set -uo pipefail
 
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
+source "$(dirname "$0")/_common.sh"
 
 AOSP_ROOT="${AOSP_ROOT:-/mnt/code/ACE}"
 SKIP_EXISTING=false
@@ -16,6 +20,7 @@ BUILD_SCRIPT="$(cd "$(dirname "$0")/../deploy/dense" && pwd)/scripts/build_index
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help) _common_parse_help --help ;;
         --aosp-root) AOSP_ROOT="$2"; shift 2 ;;
         --skip-existing) SKIP_EXISTING=true; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;

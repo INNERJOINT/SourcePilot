@@ -20,6 +20,10 @@ set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
+# 加载共享库
+source "$DIR/_common.sh"
+_common_parse_help "$@"
+
 # 加载 .env 配置（如果存在）
 source "$DIR/_env.sh"
 
@@ -27,8 +31,8 @@ source "$DIR/_env.sh"
 ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
 MCP_TRANSPORT="${MCP_TRANSPORT:-streamable-http}"
 MCP_PORT="${MCP_PORT:-8888}"
-AUDIT_VIEWER_PORT="${AUDIT_VIEWER_PORT:-9100}"
-AUDIT_VIEWER_ENABLED="${AUDIT_VIEWER_ENABLED:-true}"
+SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
+SP_COCKPIT_ENABLED="${SP_COCKPIT_ENABLED:-true}"
 
 # ── 进程管理 ──────────────────────────────────────────
 PIDS=()
@@ -172,37 +176,37 @@ fi
 PIDS+=($!)
 MCP_PID=${PIDS[-1]}
 
-# ── 4. 启动 audit-viewer ─────────────────────────────
+# ── 4. 启动 sp-cockpit ─────────────────────────────
 AV_PID=""
 AV_RUNNING=false
-if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
-    if curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1; then
-        if docker compose -f "$DIR/../docker-compose.yml" ps --status running --services 2>/dev/null | grep -qx 'audit-viewer'; then
-            echo "检测到 audit-viewer 容器已在运行，重启容器..." >&2
-            docker compose -f "$DIR/../docker-compose.yml" restart audit-viewer >/dev/null
+if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
+    if curl -sf "http://localhost:${SP_COCKPIT_PORT}/api/health" >/dev/null 2>&1; then
+        if docker compose -f "$DIR/../docker-compose.yml" ps --status running --services 2>/dev/null | grep -qx 'sp-cockpit'; then
+            echo "检测到 sp-cockpit 容器已在运行，重启容器..." >&2
+            docker compose -f "$DIR/../docker-compose.yml" restart sp-cockpit >/dev/null
             for i in $(seq 1 $MAX_RETRIES); do
-                curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1 && { echo "audit-viewer 重启就绪" >&2; AV_RUNNING=true; break; }
-                [ "$i" -eq "$MAX_RETRIES" ] && { echo "Warning: audit-viewer 重启后健康检查超时" >&2; break; }
+                curl -sf "http://localhost:${SP_COCKPIT_PORT}/api/health" >/dev/null 2>&1 && { echo "sp-cockpit 重启就绪" >&2; AV_RUNNING=true; break; }
+                [ "$i" -eq "$MAX_RETRIES" ] && { echo "Warning: sp-cockpit 重启后健康检查超时" >&2; break; }
                 sleep 1
             done
         else
-            echo "检测到 audit-viewer 已在运行 (port ${AUDIT_VIEWER_PORT}，非 compose)，跳过启动" >&2
+            echo "检测到 sp-cockpit 已在运行 (port ${SP_COCKPIT_PORT}，非 compose)，跳过启动" >&2
             AV_RUNNING=true
         fi
     else
-        echo "启动 audit-viewer (port ${AUDIT_VIEWER_PORT})..." >&2
-        AUDIT_VIEWER_PORT="$AUDIT_VIEWER_PORT" "$DIR/../audit-viewer/scripts/run_audit_viewer.sh" &
+        echo "启动 sp-cockpit (port ${SP_COCKPIT_PORT})..." >&2
+        SP_COCKPIT_PORT="$SP_COCKPIT_PORT" "$DIR/../sp-cockpit/scripts/run_sp_cockpit.sh" &
         PIDS+=($!)
         AV_PID=${PIDS[-1]}
 
         for i in $(seq 1 $MAX_RETRIES); do
-            if curl -sf "http://localhost:${AUDIT_VIEWER_PORT}/api/health" >/dev/null 2>&1; then
-                echo "audit-viewer 就绪 (PID $AV_PID)" >&2
+            if curl -sf "http://localhost:${SP_COCKPIT_PORT}/api/health" >/dev/null 2>&1; then
+                echo "sp-cockpit 就绪 (PID $AV_PID)" >&2
                 AV_RUNNING=true
                 break
             fi
             if [ "$i" -eq "$MAX_RETRIES" ]; then
-                echo "Warning: audit-viewer 启动超时 (${MAX_RETRIES}s)，继续运行其他服务" >&2
+                echo "Warning: sp-cockpit 启动超时 (${MAX_RETRIES}s)，继续运行其他服务" >&2
                 break
             fi
             sleep 1
@@ -225,13 +229,13 @@ echo "    MCP Server       PID $MCP_PID   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
 else
 echo "    MCP Server       PID $MCP_PID   (stdio)" >&2
 fi
-if [ "$AUDIT_VIEWER_ENABLED" = "true" ]; then
+if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
     if [ -n "$AV_PID" ]; then
-        echo "    audit-viewer     PID $AV_PID   (http://localhost:${AUDIT_VIEWER_PORT})" >&2
+        echo "    sp-cockpit     PID $AV_PID   (http://localhost:${SP_COCKPIT_PORT})" >&2
     elif [ "$AV_RUNNING" = true ]; then
-        echo "    audit-viewer     (already running)  (http://localhost:${AUDIT_VIEWER_PORT})" >&2
+        echo "    sp-cockpit     (already running)  (http://localhost:${SP_COCKPIT_PORT})" >&2
     else
-        echo "    audit-viewer     (启动失败/超时)" >&2
+        echo "    sp-cockpit     (启动失败/超时)" >&2
     fi
 fi
 if [ "$GRAPH_ENABLED" = "true" ]; then

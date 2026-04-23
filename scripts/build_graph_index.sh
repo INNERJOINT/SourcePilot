@@ -17,6 +17,7 @@ COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
+source "$(dirname "$0")/_common.sh"
 
 for envfile in "$DIR/.env" "$GRAPH_DIR/.env"; do
     if [ -f "$envfile" ]; then
@@ -54,6 +55,7 @@ n=$#
 while (( i < n )); do
     arg="${argv[$i]}"
     case "$arg" in
+        -h|--help) _common_parse_help --help ;;
         --source-root)
             host_path="${argv[$((i+1))]:-}"
             if [[ -z "$host_path" ]]; then

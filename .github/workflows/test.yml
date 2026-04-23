@@ -39,6 +39,20 @@ jobs:
       - name: Run MCP tests
         run: PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 
+  shell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shellcheck (error-level gate)
+        run: shellcheck -x -S error scripts/*.sh
+      - name: bash -n syntax check
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done
+
   sp-cockpit:
     runs-on: ubuntu-latest
     steps:

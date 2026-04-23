@@ -12,6 +12,9 @@ set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
+# 加载共享库
+source "$DIR/_common.sh"
+
 # 加载 .env 配置（如果存在）
 source "$DIR/_env.sh"
 
@@ -24,7 +27,7 @@ fi
 
 export PYTHONPATH="$DIR/../src"
 
-# 默认审计日志路径：锚定到项目根目录，与 audit-viewer 的默认 AUDIT_LOG_PATH 对齐
+# 默认审计日志路径：锚定到项目根目录，与 sp-cockpit 的默认 SP_COCKPIT_AUDIT_LOG_PATH 对齐
 PROJ_ROOT=$(cd "$DIR/.." && pwd)
 export AUDIT_LOG_FILE="${AUDIT_LOG_FILE:-$PROJ_ROOT/audit.log}"
 
@@ -35,6 +38,7 @@ PORT="9000"
 # 解析命令行参数
 while [ $# -gt 0 ]; do
     case "$1" in
+        -h|--help) _common_parse_help --help ;;
         --host)
             HOST="$2"
             shift 2

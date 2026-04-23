@@ -2,25 +2,26 @@
 # ──────────────────────────────────────────────────────
 #  一键重启脚本
 #
-#  停掉占用目标端口的进程后重新启动全栈（zoekt + SourcePilot + MCP + audit-viewer）。
+#  停掉占用目标端口的进程后重新启动全栈（zoekt + SourcePilot + MCP + sp-cockpit）。
 #  用于修改 .env 后让配置生效。
 #
 #  用法：
-#    ./restart.sh                 # 重启 SourcePilot + MCP + audit-viewer（默认不动 zoekt）
+#    ./restart.sh                 # 重启 SourcePilot + MCP + sp-cockpit（默认不动 zoekt）
 #    ./restart.sh --with-zoekt    # 同时重启 zoekt-webserver
 #    ./restart.sh --only sp       # 只重启 SourcePilot
 #    ./restart.sh --only mcp      # 只重启 MCP
-#    ./restart.sh --only av       # 只重启 audit-viewer
+#    ./restart.sh --only av       # 只重启 sp-cockpit
 #    ./restart.sh --stop          # 只停服务，不重启
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
+source "$DIR/_common.sh"
 source "$DIR/_env.sh"
 
 MCP_PORT="${MCP_PORT:-8888}"
-AUDIT_VIEWER_PORT="${AUDIT_VIEWER_PORT:-9100}"
+SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
 SP_PORT=9000
 ZOEKT_PORT_DEFAULT=6070
 
@@ -73,7 +74,7 @@ if [ -z "$ONLY" ] || [ "$ONLY" = "sp" ]; then
     kill_port "$SP_PORT" "SourcePilot"
 fi
 if [ -z "$ONLY" ] || [ "$ONLY" = "av" ]; then
-    kill_port "$AUDIT_VIEWER_PORT" "audit-viewer"
+    kill_port "$SP_COCKPIT_PORT" "sp-cockpit"
 fi
 if [ "$WITH_ZOEKT" = true ]; then
     kill_port "$ZOEKT_PORT_DEFAULT" "zoekt-webserver"
@@ -96,7 +97,7 @@ case "$ONLY" in
         exec "$DIR/run_mcp.sh"
         ;;
     av)
-        exec "$DIR/../audit-viewer/scripts/run_audit_viewer.sh"
+        exec "$DIR/../sp-cockpit/scripts/run_sp_cockpit.sh"
         ;;
     "")
         exec "$DIR/run_all.sh"

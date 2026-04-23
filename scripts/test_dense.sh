@@ -13,7 +13,10 @@
 #
 # 依赖: curl + jq
 
-set -uo pipefail
+set -euo pipefail
+
+source "$(dirname "$0")/_common.sh"
+_common_parse_help "$@"
 
 SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
 TIMEOUT="${TIMEOUT:-15}"

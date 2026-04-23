@@ -24,6 +24,10 @@ set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
+# 加载共享库
+source "$DIR/_common.sh"
+_common_parse_help "$@"
+
 # 加载 .env 配置（如果存在）
 source "$DIR/_env.sh"
 

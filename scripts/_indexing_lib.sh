@@ -14,6 +14,8 @@ if [[ -n "${_INDEXING_LIB_LOADED:-}" ]]; then
 fi
 _INDEXING_LIB_LOADED=1
 
+set -euo pipefail
+
 # Directory containing this file (works regardless of CWD)
 _INDEXING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Project root (one level up from scripts/)
@@ -45,7 +47,7 @@ start_indexing_job() {
     cli_output=$(
         cd "$_INDEXING_PROJECT_ROOT" && \
         INDEXING_API_URL="$INDEXING_API_URL" \
-        "$_INDEXING_PYTHON" -m audit_viewer.indexing_cli \
+        "$_INDEXING_PYTHON" -m sp_cockpit.indexing_cli \
             start \
             --repo-path "$repo_path" \
             --backend "$backend" \
@@ -92,7 +94,7 @@ finish_indexing_job() {
 
     cd "$_INDEXING_PROJECT_ROOT" && \
     INDEXING_API_URL="$INDEXING_API_URL" \
-    "$_INDEXING_PYTHON" -m audit_viewer.indexing_cli \
+    "$_INDEXING_PYTHON" -m sp_cockpit.indexing_cli \
         finish \
         --job-id "$JOB_ID" \
         --status "$status" \

@@ -2,24 +2,27 @@
 # scripts/smoke_queries.sh — SourcePilot 手动 smoke 巡检
 #
 # 用法:
-#   scripts/run_all.sh            # 先把 SourcePilot/zoekt/Milvus/audit-viewer 起好
+#   scripts/run_all.sh            # 先把 SourcePilot/zoekt/Milvus/sp-cockpit 起好
 #   bash scripts/smoke_queries.sh
 #
 # 前置条件:
 #   - DENSE_ENABLED=true (SourcePilot 启动时需设置)
 #   - Milvus 运行中，frameworks/base 已完成向量索引
-#   - audit-viewer 运行中 (port 9100)，audit.db 正在被填充
+#   - sp-cockpit 运行中 (port 9100)，audit.db 正在被填充
 #   - 审查入口: http://localhost:9100  (按 trace_id 过滤逐条人工审查)
 #
 # 依赖: bash + curl + jq + sqlite3 + (uuidgen 或 openssl) + GNU date (Linux)
 # 端点: SourcePilot HTTP API (默认 http://localhost:9000)
 # 退出码: 0 全 PASS 且 audit 通过 / 1 任一 FAIL 或 audit 失败 / 2 前置检查不通过
 
-set -uo pipefail
+set -euo pipefail
+
+source "$(dirname "$0")/_common.sh"
+_common_parse_help "$@"
 
 SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
 TIMEOUT="${TIMEOUT:-15}"
-AUDIT_DB="${AUDIT_DB:-audit-viewer/data/audit.db}"
+AUDIT_DB="${AUDIT_DB:-sp-cockpit/data/audit.db}"
 RESP_FILE="$(mktemp -t smoke_resp.XXXXXX.json)"
 trap 'rm -f "$RESP_FILE"' EXIT
 
@@ -39,7 +42,7 @@ fi
 
 if [[ ! -f "$AUDIT_DB" ]]; then
     echo "ERROR: audit.db 不存在: $AUDIT_DB" >&2
-    echo "       请先运行 audit-viewer 使其创建并填充 audit.db" >&2
+    echo "       请先运行 sp-cockpit 使其创建并填充 audit.db" >&2
     exit 2
 fi
 

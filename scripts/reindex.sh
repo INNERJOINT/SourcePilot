@@ -12,6 +12,9 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 cd "$DIR"
 
+source "$(dirname "$0")/_common.sh"
+_common_parse_help "$@"
+
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
 

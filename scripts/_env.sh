@@ -18,6 +18,8 @@
 #    多行值、变量插值（$VAR）、转义序列
 # ──────────────────────────────────────────────────────
 
+set -euo pipefail
+
 _PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ -f "$_PROJ_ROOT/.env" ]; then
