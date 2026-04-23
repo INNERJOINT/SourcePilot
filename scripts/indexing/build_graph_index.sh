@@ -49,6 +49,7 @@ translate_path() {
 
 ARGS=()
 HAS_SOURCE_ROOT=false
+_GRAPH_PROJECT_NAME=""
 i=0
 argv=("$@")
 n=$#
@@ -74,6 +75,16 @@ while (( i < n )); do
             HAS_SOURCE_ROOT=true
             i=$((i+1))
             ;;
+        --project-name)
+            _GRAPH_PROJECT_NAME="${argv[$((i+1))]:-}"
+            ARGS+=("$arg" "$_GRAPH_PROJECT_NAME")
+            i=$((i+2))
+            ;;
+        --project-name=*)
+            _GRAPH_PROJECT_NAME="${arg#--project-name=}"
+            ARGS+=("$arg")
+            i=$((i+1))
+            ;;
         *)
             ARGS+=("$arg")
             i=$((i+1))
@@ -92,7 +103,7 @@ _GRAPH_REPO_LABEL="${AOSP_SOURCE_ROOT}"
 for _a in "${ARGS[@]}"; do
     case "$_a" in /src*) _GRAPH_REPO_LABEL="$_a"; break ;; esac
 done
-start_indexing_job "$_GRAPH_REPO_LABEL" graph
+start_indexing_job "$_GRAPH_REPO_LABEL" graph "$_GRAPH_PROJECT_NAME"
 
 if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
     echo "[graph-indexer] DRY_RUN — skipping docker compose"

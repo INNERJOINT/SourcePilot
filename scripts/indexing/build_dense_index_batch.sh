@@ -13,86 +13,101 @@ set -uo pipefail
 # shellcheck source=./_indexing_lib.sh
 source "$(dirname "$0")/_indexing_lib.sh"
 source "$(dirname "$0")/../share/_common.sh"
+source "$(dirname "$0")/project_config.sh"
 
-AOSP_ROOT="${AOSP_ROOT:-/mnt/code/ACE}"
 SKIP_EXISTING=false
 BUILD_SCRIPT="$(cd "$(dirname "$0")/../../deploy/dense" && pwd)/scripts/build_index.sh"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help) _common_parse_help --help ;;
-        --aosp-root) AOSP_ROOT="$2"; shift 2 ;;
         --skip-existing) SKIP_EXISTING=true; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-if [[ ! -x "$BUILD_SCRIPT" ]]; then
+if [[ ! -x "$BUILD_SCRIPT" ]] && [[ "${INDEXING_DRY_RUN:-0}" != "1" ]]; then
     echo "ERROR: build_index.sh not found at $BUILD_SCRIPT"
     exit 1
 fi
 
-# 收集要索引的仓库：(source_dir, repo_name)
-REPOS=()
+TOTAL_SUCCEEDED=0
+TOTAL_FAILED=0
+TOTAL_SKIPPED=0
 
-# frameworks/* — 每个子目录作为一个 repo
-for dir in "$AOSP_ROOT"/frameworks/*/; do
-    [[ -d "$dir" ]] || continue
-    name=$(basename "$dir")
-    REPOS+=("$dir|frameworks/$name")
-done
+while IFS='|' read -r proj_name proj_root proj_collection; do
+    echo "===== PROJECT: $proj_name (root=$proj_root, collection=$proj_collection) ====="
+    AOSP_ROOT="$proj_root"
+    export DENSE_COLLECTION_NAME="$proj_collection"
 
-# packages/*/* — 按二级目录索引 (packages/apps/Settings 等)
-for category in "$AOSP_ROOT"/packages/*/; do
-    [[ -d "$category" ]] || continue
-    cat_name=$(basename "$category")
-    for dir in "$category"*/; do
+    # 收集要索引的仓库：(source_dir, repo_name)
+    REPOS=()
+
+    # frameworks/* — 每个子目录作为一个 repo
+    for dir in "$AOSP_ROOT"/frameworks/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
-        REPOS+=("$dir|packages/$cat_name/$name")
+        REPOS+=("$dir|frameworks/$name")
     done
-done
 
-echo "Found ${#REPOS[@]} repos to index under $AOSP_ROOT"
-echo ""
+    # packages/*/* — 按二级目录索引 (packages/apps/Settings 等)
+    for category in "$AOSP_ROOT"/packages/*/; do
+        [[ -d "$category" ]] || continue
+        cat_name=$(basename "$category")
+        for dir in "$category"*/; do
+            [[ -d "$dir" ]] || continue
+            name=$(basename "$dir")
+            REPOS+=("$dir|packages/$cat_name/$name")
+        done
+    done
 
-SUCCEEDED=0
-FAILED=0
-SKIPPED=0
-
-for entry in "${REPOS[@]}"; do
-    source_dir="${entry%%|*}"
-    repo_name="${entry##*|}"
-
-    # 快速检查：目录下有没有源码文件
-    file_count=$(find "$source_dir" -maxdepth 5 -type f \( -name "*.java" -o -name "*.kt" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.aidl" -o -name "*.go" -o -name "*.rs" -o -name "*.py" \) -print -quit 2>/dev/null | wc -l)
-    if [[ "$file_count" -eq 0 ]]; then
-        echo "SKIP  $repo_name (no source files)"
-        ((SKIPPED++))
-        continue
-    fi
-
-    echo "===== INDEX  $repo_name ====="
-    start_indexing_job "$repo_name" dense
-    job_exit=0
-    if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
-        echo "DRY_RUN  $repo_name (skipping docker)"
-    elif "$BUILD_SCRIPT" --source-dir "$source_dir" --repo-name "$repo_name" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"; then
-        : # success — handled below
-    else
-        job_exit=$?
-    fi
-    if [[ $job_exit -eq 0 ]]; then
-        finish_indexing_job success 0
-        ((SUCCEEDED++))
-        echo "DONE  $repo_name"
-    else
-        finish_indexing_job fail $job_exit
-        ((FAILED++))
-        echo "FAIL  $repo_name"
-    fi
+    echo "Found ${#REPOS[@]} repos to index under $AOSP_ROOT"
     echo ""
-done
+
+    SUCCEEDED=0
+    FAILED=0
+    SKIPPED=0
+
+    for entry in "${REPOS[@]}"; do
+        source_dir="${entry%%|*}"
+        repo_name="${entry##*|}"
+
+        # 快速检查：目录下有没有源码文件
+        file_count=$(find "$source_dir" -maxdepth 5 -type f \( -name "*.java" -o -name "*.kt" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.aidl" -o -name "*.go" -o -name "*.rs" -o -name "*.py" \) -print -quit 2>/dev/null | wc -l)
+        if [[ "$file_count" -eq 0 ]]; then
+            echo "SKIP  $repo_name (no source files)"
+            ((SKIPPED++))
+            continue
+        fi
+
+        echo "===== INDEX  $repo_name ====="
+        start_indexing_job "$repo_name" dense "$proj_name"
+        job_exit=0
+        if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
+            echo "DRY_RUN  $repo_name (skipping docker)"
+        elif "$BUILD_SCRIPT" --source-dir "$source_dir" --repo-name "$repo_name" --project-name "$proj_name" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"; then
+            : # success — handled below
+        else
+            job_exit=$?
+        fi
+        if [[ $job_exit -eq 0 ]]; then
+            finish_indexing_job success 0
+            ((SUCCEEDED++))
+            echo "DONE  $repo_name"
+        else
+            finish_indexing_job fail $job_exit
+            ((FAILED++))
+            echo "FAIL  $repo_name"
+        fi
+        echo ""
+    done
+
+    echo "--- PROJECT $proj_name: ${#REPOS[@]} repos  Succeeded: $SUCCEEDED  Failed: $FAILED  Skipped: $SKIPPED ---"
+    echo ""
+    ((TOTAL_SUCCEEDED += SUCCEEDED))
+    ((TOTAL_FAILED += FAILED))
+    ((TOTAL_SKIPPED += SKIPPED))
+done < <(load_projects)
 
 echo "==============================="
-echo "Total: ${#REPOS[@]}  Succeeded: $SUCCEEDED  Failed: $FAILED  Skipped: $SKIPPED"
+echo "ALL PROJECTS  Succeeded: $TOTAL_SUCCEEDED  Failed: $TOTAL_FAILED  Skipped: $TOTAL_SKIPPED"

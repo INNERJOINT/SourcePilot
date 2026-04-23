@@ -60,6 +60,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     }
     if args.log_path:
         payload["log_path"] = args.log_path
+    if args.project_name:
+        payload["project"] = args.project_name
 
     resp, exc = _post_with_retry(url, payload)
     if exc is not None:
@@ -143,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Indexing backend",
     )
     p_start.add_argument("--log-path", default=None, help="Path to the log file for this job")
+    p_start.add_argument("--project-name", default=None, help="Project name this repo belongs to")
 
     # finish
     p_finish = sub.add_parser("finish", help="Report completion of an indexing job")

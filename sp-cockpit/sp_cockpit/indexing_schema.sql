@@ -1,8 +1,10 @@
 CREATE TABLE IF NOT EXISTS index_repos (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_path   TEXT    NOT NULL UNIQUE,
+  repo_path   TEXT    NOT NULL,
+  project     TEXT,
   created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
-  archived_at INTEGER
+  archived_at INTEGER,
+  UNIQUE(repo_path, project)
 );
 
 CREATE TABLE IF NOT EXISTS index_jobs (

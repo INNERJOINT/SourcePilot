@@ -22,7 +22,7 @@ def _make_args(command="start", **kwargs):
         "api_url": "http://localhost:9100",
     }
     if command == "start":
-        defaults.update({"repo_path": "/aosp/frameworks/base", "backend": "dense", "log_path": None})
+        defaults.update({"repo_path": "/aosp/frameworks/base", "backend": "dense", "log_path": None, "project_name": None})
     elif command == "finish":
         defaults.update({"job_id": "42", "status": "success", "exit_code": 0})
     defaults.update(kwargs)

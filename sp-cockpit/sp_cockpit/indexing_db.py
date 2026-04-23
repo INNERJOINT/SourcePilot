@@ -14,7 +14,7 @@ class JobLockConflict(Exception):
         self.existing_job_id = existing_job_id
         super().__init__(f"Running job {existing_job_id} already exists")
 
-CURRENT_SCHEMA_VERSION = "1"
+CURRENT_SCHEMA_VERSION = "2"
 SCHEMA_FILE = Path(__file__).parent / "indexing_schema.sql"
 
 
@@ -32,9 +32,26 @@ def connect(db_path: "Path | str | None" = None) -> sqlite3.Connection:
 
 
 def bootstrap(conn: sqlite3.Connection) -> None:
-    """Create schema idempotently and stamp schema_version."""
+    """Create schema idempotently, run migrations, and stamp schema_version."""
     sql = SCHEMA_FILE.read_text(encoding="utf-8")
     conn.executescript(sql)
+    # Migration v1 → v2: add project column and update UNIQUE constraint
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(index_repos)").fetchall()]
+    if "project" not in cols:
+        conn.executescript("""
+            CREATE TABLE index_repos_new (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              repo_path   TEXT    NOT NULL,
+              project     TEXT,
+              created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+              archived_at INTEGER,
+              UNIQUE(repo_path, project)
+            );
+            INSERT INTO index_repos_new(id, repo_path, created_at, archived_at)
+                SELECT id, repo_path, created_at, archived_at FROM index_repos;
+            DROP TABLE index_repos;
+            ALTER TABLE index_repos_new RENAME TO index_repos;
+        """)
     set_meta(conn, "schema_version", CURRENT_SCHEMA_VERSION)
     conn.commit()
 
@@ -63,14 +80,18 @@ def open_and_bootstrap(db_path: "Path | str | None" = None) -> sqlite3.Connectio
 # Repo helpers
 # ---------------------------------------------------------------------------
 
-def upsert_repo(conn: sqlite3.Connection, repo_path: str) -> int:
+def upsert_repo(conn: sqlite3.Connection, repo_path: str, project: Optional[str] = None) -> int:
     """Insert repo if not exists; return its id."""
     conn.execute(
-        "INSERT INTO index_repos(repo_path) VALUES(?) ON CONFLICT(repo_path) DO NOTHING",
-        (repo_path,),
+        "INSERT INTO index_repos(repo_path, project) VALUES(?, ?) "
+        "ON CONFLICT(repo_path, project) DO NOTHING",
+        (repo_path, project),
     )
     conn.commit()
-    row = conn.execute("SELECT id FROM index_repos WHERE repo_path = ?", (repo_path,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM index_repos WHERE repo_path = ? AND project IS ?",
+        (repo_path, project),
+    ).fetchone()
     return row["id"]
 
 
@@ -156,12 +177,13 @@ def create_job_for_path(
     repo_path: str,
     backend: str,
     log_path: Optional[str] = None,
+    project: Optional[str] = None,
 ) -> int:
     """Upsert repo, create a running job, return job_id.
 
     Raises JobLockConflict if a running job already exists for (repo, backend).
     """
-    repo_id = upsert_repo(conn, repo_path)
+    repo_id = upsert_repo(conn, repo_path, project)
     existing = get_running_job(conn, repo_id, backend)
     if existing is not None:
         raise JobLockConflict(existing["id"])
@@ -189,7 +211,7 @@ def list_repos(
         params.append(status_filter)
     where_sql = ("AND " + " AND ".join(where)) if where else ""
     sql = f"""
-        SELECT r.id AS repo_id, r.repo_path, r.created_at, r.archived_at,
+        SELECT r.id, r.id AS repo_id, r.repo_path, r.created_at, r.archived_at,
                j.id AS job_id, j.backend, j.status, j.started_at, j.finished_at,
                j.exit_code, j.entity_count_after, j.log_path
         FROM index_repos r
@@ -202,7 +224,22 @@ def list_repos(
         ORDER BY r.id DESC
     """
     rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        # Compute derived fields expected by the frontend
+        started = d.get("started_at")
+        finished = d.get("finished_at")
+        duration_s = None
+        if started and finished:
+            duration_s = round((finished - started) / 1000, 1)
+        d["last_finished_at"] = finished
+        d["last_started_at"] = started
+        d["last_duration_s"] = duration_s
+        d["last_status"] = d.get("status")
+        d["entity_count"] = d.get("entity_count_after")
+        result.append(d)
+    return result
 
 
 def get_repo_detail(

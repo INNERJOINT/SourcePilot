@@ -16,10 +16,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("script", [
-    "scripts/build_dense_index_batch.sh",
-    "scripts/build_graph_index.sh",
-    "scripts/reindex.sh",
-    "scripts/_indexing_lib.sh",
+    "scripts/indexing/build_dense_index_batch.sh",
+    "scripts/indexing/build_graph_index.sh",
+    "scripts/indexing/reindex.sh",
+    "scripts/indexing/_indexing_lib.sh",
 ])
 def test_bash_syntax(script):
     """bash -n reports no syntax errors."""
@@ -56,7 +56,7 @@ def test_build_graph_dry_run_exits_zero(tmp_path):
         "AOSP_SOURCE_ROOT": str(tmp_path),
     })
     result = subprocess.run(
-        ["bash", "scripts/build_graph_index.sh", "--source-root", str(tmp_path)],
+        ["bash", "scripts/indexing/build_graph_index.sh", "--source-root", str(tmp_path)],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -80,7 +80,7 @@ def test_reindex_dry_run_exits_zero(tmp_path):
         "ZOEKT_REPO_PATH": str(fake_repo),
     })
     result = subprocess.run(
-        ["bash", "scripts/reindex.sh"],
+        ["bash", "scripts/indexing/reindex.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -101,10 +101,10 @@ def test_build_dense_dry_run_skips_docker(tmp_path, monkeypatch):
     (frameworks / "Foo.java").write_text("class Foo {}")
 
     env = _dry_run_env({
-        "AOSP_ROOT": str(tmp_path),
+        "AOSP_SOURCE_ROOT": str(tmp_path),
     })
     result = subprocess.run(
-        ["bash", "scripts/build_dense_index_batch.sh", "--aosp-root", str(tmp_path)],
+        ["bash", "scripts/indexing/build_dense_index_batch.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -120,3 +120,80 @@ def test_build_dense_dry_run_skips_docker(tmp_path, monkeypatch):
     )
     # Should NOT have actually run the build_index.sh docker wrapper
     assert "docker" not in result.stdout.lower() or "DRY_RUN" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Multi-project reindex tests
+# ---------------------------------------------------------------------------
+
+def test_reindex_all_dry_run(tmp_path):
+    """reindex.sh --all INDEXING_DRY_RUN=1 exits 0 for each configured project."""
+    fake_repo = tmp_path / ".repo"
+    fake_repo.mkdir()
+
+    # Point projects config at a temp file with our fake repo
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        f"projects:\n"
+        f"  - name: test-proj\n"
+        f"    source_root: {tmp_path}\n"
+        f"    repo_path: {fake_repo}\n"
+        f"    index_dir: {tmp_path}/zoekt\n"
+        f"    zoekt_url: http://localhost:6070\n"
+    )
+
+    env = _dry_run_env({
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
+    })
+    result = subprocess.run(
+        ["bash", "scripts/indexing/reindex.sh", "--all"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"Expected 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    combined = result.stdout + result.stderr
+    assert "dry" in combined.lower() or "DRY_RUN" in combined
+
+
+def test_reindex_single_project_dry_run(tmp_path):
+    """reindex.sh --project <name> INDEXING_DRY_RUN=1 exits 0 for a named project."""
+    fake_repo = tmp_path / ".repo"
+    fake_repo.mkdir()
+
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        f"projects:\n"
+        f"  - name: my-proj\n"
+        f"    source_root: {tmp_path}\n"
+        f"    repo_path: {fake_repo}\n"
+        f"    index_dir: {tmp_path}/zoekt\n"
+        f"    zoekt_url: http://localhost:6070\n"
+        f"  - name: other-proj\n"
+        f"    source_root: {tmp_path}\n"
+        f"    repo_path: {fake_repo}\n"
+        f"    index_dir: {tmp_path}/zoekt2\n"
+        f"    zoekt_url: http://localhost:6071\n"
+    )
+
+    env = _dry_run_env({
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
+    })
+    result = subprocess.run(
+        ["bash", "scripts/indexing/reindex.sh", "--project", "my-proj"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"Expected 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    combined = result.stdout + result.stderr
+    assert "dry" in combined.lower() or "DRY_RUN" in combined
+    # Should mention the targeted project, not the other one
+    assert "my-proj" in combined
+    assert "other-proj" not in combined

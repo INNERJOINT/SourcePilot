@@ -37,7 +37,7 @@ def test_wal_mode(conn):
 
 def test_schema_version_stamped(conn):
     version = indexing_db.get_meta(conn, "schema_version")
-    assert version == "1"
+    assert version == "2"
 
 
 # ---------------------------------------------------------------------------

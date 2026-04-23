@@ -131,10 +131,12 @@ def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dic
         return []
 
 
-async def build_index(args):
+async def build_index(args, collection_name: str):
     """主索引构建流程。"""
     from adapters.embedding import EmbeddingClient
     from config import DENSE_COLLECTION_NAME, DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
+
+    DENSE_COLLECTION_NAME = collection_name  # override with resolved name
 
     embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=DENSE_EMBEDDING_MODEL)
 
@@ -294,10 +296,21 @@ def main():
     parser.add_argument("--overlap", type=int, default=10, help="Overlap lines (default: 10)")
     parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size (default: 32)")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
+    parser.add_argument("--project-name", default=None, help="Project name for collection naming (e.g. 'ace' → collection 'aosp_code_ace')")
+    parser.add_argument("--collection-name", default=None, help="Override Milvus collection name")
     args = parser.parse_args()
 
+    # Resolve collection name
+    if args.collection_name:
+        collection_name = args.collection_name
+    elif args.project_name:
+        collection_name = f"aosp_code_{args.project_name}"
+    else:
+        from config import DENSE_COLLECTION_NAME
+        collection_name = DENSE_COLLECTION_NAME
+
     start = time.time()
-    asyncio.run(build_index(args))
+    asyncio.run(build_index(args, collection_name))
     elapsed = time.time() - start
     logger.info("Total time: %.1f seconds", elapsed)
 

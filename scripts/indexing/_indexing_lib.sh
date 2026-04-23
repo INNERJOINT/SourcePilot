@@ -19,7 +19,7 @@ set -euo pipefail
 # Directory containing this file (works regardless of CWD)
 _INDEXING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Project root (one level up from scripts/)
-_INDEXING_PROJECT_ROOT="$(cd "$_INDEXING_LIB_DIR/.." && pwd)"
+_INDEXING_PROJECT_ROOT="$(cd "$_INDEXING_LIB_DIR/../.." && pwd)"
 
 # Python interpreter (honour virtualenv if active, otherwise fall back to system python3)
 _INDEXING_PYTHON="${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python3}"
@@ -29,12 +29,17 @@ _INDEXING_PYTHON="${_INDEXING_PYTHON:-python3}"
 INDEXING_API_URL="${INDEXING_API_URL:-http://localhost:9100}"
 
 # ---------------------------------------------------------------------------
-# start_indexing_job repo_path backend
+# start_indexing_job repo_path backend [project_name]
 #   Exports JOB_ID and LOG_PATH; arms EXIT trap.
 # ---------------------------------------------------------------------------
 start_indexing_job() {
     local repo_path="$1"
     local backend="$2"
+    local project_name="${3:-}"
+    local project_args=()
+    if [[ -n "$project_name" ]]; then
+        project_args=(--project-name "$project_name")
+    fi
 
     # Build a deterministic log path
     local safe_repo
@@ -52,9 +57,10 @@ start_indexing_job() {
             --repo-path "$repo_path" \
             --backend "$backend" \
             --log-path "$LOG_PATH" \
+            "${project_args[@]}" \
             2>&1 | tee -a "$LOG_PATH" || true
     )
-    JOB_ID=$(echo "$cli_output" | grep 'JOB_ID=' | tail -1 | cut -d= -f2)
+    JOB_ID=$(echo "$cli_output" | grep 'JOB_ID=' | tail -1 | cut -d= -f2 || true)
     export JOB_ID LOG_PATH
 
     if [[ -z "$JOB_ID" ]]; then

@@ -27,6 +27,7 @@ class InternalStartRequest(BaseModel):
     repo_path: str
     backend: str
     log_path: Optional[str] = None
+    project: Optional[str] = None
 
 
 class InternalFinishRequest(BaseModel):
@@ -68,7 +69,8 @@ async def list_repos(
     def _query():
         conn = _get_indexing_conn()
         try:
-            return {"items": indexing_db.list_repos(conn, backend_filter=backend, status_filter=status)}
+            items = indexing_db.list_repos(conn, backend_filter=backend, status_filter=status)
+            return {"total": len(items), "items": items}
         finally:
             conn.close()
 
@@ -147,7 +149,15 @@ async def get_job_log(
         finally:
             conn.close()
 
-        if not log_path or not os.path.exists(log_path):
+        if not log_path:
+            return {
+                "offset": offset,
+                "next_offset": offset,
+                "content": "" if finished_at is not None else "(no log file configured for this job)\n",
+                "eof": True,
+            }
+
+        if not os.path.exists(log_path):
             return {
                 "offset": offset,
                 "next_offset": offset,
@@ -232,7 +242,8 @@ async def internal_start(
         conn = _get_indexing_conn()
         try:
             job_id = indexing_db.create_job_for_path(
-                conn, body.repo_path, body.backend, getattr(body, "log_path", None)
+                conn, body.repo_path, body.backend, getattr(body, "log_path", None),
+                project=body.project,
             )
             return {"job_id": job_id, "status": "running"}
         except indexing_db.JobLockConflict as exc:

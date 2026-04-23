@@ -84,6 +84,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="最多处理 N 个文件（测试用保护措施）",
     )
+    p.add_argument(
+        "--project-name",
+        default=None,
+        help="Project tag for per-project isolation",
+    )
     # DocEntity LLM 提取（Pass 2）
     p.add_argument(
         "--extract-doc-entities",
@@ -199,7 +204,7 @@ def _collect_files(source_root: str, languages: list[str], max_files: int | None
 # 4. tree-sitter 解析：提取节点与边
 # ---------------------------------------------------------------------------
 
-def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[dict, list]:
+def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: str = None) -> tuple[dict, list]:
     """
     返回:
         nodes: {"file": {...}, "classes": [...], "methods": [...]}
@@ -217,7 +222,7 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
     except Exception:
         return None, None
 
-    file_node = {"path": file_path, "repo": repo, "language": lang}
+    file_node = {"path": file_path, "repo": repo, "language": lang, "project": project}
     classes: list[dict] = []
     methods: list[dict] = []
     edges: list[dict] = []
@@ -239,9 +244,10 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
                     "path": file_path,
                     "start_line": n.start_point[0] + 1,
                     "end_line": n.end_point[0] + 1,
+                    "project": project,
                 }
                 classes.append(cls)
-                edges.append({"type": "DEFINED_IN", "from": cname, "from_label": "Class", "to_path": file_path})
+                edges.append({"type": "DEFINED_IN", "from": cname, "from_label": "Class", "to_path": file_path, "project": project})
                 # 继承关系（Java: superclass / C++: base_class_clause）
                 for child in n.children:
                     if child.type in ("superclass", "base_class_clause"):
@@ -253,6 +259,7 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
                                     "from_label": "Class",
                                     "to": node_text(sc),
                                     "to_label": "Class",
+                                    "project": project,
                                 })
                 # 递归处理类体
                 for child in n.children:
@@ -278,9 +285,10 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
                     "start_line": n.start_point[0] + 1,
                     "end_line": n.end_point[0] + 1,
                     "signature": sig,
+                    "project": project,
                 }
                 methods.append(method)
-                edges.append({"type": "DEFINED_IN", "from": mname, "from_label": "Method", "to_path": file_path})
+                edges.append({"type": "DEFINED_IN", "from": mname, "from_label": "Method", "to_path": file_path, "project": project})
                 if current_class:
                     edges.append({
                         "type": "MEMBER_OF",
@@ -288,6 +296,7 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
                         "from_label": "Method",
                         "to": current_class,
                         "to_label": "Class",
+                        "project": project,
                     })
                 # CALLS 边：扫描方法体中的调用表达式（best-effort）
                 body = n.child_by_field_name("body")
@@ -312,6 +321,7 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str) -> tuple[
                         "from_label": "Method",
                         "to": callee,
                         "to_label": "Method",
+                        "project": project,
                     })
             _extract_calls(child, caller, src, out_edges)
 
@@ -327,6 +337,9 @@ SCHEMA_CYPHER = [
     "CREATE CONSTRAINT file_path IF NOT EXISTS FOR (f:File) REQUIRE f.path IS UNIQUE",
     "CREATE INDEX class_name IF NOT EXISTS FOR (c:Class) ON (c.name)",
     "CREATE INDEX method_name IF NOT EXISTS FOR (m:Method) ON (m.name)",
+    "CREATE INDEX node_project IF NOT EXISTS FOR (f:File) ON (f.project)",
+    "CREATE INDEX class_project IF NOT EXISTS FOR (c:Class) ON (c.project)",
+    "CREATE INDEX method_project IF NOT EXISTS FOR (m:Method) ON (m.project)",
 ]
 
 FULLTEXT_INDEX_NAME = "symbol_name_idx"
@@ -353,8 +366,16 @@ def _bootstrap_schema(session):
         )
 
 
-def _reset_graph(session):
-    session.run("MATCH (n) DETACH DELETE n")
+def _reset_graph(session, project=None):
+    if project:
+        session.run(
+            "CALL { MATCH (n {project: $project}) "
+            "WITH n LIMIT 10000 DETACH DELETE n "
+            "} IN TRANSACTIONS OF 10000 ROWS",
+            project=project,
+        )
+    else:
+        session.run("MATCH (n) DETACH DELETE n")
 
 
 def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
@@ -363,7 +384,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     files = [n["file"] for n in nodes_batch]
     session.run(
         "UNWIND $files AS f "
-        "MERGE (node:File {path: f.path}) "
+        "MERGE (node:File {path: f.path, project: f.project}) "
         "SET node.repo = f.repo, node.language = f.language",
         files=files,
     )
@@ -372,7 +393,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if classes:
         session.run(
             "UNWIND $cls AS c "
-            "MERGE (node:Class {name: c.name, path: c.path}) "
+            "MERGE (node:Class {name: c.name, path: c.path, project: c.project}) "
             "SET node.start_line = c.start_line, node.end_line = c.end_line",
             cls=classes,
         )
@@ -381,7 +402,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if methods:
         session.run(
             "UNWIND $mth AS m "
-            "MERGE (node:Method {name: m.name, path: m.path}) "
+            "MERGE (node:Method {name: m.name, path: m.path, project: m.project}) "
             "SET node.start_line = m.start_line, node.end_line = m.end_line, "
             "    node.signature = m.signature",
             mth=methods,
@@ -392,44 +413,52 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if defined_in:
         for e in defined_in:
             session.run(
-                f"MATCH (src:{e['from_label']} {{name: $from_name}}) "
-                "MATCH (f:File {path: $to_path}) "
+                f"MATCH (src:{e['from_label']} {{name: $from_name, project: $project}}) "
+                "MATCH (f:File {path: $to_path, project: $project}) "
                 "MERGE (src)-[:DEFINED_IN]->(f)",
                 from_name=e["from"],
                 to_path=e["to_path"],
+                project=e.get("project"),
             )
     # 边：MEMBER_OF (Method → Class)
     member_of = [e for e in edges_batch if e["type"] == "MEMBER_OF"]
     if member_of:
         for e in member_of:
             session.run(
-                "MATCH (m:Method {name: $mname}) "
-                "MATCH (c:Class {name: $cname}) "
+                "MATCH (m:Method {name: $mname, project: $project}) "
+                "MATCH (c:Class {name: $cname, project: $project}) "
                 "MERGE (m)-[:MEMBER_OF]->(c)",
                 mname=e["from"],
                 cname=e["to"],
+                project=e.get("project"),
             )
     # 边：INHERITS (Class → Class)
     inherits = [e for e in edges_batch if e["type"] == "INHERITS"]
     if inherits:
         for e in inherits:
             session.run(
-                "MATCH (child:Class {name: $child}) "
-                "MERGE (parent:Class {name: $parent}) "
+                "MATCH (child:Class {name: $child, project: $project}) "
+                "WITH child "
+                "OPTIONAL MATCH (parent:Class {name: $parent, project: $project}) "
+                "WITH child, parent WHERE parent IS NOT NULL "
                 "MERGE (child)-[:INHERITS]->(parent)",
                 child=e["from"],
                 parent=e["to"],
+                project=e.get("project"),
             )
     # 边：CALLS (Method → Method, best-effort)
     calls = [e for e in edges_batch if e["type"] == "CALLS"]
     if calls:
         for e in calls:
             session.run(
-                "MATCH (caller:Method {name: $caller}) "
-                "MERGE (callee:Method {name: $callee}) "
+                "MATCH (caller:Method {name: $caller, project: $project}) "
+                "WITH caller "
+                "OPTIONAL MATCH (callee:Method {name: $callee, project: $project}) "
+                "WITH caller, callee WHERE callee IS NOT NULL "
                 "MERGE (caller)-[:CALLS]->(callee)",
                 caller=e["from"],
                 callee=e["to"],
+                project=e.get("project"),
             )
 
 
@@ -550,24 +579,24 @@ def _upsert_doc_entities(session, doc_entities: list[dict]):
     # 节点
     session.run(
         "UNWIND $ents AS e "
-        "MERGE (d:DocEntity {name: e.name, source_path: e.source_path}) "
+        "MERGE (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
         "SET d.concept_text = e.concept_text, d.source_line = e.source_line",
         ents=doc_entities,
     )
     # MENTIONED_IN → File
     session.run(
         "UNWIND $ents AS e "
-        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path}) "
-        "MATCH (f:File {path: e.source_path}) "
+        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
+        "MATCH (f:File {path: e.source_path, project: e.project}) "
         "MERGE (d)-[:MENTIONED_IN]->(f)",
         ents=doc_entities,
     )
     # RELATED_TO → Class/Method（name 完全匹配同文件内符号，best-effort）
     session.run(
         "UNWIND $ents AS e "
-        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path}) "
-        "OPTIONAL MATCH (c:Class {name: e.name, path: e.source_path}) "
-        "OPTIONAL MATCH (m:Method {name: e.name, path: e.source_path}) "
+        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
+        "OPTIONAL MATCH (c:Class {name: e.name, path: e.source_path, project: e.project}) "
+        "OPTIONAL MATCH (m:Method {name: e.name, path: e.source_path, project: e.project}) "
         "FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END | "
         "  MERGE (d)-[:RELATED_TO]->(c)) "
         "FOREACH (_ IN CASE WHEN m IS NOT NULL THEN [1] ELSE [] END | "
@@ -690,12 +719,13 @@ def main():
     with driver.session() as session:
         if args.reset:
             print("⚠️  --reset: 清空所有图节点...", file=sys.stderr)
-            _reset_graph(session)
+            _reset_graph(session, project=args.project_name)
         _bootstrap_schema(session)
 
     # 3. 收集文件
     source_root = os.path.abspath(args.source_root)
     repo = os.path.basename(source_root)
+    project = args.project_name if args.project_name else repo
     files = _collect_files(source_root, languages, args.max_files)
     total = len(files)
     print(f"[0/{total}] 共发现 {total} 个源文件，开始解析...", flush=True)
@@ -712,7 +742,7 @@ def main():
             parse_failures += 1
             continue
 
-        nodes, edges = _extract_nodes_edges(fpath, lang, parser, repo)
+        nodes, edges = _extract_nodes_edges(fpath, lang, parser, repo, project)
         if nodes is None:
             import logging
             logging.warning("解析失败: %s", fpath)

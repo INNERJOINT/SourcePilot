@@ -11,6 +11,16 @@ name: dify
 
 services:
   # ── Zoekt (search index) ─────────────────────────────────────────────
+  # Default webserver — serves the first/only project on port 6070.
+  # ZOEKT_INDEX_PATH is bound from config/projects.yaml[0].index_dir.
+  #
+  # To add a second project, duplicate this service block and change:
+  #   - Service name:    zoekt-webserver-<project-name>
+  #   - Volume source:   ZOEKT_INDEX_PATH_2 (point to second project's index dir)
+  #   - Port mapping:    ZOEKT_PORT_2:6071  (pick a unique host port)
+  #   - Healthcheck URL: http://localhost:6071/
+  # Then add a ZOEKT_URL_<project> entry in .env pointing to that port,
+  # and add a matching entry in config/projects.yaml.
   zoekt-webserver:
     build: ./zoekt
     volumes:
@@ -257,6 +267,7 @@ services:
       DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
     volumes:
       - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
+      - ../../config:/config:ro
     networks:
       - sourcepilot-net
 
@@ -305,6 +316,7 @@ services:
       GRAPH_NEO4J_PASSWORD: ${GRAPH_NEO4J_PASSWORD:-sourcepilot}
     volumes:
       - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
+      - ../../config:/config:ro
     networks:
       - sourcepilot-net
 

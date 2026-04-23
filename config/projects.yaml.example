@@ -1,0 +1,14 @@
+# AOSP Project Registry
+# Each entry defines an independent AOSP checkout to index.
+projects:
+  - name: ace
+    source_root: /mnt/code/ACE
+    # Optional overrides:
+    # collection_name: aosp_code_ace   # Default: aosp_code_{name}
+    # sub_project_globs:
+    #   - frameworks/*
+    #   - packages/*/*
+    #   - system/core/*
+
+  - name: aosp15
+    source_root: /mnt/code/AOSP15
