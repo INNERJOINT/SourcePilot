@@ -25,10 +25,9 @@ if [ ! -x "$VENV_PYTHON" ]; then
     VENV_PYTHON="python3"
 fi
 
-export PYTHONPATH="$DIR/../src"
+export PYTHONPATH="$PROJ_ROOT/src"
 
 # 默认审计日志路径：锚定到项目根目录，与 sp-cockpit 的默认 SP_COCKPIT_AUDIT_LOG_PATH 对齐
-PROJ_ROOT=$(cd "$DIR/.." && pwd)
 export AUDIT_LOG_FILE="${AUDIT_LOG_FILE:-$PROJ_ROOT/audit.log}"
 
 # 默认参数

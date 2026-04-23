@@ -72,35 +72,45 @@ infra_start_dense
 infra_start_graph
 
 # ── 4. 启动 SourcePilot ──────────────────────────────
-info "启动 SourcePilot (port 9000)..."
-"$DIR/share/_start_sourcepilot.sh" &
-PIDS+=($!)
-SP_PID=${PIDS[-1]}
+SP_PID=""
+if curl -sf http://localhost:9000/api/health >/dev/null 2>&1; then
+    info "检测到 SourcePilot 已在运行 (port 9000)，跳过启动"
+else
+    info "启动 SourcePilot (port 9000)..."
+    "$DIR/share/_start_sourcepilot.sh" &
+    PIDS+=($!)
+    SP_PID=${PIDS[-1]}
 
-for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf http://localhost:9000/api/health >/dev/null 2>&1; then
-        info "SourcePilot 就绪 (PID $SP_PID)"
-        break
-    fi
-    if [ "$i" -eq "$MAX_RETRIES" ]; then
-        die "SourcePilot 启动超时 (${MAX_RETRIES}s)"
-    fi
-    sleep 1
-done
+    for i in $(seq 1 $MAX_RETRIES); do
+        if curl -sf http://localhost:9000/api/health >/dev/null 2>&1; then
+            info "SourcePilot 就绪 (PID $SP_PID)"
+            break
+        fi
+        if [ "$i" -eq "$MAX_RETRIES" ]; then
+            die "SourcePilot 启动超时 (${MAX_RETRIES}s)"
+        fi
+        sleep 1
+    done
+fi
 
 # ── 5. 启动 MCP Server ───────────────────────────────
 export SOURCEPILOT_URL="http://localhost:9000"
 
-info "启动 MCP Server (${MCP_TRANSPORT}, port ${MCP_PORT})..."
+MCP_PID=""
+if [ "$MCP_TRANSPORT" != "stdio" ] && curl -sf "http://localhost:${MCP_PORT}/mcp" >/dev/null 2>&1; then
+    info "检测到 MCP Server 已在运行 (port ${MCP_PORT})，跳过启动"
+else
+    info "启动 MCP Server (${MCP_TRANSPORT}, port ${MCP_PORT})..."
 
-MCP_ARGS=()
-if [ "$MCP_TRANSPORT" != "stdio" ]; then
-    MCP_ARGS+=(--transport "$MCP_TRANSPORT" --port "$MCP_PORT")
+    MCP_ARGS=()
+    if [ "$MCP_TRANSPORT" != "stdio" ]; then
+        MCP_ARGS+=(--transport "$MCP_TRANSPORT" --port "$MCP_PORT")
+    fi
+
+    "$DIR/run_mcp.sh" "${MCP_ARGS[@]}" &
+    PIDS+=($!)
+    MCP_PID=${PIDS[-1]}
 fi
-
-"$DIR/run_mcp.sh" "${MCP_ARGS[@]}" &
-PIDS+=($!)
-MCP_PID=${PIDS[-1]}
 
 # ── 6. 启动 sp-cockpit ───────────────────────────────
 infra_start_cockpit
@@ -120,11 +130,19 @@ fi
 if [ "${GRAPH_ENABLED:-false}" = "true" ]; then
 echo "    Neo4j            (Docker)       (bolt://localhost:7687)" >&2
 fi
+if [ -n "$SP_PID" ]; then
 echo "    SourcePilot      PID $SP_PID    (http://localhost:9000)" >&2
-if [ "$MCP_TRANSPORT" != "stdio" ]; then
-echo "    MCP Server       PID $MCP_PID   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
 else
+echo "    SourcePilot      (already running)    (http://localhost:9000)" >&2
+fi
+if [ -n "$MCP_PID" ]; then
+    if [ "$MCP_TRANSPORT" != "stdio" ]; then
+echo "    MCP Server       PID $MCP_PID   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
+    else
 echo "    MCP Server       PID $MCP_PID   (stdio)" >&2
+    fi
+else
+echo "    MCP Server       (already running)   (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
 fi
 if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
     if [ -n "${SP_COCKPIT_PID:-}" ]; then

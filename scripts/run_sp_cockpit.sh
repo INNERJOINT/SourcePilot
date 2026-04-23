@@ -13,10 +13,10 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
-PROJ_ROOT=$(cd "$DIR/.." && pwd)
-APP_DIR="$PROJ_ROOT/sp-cockpit"
 
 source "$DIR/share/_common.sh"
+
+APP_DIR="$PROJ_ROOT/sp-cockpit"
 source "$DIR/share/_env.sh"
 
 VENV_PYTHON="/opt/pyenv/versions/dify_py3_env/bin/python3"

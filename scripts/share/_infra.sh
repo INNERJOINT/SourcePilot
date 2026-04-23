@@ -36,17 +36,7 @@ infra_start_zoekt() {
     ZOEKT_DOCKER=false
 
     if curl -sf "$zoekt_url/" >/dev/null 2>&1; then
-        if docker compose -f "$COMPOSE_FILE" ps --status running --services 2>/dev/null | grep -qx 'zoekt-webserver'; then
-            info "检测到 zoekt-webserver 容器已在运行，重启容器..."
-            docker compose -f "$COMPOSE_FILE" restart zoekt-webserver >/dev/null
-            for i in $(seq 1 $MAX_RETRIES); do
-                curl -sf "$zoekt_url/" >/dev/null 2>&1 && { info "zoekt-webserver 重启就绪"; break; }
-                [ "$i" -eq "$MAX_RETRIES" ] && die "zoekt-webserver 重启后健康检查超时"
-                sleep 1
-            done
-        else
-            info "检测到 zoekt-webserver 已在运行 ($zoekt_url，非 compose)，跳过原生启动"
-        fi
+        info "检测到 zoekt-webserver 已在运行 ($zoekt_url)，跳过启动"
         ZOEKT_DOCKER=true
         return
     fi
@@ -137,19 +127,9 @@ infra_start_cockpit() {
     fi
 
     if curl -sf "http://localhost:${cockpit_port}/api/health" >/dev/null 2>&1; then
-        if docker compose -f "$COMPOSE_FILE" ps --status running --services 2>/dev/null | grep -qx 'sp-cockpit'; then
-            info "检测到 sp-cockpit 容器已在运行，重启容器..."
-            docker compose -f "$COMPOSE_FILE" restart sp-cockpit >/dev/null
-            for i in $(seq 1 $MAX_RETRIES); do
-                curl -sf "http://localhost:${cockpit_port}/api/health" >/dev/null 2>&1 && { info "sp-cockpit 重启就绪"; SP_COCKPIT_RUNNING=true; return; }
-                [ "$i" -eq "$MAX_RETRIES" ] && { warn "sp-cockpit 重启后健康检查超时"; return; }
-                sleep 1
-            done
-        else
-            info "检测到 sp-cockpit 已在运行 (port ${cockpit_port}，非 compose)，跳过启动"
-            SP_COCKPIT_RUNNING=true
-            return
-        fi
+        info "检测到 sp-cockpit 已在运行 (port ${cockpit_port})，跳过启动"
+        SP_COCKPIT_RUNNING=true
+        return
     fi
 
     info "启动 sp-cockpit (port ${cockpit_port})..."

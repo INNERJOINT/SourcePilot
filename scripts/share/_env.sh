@@ -20,9 +20,8 @@
 
 set -euo pipefail
 
-_PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-if [ -f "$_PROJ_ROOT/.env" ]; then
+# Use PROJ_ROOT from _common.sh (must be sourced first)
+if [ -f "$PROJ_ROOT/.env" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         # 跳过空行和注释行
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -60,6 +59,6 @@ if [ -f "$_PROJ_ROOT/.env" ]; then
         if [ -z "${!key+x}" ]; then
             export "$key=$value"
         fi
-    done < "$_PROJ_ROOT/.env"
-    echo "Loaded config from $_PROJ_ROOT/.env" >&2
+    done < "$PROJ_ROOT/.env"
+    echo "Loaded config from $PROJ_ROOT/.env" >&2
 fi

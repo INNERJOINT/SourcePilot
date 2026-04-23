@@ -21,6 +21,9 @@ if [[ -n "${_COMMON_LIB_LOADED:-}" ]]; then
 fi
 _COMMON_LIB_LOADED=1
 
+# Canonical project root — all scripts should use this instead of computing relative paths
+PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 # Colors (disabled when stderr is not a TTY or NO_COLOR is set)
 if [[ -t 2 && -z "${NO_COLOR:-}" ]]; then
     _C_GREEN=$'\033[0;32m'
