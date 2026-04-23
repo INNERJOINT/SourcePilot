@@ -2,189 +2,98 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## What This Is
 
-AOSP Code Search — three independent services:
+AOSP Code Search — a hybrid RAG code search system over Android Open Source Project sources. Three decoupled services communicate only via HTTP and a shared audit log:
 
-1. **SourcePilot** (`src/`) — Hybrid RAG search engine with Starlette HTTP API
-2. **MCP Access Layer** (`mcp-server/`) — Thin MCP protocol proxy delegating to SourcePilot via httpx
-3. **SourcePilot Cockpit** (`sp-cockpit/`) — FastAPI + React SPA for browsing SourcePilot's `audit.log` (port 9100). Tails JSONL into SQLite, exposes Dashboard / Events / Trace / Search. Read-only against `audit.log`. See `sp-cockpit/README.md`.
+- **SourcePilot** (`src/`, port 9000) — Starlette HTTP API: query gateway with NL classification, LLM rewriting, multi-path Zoekt retrieval, RRF fusion, and feature-based reranking.
+- **MCP Server** (`mcp-server/`, port 8888) — Thin MCP protocol proxy (stdio or Streamable HTTP) forwarding to SourcePilot. No search logic here.
+- **SP Cockpit** (`sp-cockpit/`, port 9100) — FastAPI + React SPA for browsing `audit.log` (read-only).
 
-## Commands
+## Build & Run
+
+Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 
 ```bash
-# Environment setup (copy template, edit values)
-cp .env.example .env
+scripts/run_all.sh              # Full stack: Zoekt → SourcePilot → MCP → SP Cockpit
+scripts/run_sourcepilot.sh      # SourcePilot only
+scripts/run_mcp.sh              # MCP (auto-starts SourcePilot)
+scripts/run_sp_cockpit.sh       # SP Cockpit only
+scripts/restart.sh              # Stop & restart (supports --only sp|mcp|av)
+```
 
-# Start full stack (zoekt + dense + graph + SourcePilot + MCP + sp-cockpit) — reads from .env
-scripts/run_all.sh
+## Testing
 
-# Start SourcePilot full stack without MCP (zoekt + dense + graph + SourcePilot + sp-cockpit)
-scripts/run_sourcepilot.sh
-
-# Start SourcePilot bare (uvicorn only)
-scripts/run_sourcepilot.sh --bare
-
-# Start both services (auto-starts SourcePilot as subprocess)
-scripts/run_mcp.sh
-
-# Restart all services
-scripts/restart.sh
-
-# Restart SourcePilot full stack (without MCP)
-scripts/restart.sh --only sourcepilot
-
-# Restart individual services
-scripts/restart.sh --only sp          # SourcePilot process only
-scripts/restart.sh --only dense       # Dense stack (docker compose)
-scripts/restart.sh --only graph       # Neo4j (docker compose)
-
-# Start MCP with external SourcePilot
-SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh
-
-# MCP Streamable HTTP mode
-scripts/run_mcp.sh --transport streamable-http --port 8888
-
-# Run SourcePilot tests (unit + integration + e2e)
+```bash
+# All SourcePilot tests (unit + integration + e2e)
 PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v
 
-# Run MCP tests
+# MCP tests only
 PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 
-# Run all tests
-PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v && PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
+# Single test file or test
+PYTHONPATH=src pytest tests/unit/sourcepilot/test_gateway.py -v
+PYTHONPATH=src pytest tests/unit/sourcepilot/test_gateway.py::test_exact_query -v
+
+# SP Cockpit (separate project, run from its directory)
+cd sp-cockpit && pytest tests/ -v
 ```
 
-## Architecture
+Tests mock Zoekt via `respx` — no live backend needed. `pytest.ini` config in `pyproject.toml` sets `pythonpath = ["src", "mcp-server"]`, so bare `pytest` works for most cases, but CI runs the two suites separately with explicit PYTHONPATH.
 
-```
-src/                              # SourcePilot — Hybrid RAG Search Engine
-├── app.py                        # Starlette HTTP API (7 endpoints, port 9000)
-├── gateway/                      # Layer 1: Query Gateway (business logic)
-│   ├── gateway.py                # Main orchestrator: classify → NL pipeline or direct search
-│   ├── router.py                 # Query routing & parallel dispatch
-│   ├── fusion.py                 # RRF cross-engine fusion
-│   ├── ranker.py                 # Feature-based reranking
-│   └── nl/                       # NL sub-module
-│       ├── classifier.py         # Query intent classification
-│       ├── rewriter.py           # LLM query rewrite
-│       ├── cache.py              # LRU cache + concept_map
-│       └── concept_map.json
-├── adapters/                     # Layer 2: Adapter Layer (pluggable backends)
-│   ├── base.py                   # SearchAdapter ABC
-│   ├── zoekt.py                  # ZoektAdapter — Zoekt HTTP client
-│   └── feishu.py                 # FeishuAdapter placeholder
-├── observability/                # Cross-cutting: Observability
-│   └── audit.py                  # Structured JSON audit logging
-└── config/                       # Cross-cutting: Configuration
-    ├── base.py                   # Env var config
-    └── backends.py               # Backend registry
+## Linting
 
-mcp-server/                       # MCP Access Layer — Protocol Proxy
-├── mcp_server.py                 # Entry-point dispatcher (stdio/HTTP)
-├── requirements.txt
-└── entry/
-    ├── handlers.py               # MCP Server + tools + httpx client → SourcePilot
-    ├── mcp_stdio.py              # stdio transport
-    └── mcp_http.py               # HTTP transport + BearerTokenMiddleware
+```bash
+ruff check src/ mcp-server/ tests/        # Python lint (rules: E, F, W, I, B, UP; line-length 100)
+ruff check sp-cockpit/sp_cockpit          # SP Cockpit backend
+shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
 ```
 
-### Request Flow
+## Two PYTHONPATH Roots
 
-**MCP path**: tool call → `mcp-server/entry/handlers.py` → httpx POST → `src/app.py` → `gateway.search()` → classify → ZoektAdapter → format results
+`src/` and `mcp-server/` are independent Python roots with **no shared imports** — they communicate only over HTTP. When writing imports or running tests, use the correct root:
 
-**Direct SourcePilot path**: HTTP POST → `src/app.py` → `gateway.search()` → classify → ZoektAdapter → JSON response
+- SourcePilot code: `PYTHONPATH=src` (imports like `from gateway.gateway import ...`, `from adapters.zoekt import ...`)
+- MCP code: `PYTHONPATH=mcp-server` (imports like `from entry.handlers import ...`)
 
-### Key Design Decisions
+## Key Request Flow (SourcePilot)
 
-- Two projects communicate via HTTP API (localhost:9000). No shared imports.
-- MCP layer uses httpx.AsyncClient (module-level singleton, timeout=30s) to call SourcePilot.
-- X-Trace-Id header propagates trace IDs across services.
-- Audit/config fully in SourcePilot; MCP layer uses standard logging only.
-- All SourcePilot imports use paths relative to `src/` (`from config import ...`, `from gateway.nl.rewriter import ...`).
-- All MCP imports use paths relative to `mcp-server/` (`from entry.handlers import ...`).
-- Layered dependency within SourcePilot: gateway → adapters → config/observability. No upward dependencies.
-- Zoekt score normalization uses sigmoid mapping: `1/(1+exp(-0.1*(score-10)))` inside `ZoektAdapter` to map BM25 scores (typically 0-50) into 0-1 range.
-- Zoekt `/print` endpoint returns HTML, not JSON. `ZoektAdapter.fetch_file_content()` parses `<pre>` tags and strips HTML to extract source code.
-- MCP Streamable HTTP mode uses Starlette with `BearerTokenMiddleware` wrapping the session manager. The middleware must pass through `lifespan` events (non-http scope types).
-- `SearchAdapter` ABC enables pluggable backends. New backends implement `search()`, `get_content()`, `health_check()`.
+`app.py` endpoint → `gateway.search()` → `classifier.py` (exact vs NL intent) → exact: `ZoektAdapter.search_zoekt()` directly; NL: LLM rewrite → parallel multi-path Zoekt queries → `fusion.py` RRF merge → `ranker.py` rerank → response.
 
-## Environment
+## Architecture Details
 
-- Python virtualenv: `/opt/pyenv/versions/dify_py3_env/bin/python3`
-- Two PYTHONPATH roots: `src/` for SourcePilot, `mcp-server/` for MCP
-- SourcePilot tests: `PYTHONPATH=src pytest tests/test_sourcepilot.py tests/test_api_contract.py tests/test_audit.py`
-- MCP tests: `PYTHONPATH=mcp-server pytest tests/test_mcp_server.py`
-- Key env vars: ZOEKT_URL, SOURCEPILOT_URL (default http://localhost:9000), MCP_AUTH_TOKEN
-- Tests use `respx` to mock HTTP responses -- no real Zoekt server needed
-- The project language is primarily Chinese (comments, docs, error messages, NL pipeline)
+- **Pluggable backends** via `SearchAdapter` ABC in `src/adapters/base.py` — methods: `search`, `get_content`, `health_check`.
+- **Zoekt score normalization**: sigmoid `1/(1+exp(-0.1*(score-10)))` in `ZoektAdapter`.
+- **Zoekt `/print`** returns HTML; `ZoektAdapter.fetch_file_content()` extracts `<pre>` and strips tags.
+- **Non-blocking audit**: `QueueHandler` / `QueueListener`, started in the Starlette lifespan. Writes JSONL to `audit.log`.
+- **`X-Trace-Id`** header propagates across services.
+- **NL cache**: LRU + `concept_map` in `src/gateway/nl/cache.py`.
 
-## Indexing Admin (sp-cockpit extension)
+## Scripts Layout
 
-Embedded in `sp-cockpit/` (port 9100, `/repos` route). Manages AOSP indexing jobs for three backends.
+Scripts are organized under `scripts/`:
+- `share/` — shared bash libraries (`_common.sh` logging, `_env.sh` dotenv loader, `_infra.sh` service starters)
+- `indexing/` — index build scripts (Zoekt, dense/Milvus, Neo4j graph)
+- `testing/` — smoke tests (`smoke_queries.sh`), dense verification, hybrid eval
 
-### Two separate databases — DO NOT conflate
+All scripts use `set -euo pipefail` and source `share/_common.sh`. Run any with `-h` for usage.
 
-| DB file | Purpose | Writer |
+## Environment Variables
+
+Key variables (see `.env.example` for full list):
+
+| Variable | Default | Notes |
 |---|---|---|
-| `sp-cockpit/data/audit.db` | Audit log mirror (existing) | `sp_cockpit.ingester` tails `audit.log` |
-| `sp-cockpit/data/indexing.db` | Indexing job metadata (new) | **Only** FastAPI process via HTTP callbacks |
+| `ZOEKT_URL` | `http://localhost:6070` | Zoekt webserver |
+| `ZOEKT_INDEX_PATH` | — | Local index dir for native launch |
+| `SOURCEPILOT_URL` | `http://localhost:9000` | Used by MCP layer |
+| `NL_ENABLED` | `true` | NL rewrite pipeline toggle |
+| `AUDIT_LOG_FILE` | `$PROJ_ROOT/audit.log` | SourcePilot audit output |
+| `MCP_AUTH_TOKEN` | — | Bearer token for MCP Streamable HTTP mode |
 
-`audit.db` is never written by the indexing subsystem. `indexing.db` is never read by the audit ingester.
+## CI
 
-### Script hooks
-
-All three wrapper scripts call `python -m sp_cockpit.indexing_cli` at job boundaries:
-
-```bash
-# Pattern in each wrapper script:
-JOB_ID=$(python -m sp_cockpit.indexing_cli start \
-  --repo-path "$REPO" --backend "$BACKEND" --log-path "$LOG" \
-  --internal-token "$INDEXING_INTERNAL_TOKEN")
-trap 'python -m sp_cockpit.indexing_cli finish --job-id "$JOB_ID" \
-  --status fail --exit-code $? --internal-token "$INDEXING_INTERNAL_TOKEN"' EXIT
-# ... run indexer ...
-python -m sp_cockpit.indexing_cli finish --job-id "$JOB_ID" --status success --exit-code 0 \
-  --internal-token "$INDEXING_INTERNAL_TOKEN"
-trap - EXIT
-```
-
-The CLI uses HTTP (`POST /api/indexing/jobs/internal-start` and `POST /api/indexing/jobs/{id}/finish`)
-authenticated with `X-Indexing-Internal-Token`. SQLite is **never written directly** by the CLI.
-
-### Internal token
-
-Set `INDEXING_INTERNAL_TOKEN` in `.env` (same value used by wrapper scripts and sp-cockpit):
-
-```bash
-INDEXING_INTERNAL_TOKEN=change-me-to-random-token
-```
-
-### Backend SDK isolation
-
-`pymilvus` and `neo4j-driver` are **not** installed in sp-cockpit's Python env.
-Heavy operations (hard-delete, entity-count) run inside indexer containers:
-
-```bash
-docker compose --profile indexer run --rm dense-indexer python -m scripts.dense_drop REPO
-docker compose --profile indexer run --rm graph-indexer python -m scripts.graph_drop REPO
-```
-
-### Commands
-
-```bash
-# Start sp-cockpit (includes indexing admin)
-scripts/run_sp_cockpit.sh
-
-# Run sp-cockpit tests (includes indexing DB + API + e2e)
-cd sp-cockpit && PYTHONPATH=. pytest tests/ -v
-
-# Verify no heavy deps in sp-cockpit venv
-cd sp-cockpit && PYTHONPATH=. pytest tests/test_no_heavy_deps.py -v
-
-# Syntax-check wrapper scripts
-bash -n scripts/indexing/build_dense_index_batch.sh scripts/indexing/build_graph_index.sh scripts/indexing/reindex.sh
-
-# Dry-run a script (only fires CLI hooks, no docker)
-INDEXING_DRY_RUN=1 bash scripts/indexing/build_graph_index.sh frameworks/base
-```
+GitHub Actions (`.github/workflows/test.yml`) runs three jobs:
+1. **test** — SourcePilot + MCP pytest suites (mocks Zoekt, disables NL and audit)
+2. **shell-lint** — `shellcheck -x -S error` + `bash -n` on all scripts
+3. **sp-cockpit** — ruff + pytest + frontend typecheck/build
