@@ -23,8 +23,8 @@
                   └────────────────────────────────────────────┘
             ┌──────────────────────────────────────────────────────────┐
             │   Unit (per-module)                                      │   tests/unit/{sourcepilot,mcp}/
-            │   adapters, gateway, NL pipeline, config, observability, │   audit-viewer/tests/
-            │   MCP handlers/transports, audit-viewer ingester/api     │
+            │   adapters, gateway, NL pipeline, config, observability, │   sp-cockpit/tests/
+            │   MCP handlers/transports, sp-cockpit ingester/api     │
             └──────────────────────────────────────────────────────────┘
 ```
 
@@ -39,10 +39,10 @@ backends; they are not run by `pytest`.
 |-------|------|-------------|-----------------|
 | Unit (SourcePilot) | `tests/unit/sourcepilot/{adapters,config,gateway,gateway/nl,observability}/` | `PYTHONPATH=src pytest tests/unit/sourcepilot/ -v` | One module at a time, with everything else mocked |
 | Unit (MCP) | `tests/unit/mcp/`, `tests/unit/mcp/entry/` | `PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v` | MCP handlers, stdio transport, HTTP transport |
-| Unit (Audit Viewer) | `audit-viewer/tests/` | `(cd audit-viewer && pytest -v)` | Parser, ingester, API, retention |
+| Unit (SourcePilot Cockpit) | `sp-cockpit/tests/` | `(cd sp-cockpit && pytest -v)` | Parser, ingester, API, retention |
 | Integration | `tests/integration/{test_gateway_pipeline.py, test_api_contract.py}` | `PYTHONPATH=src pytest tests/integration/ -v` | Full gateway pipeline (classify → search → fuse → rank) with respx-mocked Zoekt; HTTP API shape via Starlette TestClient |
 | E2E | `tests/e2e/test_mcp_sourcepilot_chain.py` | `PYTHONPATH=src pytest tests/e2e/ -v` | MCP server in-process calls SourcePilot in-process (both Python imports; HTTP client is `respx`-mocked) |
-| Live smoke | `scripts/smoke_queries.sh`, `scripts/test_dense.sh`, `tests/test_mcp_endpoints.sh` | see [smoke-scripts.md](./smoke-scripts.md) | Full real stack: Zoekt + Milvus + Embedding + SourcePilot + audit-viewer |
+| Live smoke | `scripts/smoke_queries.sh`, `scripts/test_dense.sh`, `tests/test_mcp_endpoints.sh` | see [smoke-scripts.md](./smoke-scripts.md) | Full real stack: Zoekt + Milvus + Embedding + SourcePilot + sp-cockpit |
 
 ## Service / PYTHONPATH boundary
 
@@ -58,8 +58,8 @@ repo root
 ├── mcp-server/           ← PYTHONPATH=mcp-server  (MCP)
 │   ├── mcp_server.py
 │   └── entry/
-├── audit-viewer/         ← own pyproject.toml + own tests/
-│   ├── audit_viewer/
+├── sp-cockpit/         ← own pyproject.toml + own tests/
+│   ├── sp_cockpit/
 │   └── tests/
 └── tests/                ← shared pytest tree
     ├── conftest.py       ← global env vars + shared mock fixtures
@@ -106,7 +106,7 @@ sequenceDiagram
     participant Zoekt as Zoekt :6070
     participant Milvus as Milvus :19530
     participant Emb as Embedding :8080
-    participant AV as audit-viewer :9100
+    participant AV as sp-cockpit :9100
     participant DB as audit.db (SQLite)
 
     User->>SP: POST /api/search (X-Trace-Id)
@@ -121,7 +121,7 @@ sequenceDiagram
 ```
 
 The smoke script generates a `trace_id`, fires the request, then polls
-`audit-viewer/data/audit.db` to verify the expected pipeline stages
+`sp-cockpit/data/audit.db` to verify the expected pipeline stages
 (`classify`, `rewrite`, `dense_search`, `rrf_merge`, `rerank`) appeared with
 the right `records_count`. Exit code reflects both HTTP outcome and audit
 verification.

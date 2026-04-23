@@ -18,7 +18,7 @@
   `tests/test_mcp_endpoints.sh`) return non-zero on failure but are not wired
   into any CI job.
 - No flake-tracking, no quarantine markers, no `pytest.ini` / `pyproject.toml`
-  flake plugin (audit-viewer's `pyproject.toml` only configures
+  flake plugin (sp-cockpit's `pyproject.toml` only configures
   `pytest-asyncio` mode).
 - No PR template under `.github/`.
 - No new-test review checklist.
@@ -38,7 +38,7 @@ PR.
 | SourcePilot unit (`tests/unit/sourcepilot/`) | ≥ 80 % line | Pure-Python modules with mockable boundaries; the bar should be high |
 | SourcePilot integration (`tests/integration/`) | (not measured separately; rolled into SourcePilot total) | Integration adds realism, not coverage breadth |
 | MCP unit (`tests/unit/mcp/`) | ≥ 75 % line | Thin proxy layer; some lines are protocol boilerplate that's hard to cover |
-| Audit Viewer (`audit-viewer/tests/`) | ≥ 80 % line | Self-contained service with clear boundaries |
+| SourcePilot Cockpit (`sp-cockpit/tests/`) | ≥ 80 % line | Self-contained service with clear boundaries |
 
 Enforcement, when adopted, would look like:
 
@@ -70,7 +70,7 @@ When reviewing a PR that adds tests, suggested questions:
 
 - [ ] **Path**: does the test live in the right tier (unit/integration/e2e)
       and the right service tree (`tests/unit/sourcepilot/...` vs
-      `tests/unit/mcp/...` vs `audit-viewer/tests/...`)?
+      `tests/unit/mcp/...` vs `sp-cockpit/tests/...`)?
 - [ ] **PYTHONPATH**: does the test rely on the surrounding `conftest.py` to
       add `src/` or `mcp-server/` to `sys.path`? It must not hardcode paths.
 - [ ] **Mocking**: outbound HTTP via `respx`; Milvus / async clients via
@@ -86,7 +86,7 @@ When reviewing a PR that adds tests, suggested questions:
       consistent with surrounding code; the rest of `tests/conftest.py` and
       its neighbors use Chinese docstrings).
 - [ ] **Async**: marked with `@pytest.mark.asyncio` or living in a file
-      where `asyncio_mode = "auto"` is set (audit-viewer has this in its
+      where `asyncio_mode = "auto"` is set (sp-cockpit has this in its
       `pyproject.toml`).
 - [ ] **Speed**: a single test should run in well under one second; if it
       sleeps, justify it.
@@ -107,7 +107,7 @@ and the right SQLite row.
 
 ### Live (`scripts/smoke_queries.sh`)
 
-After every smoke case, the script polls `audit-viewer/data/audit.db`:
+After every smoke case, the script polls `sp-cockpit/data/audit.db`:
 
 ```sql
 SELECT count(*) FROM events

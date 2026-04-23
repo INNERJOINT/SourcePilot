@@ -53,8 +53,8 @@ tests/
     ├── conftest.py                               # adds BOTH src/ and mcp-server/ to sys.path
     └── test_mcp_sourcepilot_chain.py            # MCP → SourcePilot in-process, HTTP via respx
 
-audit-viewer/tests/
-├── conftest.py                                   # SQLite tempfile + AUDIT_LOG_PATH env override
+sp-cockpit/tests/
+├── conftest.py                                   # SQLite tempfile + SP_COCKPIT_AUDIT_LOG_PATH env override
 ├── test_api.py                                   # FastAPI endpoints
 ├── test_ingester.py                              # JSONL → SQLite ingestion loop
 ├── test_parser.py                                # audit-log line parser
@@ -62,7 +62,7 @@ audit-viewer/tests/
 ```
 
 The repo has several hundred test functions across these trees
-(`grep -rn '^def test_\|^async def test_\|^    def test_\|^    async def test_' tests/ audit-viewer/tests/ | wc -l`).
+(`grep -rn '^def test_\|^async def test_\|^    def test_\|^    async def test_' tests/ sp-cockpit/tests/ | wc -l`).
 
 ## Per-directory walkthrough
 
@@ -118,14 +118,14 @@ The repo has several hundred test functions across these trees
 |------|----------------|
 | `test_mcp_sourcepilot_chain.py` | Imports MCP and SourcePilot in the same process; MCP `httpx.AsyncClient` is replaced by an `ASGITransport` against the SourcePilot Starlette app; respx still mocks Zoekt downstream |
 
-### `audit-viewer/tests/`
+### `sp-cockpit/tests/`
 
 | File | Module under test |
 |------|-------------------|
-| `test_parser.py` | `audit_viewer/parser.py` — JSONL line parser |
-| `test_ingester.py` | `audit_viewer/ingester.py` — tail JSONL → SQLite |
-| `test_api.py` | `audit_viewer/api.py` — FastAPI endpoints |
-| `test_retention.py` | `audit_viewer/retention.py` — retention/pruning policy |
+| `test_parser.py` | `sp_cockpit/parser.py` — JSONL line parser |
+| `test_ingester.py` | `sp_cockpit/ingester.py` — tail JSONL → SQLite |
+| `test_api.py` | `sp_cockpit/api.py` — FastAPI endpoints |
+| `test_retention.py` | `sp_cockpit/retention.py` — retention/pruning policy |
 
 ## Run commands
 
@@ -143,7 +143,7 @@ PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v &
 PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 
 # Audit-viewer (separate project, has its own pyproject.toml)
-(cd audit-viewer && pytest -v)
+(cd sp-cockpit && pytest -v)
 ```
 
 ### Filtered runs
@@ -200,11 +200,11 @@ Place under `tests/unit/mcp/` (top level for the dispatcher) or
 `mcp-server/` to `sys.path`. Use `respx` to mock the outbound httpx call
 to SourcePilot.
 
-### Adding an audit-viewer test
+### Adding an sp-cockpit test
 
-Place under `audit-viewer/tests/`. Use the `tmp_paths` fixture from
-`audit-viewer/tests/conftest.py` for a fresh SQLite tempfile and isolated
-`AUDIT_LOG_PATH` / `AUDIT_DB_PATH` env vars.
+Place under `sp-cockpit/tests/`. Use the `tmp_paths` fixture from
+`sp-cockpit/tests/conftest.py` for a fresh SQLite tempfile and isolated
+`SP_COCKPIT_AUDIT_LOG_PATH` / `SP_COCKPIT_AUDIT_DB_PATH` env vars.
 
 ## MCP suite caveat — different PYTHONPATH
 

@@ -44,19 +44,69 @@ services:
     profiles:
       - tools
 
-  # ── Audit Viewer ─────────────────────────────────────────────────────
-  audit-viewer:
-    # audit-viewer source lives at repo root; build context is one level up
-    # from this compose file.
-    build: ../audit-viewer
+  # ── SourcePilot Gateway (HTTP API) ───────────────────────────────────
+  sourcepilot-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/gateway/Dockerfile
+      args:
+        INSTALL_DENSE: "${GATEWAY_INSTALL_DENSE:-false}"
     environment:
-      AUDIT_LOG_PATH: /var/log/sourcepilot/audit.log
-      AUDIT_DB_PATH: /data/audit.db
+      ZOEKT_URL: ${ZOEKT_URL:-http://zoekt-webserver:6070}
+      AUDIT_LOG_FILE: /var/log/sourcepilot/audit.log
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
+      NL_ENABLED: ${NL_ENABLED:-false}
+      NL_MODEL: ${NL_MODEL:-}
+      NL_API_KEY: ${NL_API_KEY:-}
+      NL_API_BASE: ${NL_API_BASE:-}
+      DENSE_ENABLED: ${DENSE_ENABLED:-false}
+      DENSE_VECTOR_DB_URL: http://milvus:19530
+      DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
+      DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
+      DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
+      DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
+      GRAPH_ENABLED: ${GRAPH_ENABLED:-false}
+      GRAPH_NEO4J_URI: bolt://neo4j:7687
+      GRAPH_NEO4J_USER: ${GRAPH_NEO4J_USER:-neo4j}
+      GRAPH_NEO4J_PASSWORD: ${GRAPH_NEO4J_PASSWORD:-sourcepilot}
     volumes:
-      - ${AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log:ro
-      - ../audit-viewer/data:/data
+      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log
     ports:
-      - "${AUDIT_VIEWER_PORT:-9100}:9100"
+      - "${SOURCEPILOT_PORT:-9000}:9000"
+    depends_on:
+      zoekt-webserver:
+        condition: service_healthy
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── SourcePilot Cockpit ──────────────────────────────────────────────
+  sp-cockpit:
+    # sp-cockpit source lives at repo root; build context is one level up
+    # from this compose file.
+    build: ../sp-cockpit
+    environment:
+      SP_COCKPIT_AUDIT_LOG_PATH: /var/log/sourcepilot/audit.log
+      SP_COCKPIT_AUDIT_DB_PATH: /data/audit.db
+    volumes:
+      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log:ro
+      - ../sp-cockpit/data:/data
+    ports:
+      - "${SP_COCKPIT_PORT:-9100}:9100"
+    depends_on:
+      sourcepilot-gateway:
+        condition: service_started
     networks:
       - sourcepilot-net
     healthcheck:

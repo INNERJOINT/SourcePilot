@@ -6,7 +6,7 @@ Hybrid RAG code search over AOSP sources, packaged as three decoupled services:
 |---|---|---|---|
 | **SourcePilot** | `src/` | `9000` | Starlette HTTP API — query gateway, NL pipeline, Zoekt + dense adapters |
 | **MCP Access Layer** | `mcp-server/` | stdio / `8888` | Thin MCP protocol proxy delegating to SourcePilot over HTTP |
-| **Audit Viewer** | `audit-viewer/` | `9100` | FastAPI + React SPA for browsing `audit.log` (read-only) |
+| **SourcePilot Cockpit** | `sp-cockpit/` | `9100` | FastAPI + React SPA for browsing `audit.log` (read-only) |
 
 The services share nothing but HTTP and the audit log. Each can be run, tested, and deployed independently.
 
@@ -38,9 +38,9 @@ The services share nothing but HTTP and the audit log. Each can be run, tested, 
 
 | Dependency | Purpose | Check |
 |---|---|---|
-| Python 3 virtualenv | Runtime for SourcePilot, MCP, audit-viewer | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
+| Python 3 virtualenv | Runtime for SourcePilot, MCP, sp-cockpit | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
 | Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/zoekt/` |
-| Node.js + npm | Build audit-viewer frontend (optional) | `node --version` |
+| Node.js + npm | Build sp-cockpit frontend (optional) | `node --version` |
 | curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
 
 Optional (for dense/semantic search): Milvus vector DB + embedding service. See `.env.example` for `DENSE_*` variables.
@@ -63,7 +63,7 @@ Edit `.env` — at minimum set:
 scripts/run_all.sh
 ```
 
-This launches (in order): zoekt-webserver → SourcePilot (port 9000) → MCP Server (port 8888) → audit-viewer (port 9100). Press `Ctrl+C` to stop all.
+This launches (in order): zoekt-webserver → SourcePilot (port 9000) → MCP Server (port 8888) → sp-cockpit (port 9100). Press `Ctrl+C` to stop all.
 
 **3. Verify**
 
@@ -81,7 +81,7 @@ scripts/run_sourcepilot.sh                                   # SourcePilot alone
 scripts/run_mcp.sh                                           # MCP (auto-starts SourcePilot)
 SOURCEPILOT_URL=http://localhost:9000 scripts/run_mcp.sh     # MCP against external SourcePilot
 scripts/run_mcp.sh --transport streamable-http --port 8888   # MCP Streamable HTTP
-scripts/run_audit_viewer.sh                                  # audit-viewer alone
+scripts/run_sp_cockpit.sh                                  # sp-cockpit alone
 ```
 
 ## Scripts reference
@@ -90,10 +90,10 @@ scripts/run_audit_viewer.sh                                  # audit-viewer alon
 
 | Category | Script | Purpose |
 |---|---|---|
-| **Runtime** | `run_all.sh` | One-command full stack (Zoekt + SourcePilot + MCP + audit-viewer) |
+| **Runtime** | `run_all.sh` | One-command full stack (Zoekt + SourcePilot + MCP + sp-cockpit) |
 | | `run_sourcepilot.sh` | Start SourcePilot HTTP API (port 9000) |
 | | `run_mcp.sh` | Start MCP Server (stdio or Streamable HTTP) |
-| | `run_audit_viewer.sh` | Start audit-viewer FastAPI + React SPA (port 9100) |
+| | `run_sp_cockpit.sh` | Start sp-cockpit FastAPI + React SPA (port 9100) |
 | | `_env.sh` | Shared `.env` loader, sourced by all `run_*.sh` scripts |
 | **Indexing** | `reindex.sh` | Trigger Zoekt index rebuild via Docker |
 | | `build_dense_index.py` | Build Milvus vector index from local source files |
@@ -128,7 +128,7 @@ mcp-server/                    MCP Access Layer
 ├── mcp_server.py              Transport dispatcher
 └── entry/                     handlers / stdio / http (with BearerTokenMiddleware)
 
-audit-viewer/                  FastAPI + React SPA (see audit-viewer/README.md)
+sp-cockpit/                  FastAPI + React SPA (see sp-cockpit/README.md)
 
 deploy/                        Merged Milvus + Neo4j + Zoekt + indexer compose
 scripts/                       Orchestration, smoke tests, index build, A/B eval
@@ -163,7 +163,7 @@ For full testing documentation, see [docs/testing/README.md](docs/testing/README
 | `MCP_AUTH_TOKEN` | — | Bearer token for Streamable HTTP |
 | `NL_ENABLED` / `NL_MODEL` | `true` / `CVTE-AUTO` | NL rewrite pipeline |
 | `AUDIT_LOG_FILE` | `$PROJ_ROOT/audit.log` | SourcePilot writes here |
-| `AUDIT_LOG_PATH` | `$PROJ_ROOT/audit.log` | audit-viewer tails this |
+| `SP_COCKPIT_AUDIT_LOG_PATH` | `$PROJ_ROOT/audit.log` | sp-cockpit tails this |
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`.
 

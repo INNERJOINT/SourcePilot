@@ -10,7 +10,7 @@ end-to-end.
 |---------|-----------|-----------|------------|
 | SourcePilot (search engine) | `src/` | `tests/unit/sourcepilot/`, `tests/integration/`, `tests/e2e/` | `src` |
 | MCP Access Layer | `mcp-server/` | `tests/unit/mcp/` | `mcp-server` |
-| Audit Viewer (FastAPI + SPA) | `audit-viewer/audit_viewer/` | `audit-viewer/tests/` | (its own pyproject) |
+| SourcePilot Cockpit (FastAPI + SPA) | `sp-cockpit/sp_cockpit/` | `sp-cockpit/tests/` | (its own pyproject) |
 
 ## Doc Index
 
@@ -43,13 +43,13 @@ PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v
 # 3. Run MCP unit tests
 PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 
-# 4. Run audit-viewer tests (separate project)
-(cd audit-viewer && pip install -e '.[dev]' && pytest -v)
+# 4. Run sp-cockpit tests (separate project)
+(cd sp-cockpit && pip install -e '.[dev]' && pytest -v)
 ```
 
 A green run looks roughly like `=== N passed in S seconds ===` per suite.
 The repo exposes several hundred test cases across the three services
-(`grep -rn '^def test_\|^async def test_\|^    def test_\|^    async def test_' tests/ audit-viewer/tests/ | wc -l`).
+(`grep -rn '^def test_\|^async def test_\|^    def test_\|^    async def test_' tests/ sp-cockpit/tests/ | wc -l`).
 
 ## Conventions
 
@@ -63,7 +63,7 @@ The repo exposes several hundred test cases across the three services
   `scripts/` (see [smoke-scripts.md](./smoke-scripts.md)).
 - **Audit-log is asserted, not just produced.** Audit emission has a unit test
   (`tests/unit/sourcepilot/observability/test_audit.py`) and a live check
-  (`scripts/smoke_queries.sh` polls `audit-viewer/data/audit.db`). When you
+  (`scripts/smoke_queries.sh` polls `sp-cockpit/data/audit.db`). When you
   add a new pipeline stage, add an audit assertion too — see
   [quality-gates.md](./quality-gates.md).
 - **Doc language is English** (consistent with the top-level README).
@@ -83,4 +83,4 @@ The repo exposes several hundred test cases across the three services
 
 - Top-level [`README.md`](../../README.md) — project overview
 - [`CLAUDE.md`](../../CLAUDE.md) — canonical commands and architecture notes
-- [`audit-viewer/README.md`](../../audit-viewer/README.md) — audit-viewer service
+- [`sp-cockpit/README.md`](../../sp-cockpit/README.md) — sp-cockpit service

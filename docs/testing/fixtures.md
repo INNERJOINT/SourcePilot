@@ -19,7 +19,7 @@ tests/
 └── e2e/
     └── conftest.py                   # adds BOTH src/ and mcp-server/ to sys.path
 
-audit-viewer/tests/
+sp-cockpit/tests/
 └── conftest.py                       # tempfile audit.log + audit.db, AUDIT_*_PATH env override
 ```
 
@@ -126,14 +126,14 @@ See `tests/unit/sourcepilot/adapters/test_dense.py` and
 ## Audit-log fixtures (`tests/unit/sourcepilot/observability/test_audit.py`)
 
 The audit-emission unit test writes to a tempfile-backed SQLite DB so it
-doesn't touch the real `audit-viewer/data/audit.db`. This works because the
+doesn't touch the real `sp-cockpit/data/audit.db`. This works because the
 audit module's path is config-driven; the test sets the env vars to a
-`tmp_path` location (the built-in pytest fixture, not the audit-viewer
+`tmp_path` location (the built-in pytest fixture, not the sp-cockpit
 `tmp_paths` fixture below).
 
-## Audit-viewer fixtures (`audit-viewer/tests/conftest.py`)
+## Audit-viewer fixtures (`sp-cockpit/tests/conftest.py`)
 
-The audit-viewer tests are isolated from the rest of the repo:
+The sp-cockpit tests are isolated from the rest of the repo:
 
 ```python
 @pytest.fixture
@@ -141,16 +141,16 @@ def tmp_paths(tmp_path: Path, monkeypatch):
     log_p = tmp_path / "audit.log"
     db_p = tmp_path / "audit.db"
     log_p.touch()
-    monkeypatch.setenv("AUDIT_LOG_PATH", str(log_p))
-    monkeypatch.setenv("AUDIT_DB_PATH", str(db_p))
-    monkeypatch.setenv("AUDIT_VIEWER_FRONTEND_DIST", "/nonexistent-spa")
+    monkeypatch.setenv("SP_COCKPIT_AUDIT_LOG_PATH", str(log_p))
+    monkeypatch.setenv("SP_COCKPIT_AUDIT_DB_PATH", str(db_p))
+    monkeypatch.setenv("SP_COCKPIT_FRONTEND_DIST", "/nonexistent-spa")
     import importlib
-    from audit_viewer import config as cfg
+    from sp_cockpit import config as cfg
     importlib.reload(cfg)               # so cached config picks up new env
     yield {"log": log_p, "db": db_p, "tmp": tmp_path}
 ```
 
-Note the explicit `importlib.reload(cfg)` — audit-viewer caches its config at
+Note the explicit `importlib.reload(cfg)` — sp-cockpit caches its config at
 module import time, so any test that needs different paths must reload it.
 The same conftest also exposes `make_line(...)` for synthesizing one
 audit-log JSONL line with arbitrary fields (`trace_id`, `event`, `stage`,
@@ -177,8 +177,8 @@ Use this decision tree:
    constant, then import it from `tests/conftest.py` and wrap it in a
    fixture if needed (so each test gets a `.copy()` and can mutate freely).
 
-5. **Is it audit-viewer-specific?**
-   → `audit-viewer/tests/conftest.py`. Audit-viewer is a separate project
+5. **Is it sp-cockpit-specific?**
+   → `sp-cockpit/tests/conftest.py`. Audit-viewer is a separate project
    and does not share fixtures with the SourcePilot/MCP suites.
 
 ### Avoid
@@ -195,4 +195,4 @@ Use this decision tree:
 
 - [pytest-suite.md](./pytest-suite.md) — where each fixture is consumed
 - [architecture.md](./architecture.md) — flow diagram showing where mocks slot in
-- [troubleshooting.md](./troubleshooting.md) — "respx not intercepting", "AUDIT_LOG_PATH leaking"
+- [troubleshooting.md](./troubleshooting.md) — "respx not intercepting", "SP_COCKPIT_AUDIT_LOG_PATH leaking"

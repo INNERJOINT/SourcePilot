@@ -25,19 +25,19 @@ If you ran `pytest` without `PYTHONPATH=...`, the conftests still try to add
 the right root via `sys.path.insert`, but pytest may have already imported
 stale module paths. Stop, set the env var, and re-run.
 
-## `ModuleNotFoundError: No module named 'audit_viewer'`
+## `ModuleNotFoundError: No module named 'sp_cockpit'`
 
-**Cause.** You ran `pytest` from the repo root for the audit-viewer tests.
+**Cause.** You ran `pytest` from the repo root for the sp-cockpit tests.
 Audit-viewer is a separate project with its own `pyproject.toml` and
-`audit_viewer/` package.
+`sp_cockpit/` package.
 
 **Fix.**
 
 ```bash
-(cd audit-viewer && pip install -e '.[dev]' && pytest -v)
+(cd sp-cockpit && pip install -e '.[dev]' && pytest -v)
 ```
 
-The `-e .[dev]` install also pulls `pytest-asyncio`, which the audit-viewer
+The `-e .[dev]` install also pulls `pytest-asyncio`, which the sp-cockpit
 suite needs for `asyncio_mode = "auto"`.
 
 ## `respx` not intercepting (real network call attempted)
@@ -63,10 +63,10 @@ suite needs for `asyncio_mode = "auto"`.
 ## `audit.db` not populated after smoke run
 
 **Cause.** One of:
-- `audit-viewer` is not running, so nothing is tailing `audit.log` into
+- `sp-cockpit` is not running, so nothing is tailing `audit.log` into
   `audit.db`.
 - The path `AUDIT_DB` in your environment doesn't match the path
-  audit-viewer is writing to (default is `audit-viewer/data/audit.db`).
+  sp-cockpit is writing to (default is `sp-cockpit/data/audit.db`).
 - SourcePilot was started with `AUDIT_ENABLED=false` (or the env var was
   not set — defaults vary).
 - `scripts/smoke_queries.sh` was run from a directory where the relative
@@ -75,8 +75,8 @@ suite needs for `asyncio_mode = "auto"`.
 **Fix.**
 
 ```bash
-# 1. Make sure audit-viewer is up
-ls audit-viewer/data/audit.db
+# 1. Make sure sp-cockpit is up
+ls sp-cockpit/data/audit.db
 
 # 2. Make sure SourcePilot was started with audit on (in .env or shell)
 grep AUDIT_ENABLED .env
@@ -110,7 +110,7 @@ curl -fsS http://localhost:19530/v1/vector/collections
 
 If you only need a one-shot dense check, `scripts/test_dense.sh` is more
 forgiving than `smoke_queries.sh` — it greps `audit.log` directly and does
-not require audit-viewer.
+not require sp-cockpit.
 
 > **Memory note:** the user only indexed `frameworks/base` into Milvus —
 > queries for other repos (e.g. Launcher3) will legitimately return zero
@@ -147,7 +147,7 @@ scripts/run_all.sh
 # Verify each port
 curl -fsS http://localhost:9000/api/health   # SourcePilot
 curl -fsS http://localhost:6070/             # Zoekt
-curl -fsS http://localhost:9100/api/health   # audit-viewer (if running)
+curl -fsS http://localhost:9100/api/health   # sp-cockpit (if running)
 
 # Ports occupied? Find offender
 ss -lntp | grep -E ':9000|:6070|:9100|:8888|:19530'
@@ -156,10 +156,10 @@ ss -lntp | grep -E ':9000|:6070|:9100|:8888|:19530'
 ## Audit-viewer test SQLite leak / "DB locked"
 
 **Cause.** A previous test held an open SQLite connection across the
-fixture boundary, or the audit-viewer module cached a config object
+fixture boundary, or the sp-cockpit module cached a config object
 referring to the old tempfile.
 
-**Fix.** The `tmp_paths` fixture in `audit-viewer/tests/conftest.py`
+**Fix.** The `tmp_paths` fixture in `sp-cockpit/tests/conftest.py`
 calls `importlib.reload(cfg)` for exactly this reason. If you wrote a new
 fixture that bypasses `tmp_paths`, mirror that reload pattern. Always
 close any explicit `sqlite3.connect(...)` you open.
@@ -197,7 +197,7 @@ This mimics a fresh shell with no leaked vars.
 
 ## `OSError: [Errno 98] Address already in use` during e2e
 
-**Cause.** A previous SourcePilot or audit-viewer instance is still bound
+**Cause.** A previous SourcePilot or sp-cockpit instance is still bound
 to `:9000` or `:9100`.
 
 **Fix.**
@@ -224,4 +224,4 @@ collection time, every test session pays that cost.
 
 - [pytest-suite.md](./pytest-suite.md) — canonical commands referenced above
 - [smoke-scripts.md](./smoke-scripts.md) — full pre-flight requirements
-- [fixtures.md](./fixtures.md) — respx, AsyncMock, and audit-viewer fixture patterns
+- [fixtures.md](./fixtures.md) — respx, AsyncMock, and sp-cockpit fixture patterns

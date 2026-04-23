@@ -2,7 +2,7 @@
 
 > Audience: **release engineer / live-system tester**. Read this when you need
 > to verify a real, running stack (Zoekt + Milvus + Embedding + SourcePilot
-> + audit-viewer + optionally MCP) end-to-end. None of these scripts run under
+> + sp-cockpit + optionally MCP) end-to-end. None of these scripts run under
 > `pytest`; they are bash + curl + jq + sqlite3.
 
 ## Inventory
@@ -20,7 +20,7 @@ Before any of these scripts is meaningful, bring the real stack up via
 
 ```bash
 cp .env.example .env       # edit values
-scripts/run_all.sh         # starts zoekt + SourcePilot (+ optionally MCP/audit-viewer)
+scripts/run_all.sh         # starts zoekt + SourcePilot (+ optionally MCP/sp-cockpit)
 ```
 
 `scripts/smoke_queries.sh` and `scripts/test_dense.sh` additionally require:
@@ -28,12 +28,12 @@ scripts/run_all.sh         # starts zoekt + SourcePilot (+ optionally MCP/audit-
 - **`DENSE_ENABLED=true`** when starting SourcePilot (otherwise the `dense_search` stage never appears).
 - **Milvus** running (default `localhost:19530`) with the `frameworks/base` collection indexed.
 - **Embedding service** running (default `localhost:8080`).
-- **`audit-viewer`** running on `:9100` so it can tail `audit.log` and populate `audit-viewer/data/audit.db` (smoke_queries inspects the SQLite DB, not the JSONL).
+- **`sp-cockpit`** running on `:9100` so it can tail `audit.log` and populate `sp-cockpit/data/audit.db` (smoke_queries inspects the SQLite DB, not the JSONL).
 
 ## `scripts/smoke_queries.sh`
 
 The flagship live-stack verifier. Fires 8 query cases against SourcePilot,
-generates a fresh `trace_id` per case, then queries `audit-viewer/data/audit.db`
+generates a fresh `trace_id` per case, then queries `sp-cockpit/data/audit.db`
 to verify each pipeline stage actually ran with the right `records_count`.
 
 ### What it tests (8 cases)
@@ -52,7 +52,7 @@ to verify each pipeline stage actually ran with the right `records_count`.
 ### Audit DB validation
 
 After each case, the script polls
-`audit-viewer/data/audit.db` (path overridable via `AUDIT_DB`):
+`sp-cockpit/data/audit.db` (path overridable via `AUDIT_DB`):
 
 ```sql
 SELECT count(*) FROM events
@@ -69,7 +69,7 @@ out-of-scope dense == 0).
 The script aborts with exit code `2` if any of these fail:
 
 1. Required tool missing (`curl`, `jq`, `sqlite3`, and one of `uuidgen` / `openssl`).
-2. `audit-viewer/data/audit.db` does not exist (audit-viewer not running).
+2. `sp-cockpit/data/audit.db` does not exist (sp-cockpit not running).
 3. SourcePilot health endpoint (`GET /api/health`) does not respond within `TIMEOUT` (default 15s).
 4. **Dense probe**: a single `binder 驱动权限校验 probe` query is fired; if no
    `dense_search` stage row appears in `audit.db` within 3 seconds, the script
@@ -97,7 +97,7 @@ shape, or its audit chain was missing/wrong.
 |---------|---------|---------|
 | `SOURCEPILOT_URL` | `http://localhost:9000` | Target SourcePilot HTTP API |
 | `TIMEOUT` | `15` | Per-request timeout (seconds) |
-| `AUDIT_DB` | `audit-viewer/data/audit.db` | Where to look for audit-viewer's SQLite DB |
+| `AUDIT_DB` | `sp-cockpit/data/audit.db` | Where to look for sp-cockpit's SQLite DB |
 
 ## `scripts/test_dense.sh`
 
@@ -121,11 +121,11 @@ A focused, single-query verifier for the dense search path. Useful for
 | | `smoke_queries.sh` | `test_dense.sh` |
 |---|--------------------|-----------------|
 | Cases | 8 | 1 |
-| Audit source | `audit-viewer/data/audit.db` (SQLite via audit-viewer) | `audit.log` (raw JSONL) |
-| Requires audit-viewer running? | Yes | No |
+| Audit source | `sp-cockpit/data/audit.db` (SQLite via sp-cockpit) | `audit.log` (raw JSONL) |
+| Requires sp-cockpit running? | Yes | No |
 | Exit on no dense results | FAIL (case 2) | WARN (script still exits 0) |
 
-Use `test_dense.sh` when audit-viewer is not running; use `smoke_queries.sh`
+Use `test_dense.sh` when sp-cockpit is not running; use `smoke_queries.sh`
 for full release verification.
 
 ## `tests/test_mcp_endpoints.sh`
@@ -167,7 +167,7 @@ process on exit. Failure to obtain a session ID exits non-zero with
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `smoke_queries.sh` exits 2 with "audit.db 不存在" | audit-viewer not running, or wrong `AUDIT_DB` path | Start audit-viewer (port 9100); set `AUDIT_DB=audit-viewer/data/audit.db` |
+| `smoke_queries.sh` exits 2 with "audit.db 不存在" | sp-cockpit not running, or wrong `AUDIT_DB` path | Start sp-cockpit (port 9100); set `AUDIT_DB=sp-cockpit/data/audit.db` |
 | `smoke_queries.sh` exits 2 with "dense_search stage not seen" | `DENSE_ENABLED` not true, Milvus down, or `frameworks/base` not indexed | Re-export `DENSE_ENABLED=true` and restart SourcePilot |
 | `test_dense.sh` warns "audit.log 不存在" | SourcePilot configured to write audit elsewhere or audit disabled | Set `AUDIT_LOG=...` or check SourcePilot env |
 | `test_mcp_endpoints.sh` "无法获取 Session ID" | MCP not started in `streamable-http` mode, or wrong port | Start with `scripts/run_mcp.sh --transport streamable-http --port 8888` |

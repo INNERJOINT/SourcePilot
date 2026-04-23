@@ -8,7 +8,7 @@ AOSP Code Search — three independent services:
 
 1. **SourcePilot** (`src/`) — Hybrid RAG search engine with Starlette HTTP API
 2. **MCP Access Layer** (`mcp-server/`) — Thin MCP protocol proxy delegating to SourcePilot via httpx
-3. **Audit Viewer** (`audit-viewer/`) — FastAPI + React SPA for browsing SourcePilot's `audit.log` (port 9100). Tails JSONL into SQLite, exposes Dashboard / Events / Trace / Search. Read-only against `audit.log`. See `audit-viewer/README.md`.
+3. **SourcePilot Cockpit** (`sp-cockpit/`) — FastAPI + React SPA for browsing SourcePilot's `audit.log` (port 9100). Tails JSONL into SQLite, exposes Dashboard / Events / Trace / Search. Read-only against `audit.log`. See `sp-cockpit/README.md`.
 
 ## Commands
 
@@ -105,32 +105,32 @@ mcp-server/                       # MCP Access Layer — Protocol Proxy
 - Tests use `respx` to mock HTTP responses -- no real Zoekt server needed
 - The project language is primarily Chinese (comments, docs, error messages, NL pipeline)
 
-## Indexing Admin (audit-viewer extension)
+## Indexing Admin (sp-cockpit extension)
 
-Embedded in `audit-viewer/` (port 9100, `/repos` route). Manages AOSP indexing jobs for three backends.
+Embedded in `sp-cockpit/` (port 9100, `/repos` route). Manages AOSP indexing jobs for three backends.
 
 ### Two separate databases — DO NOT conflate
 
 | DB file | Purpose | Writer |
 |---|---|---|
-| `audit-viewer/data/audit.db` | Audit log mirror (existing) | `audit_viewer.ingester` tails `audit.log` |
-| `audit-viewer/data/indexing.db` | Indexing job metadata (new) | **Only** FastAPI process via HTTP callbacks |
+| `sp-cockpit/data/audit.db` | Audit log mirror (existing) | `sp_cockpit.ingester` tails `audit.log` |
+| `sp-cockpit/data/indexing.db` | Indexing job metadata (new) | **Only** FastAPI process via HTTP callbacks |
 
 `audit.db` is never written by the indexing subsystem. `indexing.db` is never read by the audit ingester.
 
 ### Script hooks
 
-All three wrapper scripts call `python -m audit_viewer.indexing_cli` at job boundaries:
+All three wrapper scripts call `python -m sp_cockpit.indexing_cli` at job boundaries:
 
 ```bash
 # Pattern in each wrapper script:
-JOB_ID=$(python -m audit_viewer.indexing_cli start \
+JOB_ID=$(python -m sp_cockpit.indexing_cli start \
   --repo-path "$REPO" --backend "$BACKEND" --log-path "$LOG" \
   --internal-token "$INDEXING_INTERNAL_TOKEN")
-trap 'python -m audit_viewer.indexing_cli finish --job-id "$JOB_ID" \
+trap 'python -m sp_cockpit.indexing_cli finish --job-id "$JOB_ID" \
   --status fail --exit-code $? --internal-token "$INDEXING_INTERNAL_TOKEN"' EXIT
 # ... run indexer ...
-python -m audit_viewer.indexing_cli finish --job-id "$JOB_ID" --status success --exit-code 0 \
+python -m sp_cockpit.indexing_cli finish --job-id "$JOB_ID" --status success --exit-code 0 \
   --internal-token "$INDEXING_INTERNAL_TOKEN"
 trap - EXIT
 ```
@@ -140,7 +140,7 @@ authenticated with `X-Indexing-Internal-Token`. SQLite is **never written direct
 
 ### Internal token
 
-Set `INDEXING_INTERNAL_TOKEN` in `.env` (same value used by wrapper scripts and audit-viewer):
+Set `INDEXING_INTERNAL_TOKEN` in `.env` (same value used by wrapper scripts and sp-cockpit):
 
 ```bash
 INDEXING_INTERNAL_TOKEN=change-me-to-random-token
@@ -148,7 +148,7 @@ INDEXING_INTERNAL_TOKEN=change-me-to-random-token
 
 ### Backend SDK isolation
 
-`pymilvus` and `neo4j-driver` are **not** installed in audit-viewer's Python env.
+`pymilvus` and `neo4j-driver` are **not** installed in sp-cockpit's Python env.
 Heavy operations (hard-delete, entity-count) run inside indexer containers:
 
 ```bash
@@ -159,14 +159,14 @@ docker compose --profile indexer run --rm graph-indexer python -m scripts.graph_
 ### Commands
 
 ```bash
-# Start audit-viewer (includes indexing admin)
-scripts/run_audit_viewer.sh
+# Start sp-cockpit (includes indexing admin)
+scripts/run_sp_cockpit.sh
 
-# Run audit-viewer tests (includes indexing DB + API + e2e)
-cd audit-viewer && PYTHONPATH=. pytest tests/ -v
+# Run sp-cockpit tests (includes indexing DB + API + e2e)
+cd sp-cockpit && PYTHONPATH=. pytest tests/ -v
 
-# Verify no heavy deps in viewer venv
-cd audit-viewer && PYTHONPATH=. pytest tests/test_no_heavy_deps.py -v
+# Verify no heavy deps in sp-cockpit venv
+cd sp-cockpit && PYTHONPATH=. pytest tests/test_no_heavy_deps.py -v
 
 # Syntax-check wrapper scripts
 bash -n scripts/build_dense_index_batch.sh scripts/build_graph_index.sh scripts/reindex.sh
