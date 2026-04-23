@@ -1,6 +1,26 @@
-# AOSP Code Search
+<div align="center">
+  <img src=".github/assets/icon.png" alt="AOSP Code Search" width="400">
+  <h1>AOSP Code Search</h1>
+  <p>Hybrid RAG code search over AOSP sources</p>
+  <p>
+    <img src="https://img.shields.io/badge/python-3.x-blue?logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+    <img src="https://img.shields.io/badge/code%20style-ruff-orange" alt="Ruff">
+  </p>
+</div>
 
-Hybrid RAG code search over AOSP sources, packaged as three decoupled services:
+## Table of Contents
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Scripts Reference](#scripts-reference)
+- [HTTP API](#http-api-sourcepilot-port-9000)
+- [Layout](#layout)
+- [Testing](#testing)
+- [Environment](#environment)
+- [Design Notes](#design-notes)
+
+Packaged as three decoupled services:
 
 | Service | Path | Port | Role |
 |---|---|---|---|
@@ -12,24 +32,14 @@ The services share nothing but HTTP and the audit log. Each can be run, tested, 
 
 ## Architecture
 
-```
-┌────────────┐   MCP      ┌────────────┐   HTTP    ┌────────────┐
-│  Clients   │ ─────────▶ │ MCP Server │ ────────▶ │ SourcePilot│
-│ (LLM/IDE)  │            │ (proxy)    │           │  (gateway) │
-└────────────┘            └────────────┘           └──────┬─────┘
-                                                          │
-                                       ┌──────────────────┼──────────────────┐
-                                       ▼                  ▼                  ▼
-                                  ┌────────┐        ┌──────────┐       ┌──────────┐
-                                  │ Zoekt  │        │  Milvus  │       │ audit.log│
-                                  │ (BM25) │        │ (dense)  │       │  (JSONL) │
-                                  └────────┘        └──────────┘       └─────┬────┘
-                                                                             │ tail
-                                                                             ▼
-                                                                       ┌──────────┐
-                                                                       │  Audit   │
-                                                                       │  Viewer  │
-                                                                       └──────────┘
+```mermaid
+flowchart TD
+    Clients["Clients<br/>(LLM / IDE)"] -->|MCP| MCP["MCP Server<br/>(proxy)"]
+    MCP -->|HTTP| SP["SourcePilot<br/>(gateway)"]
+    SP --> Zoekt["Zoekt<br/>(BM25)"]
+    SP --> Milvus["Milvus<br/>(dense)"]
+    SP --> Audit["audit.log<br/>(JSONL)"]
+    Audit -->|tail| AV["SP Cockpit"]
 ```
 
 **Request flow** (MCP path): tool call → `mcp-server/entry/handlers.py` → httpx → `src/app.py` → `gateway.search()` → classify → (Zoekt ‖ Dense) → RRF fusion → rerank → JSON.
