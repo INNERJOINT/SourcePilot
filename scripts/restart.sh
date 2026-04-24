@@ -73,8 +73,8 @@ info "停止服务..."
 
 case "$ONLY" in
     dense)
-        info "重启 Dense 检索栈 (etcd + minio + milvus + embedding-server)..."
-        docker compose -f "$COMPOSE_FILE" restart etcd minio milvus embedding-server
+        info "重启 Dense 检索栈 (qdrant + embedding-server)..."
+        docker compose -f "$COMPOSE_FILE" restart qdrant embedding-server
         info "Dense 检索栈已重启"
         exit 0
         ;;

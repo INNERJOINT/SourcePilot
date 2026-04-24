@@ -15,6 +15,7 @@ import hashlib
 import logging
 import os
 import time
+import uuid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -210,35 +211,20 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     if failed_ranges:
         logger.warning("Failed batch ranges (first 20): %s", failed_ranges[:20])
 
-    # 4. 写入 Milvus
-    logger.info("Writing to Milvus (collection=%s) ...", DENSE_COLLECTION_NAME)
-    from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
+    # 4. 写入 Qdrant
+    logger.info("Writing to Qdrant (collection=%s) ...", DENSE_COLLECTION_NAME)
+    from qdrant_client import QdrantClient, models
 
-    client = MilvusClient(uri=DENSE_VECTOR_DB_URL)
+    client = QdrantClient(url=DENSE_VECTOR_DB_URL)
 
     # 创建 collection（如果不存在）
-    collections = client.list_collections()
-    if DENSE_COLLECTION_NAME not in collections:
-        schema = CollectionSchema(fields=[
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=DENSE_EMBEDDING_DIM),
-            FieldSchema(name="repo", dtype=DataType.VARCHAR, max_length=256),
-            FieldSchema(name="path", dtype=DataType.VARCHAR, max_length=512),
-            FieldSchema(name="start_line", dtype=DataType.INT32),
-            FieldSchema(name="end_line", dtype=DataType.INT32),
-            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="language", dtype=DataType.VARCHAR, max_length=32),
-            FieldSchema(name="content_hash", dtype=DataType.VARCHAR, max_length=32),
-        ])
+    if not client.collection_exists(DENSE_COLLECTION_NAME):
         client.create_collection(
             collection_name=DENSE_COLLECTION_NAME,
-            schema=schema,
+            vectors_config=models.VectorParams(size=DENSE_EMBEDDING_DIM, distance=models.Distance.COSINE),
         )
-        # 创建向量索引
-        index_params = client.prepare_index_params()
-        index_params.add_index(field_name="vector", index_type="IVF_FLAT", metric_type="COSINE", params={"nlist": 128})
-        client.create_index(collection_name=DENSE_COLLECTION_NAME, index_params=index_params)
-        logger.info("Created collection '%s' with IVF_FLAT index", DENSE_COLLECTION_NAME)
+        client.create_payload_index(DENSE_COLLECTION_NAME, "repo", models.PayloadSchemaType.KEYWORD)
+        logger.info("Created collection '%s' with HNSW index (cosine)", DENSE_COLLECTION_NAME)
 
     # 批量插入（跳过 embedding 失败的 chunk）
     insert_batch_size = 1000
@@ -246,36 +232,35 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     total_skipped = 0
     for batch_start in range(0, len(all_chunks), insert_batch_size):
         batch_end = min(batch_start + insert_batch_size, len(all_chunks))
-        batch_data = []
+        points = []
         for i in range(batch_start, batch_end):
             if all_vectors[i] is None:
                 total_skipped += 1
                 continue
             chunk = all_chunks[i]
-            batch_data.append({
-                "vector": all_vectors[i],
-                "repo": chunk["repo"],
-                "path": chunk["path"],
-                "start_line": chunk["start_line"],
-                "end_line": chunk["end_line"],
-                "content": chunk["content"][:65535],
-                "language": chunk["language"],
-                "content_hash": chunk["content_hash"],
-            })
-        if not batch_data:
+            points.append(models.PointStruct(
+                id=str(uuid.uuid5(uuid.NAMESPACE_URL, chunk["content_hash"])),
+                vector=all_vectors[i],
+                payload={
+                    "repo": chunk["repo"],
+                    "path": chunk["path"],
+                    "start_line": chunk["start_line"],
+                    "end_line": chunk["end_line"],
+                    "content": chunk["content"][:65535],
+                    "language": chunk["language"],
+                    "content_hash": chunk["content_hash"],
+                },
+            ))
+        if not points:
             continue
         try:
-            client.insert(collection_name=DENSE_COLLECTION_NAME, data=batch_data)
-            total_inserted += len(batch_data)
+            client.upsert(collection_name=DENSE_COLLECTION_NAME, points=points)
+            total_inserted += len(points)
         except Exception as e:
             logger.error("Insert failed at batch %d-%d: %s", batch_start, batch_end, e)
 
         if (batch_start + insert_batch_size) % (insert_batch_size * 5) == 0:
             logger.info("  inserted %d/%d chunks", total_inserted, len(all_chunks))
-
-    # Flush to persist data
-    client.flush(DENSE_COLLECTION_NAME)
-    logger.info("Flushed collection")
 
     logger.info(
         "Index build complete: %d inserted, %d skipped (embedding-failed), collection='%s'",

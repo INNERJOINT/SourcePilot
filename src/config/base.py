@@ -33,7 +33,7 @@ MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
 
 # ─── Dense 向量检索配置 ──────────────────────────────────
 DENSE_ENABLED = os.getenv("DENSE_ENABLED", "false").lower() == "true"
-DENSE_VECTOR_DB_URL = os.getenv("DENSE_VECTOR_DB_URL", "http://localhost:19530")
+DENSE_VECTOR_DB_URL = os.getenv("DENSE_VECTOR_DB_URL", "http://localhost:6333")
 DENSE_COLLECTION_NAME = os.getenv("DENSE_COLLECTION_NAME", "aosp_code")
 DENSE_EMBEDDING_URL = os.getenv("DENSE_EMBEDDING_URL", "http://localhost:8080/v1")
 DENSE_EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "unixcoder-base")

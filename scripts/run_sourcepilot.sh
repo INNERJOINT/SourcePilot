@@ -89,7 +89,7 @@ else
 echo "    zoekt-webserver  PID ${PIDS[0]:-?}  ($ZOEKT_URL)" >&2
 fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
-echo "    Dense 检索栈     (Docker)       (Milvus :19530)" >&2
+echo "    Dense 检索栈     (Docker)       (Qdrant :6333)" >&2
 fi
 if [ "${GRAPH_ENABLED:-false}" = "true" ]; then
 echo "    Neo4j            (Docker)       (bolt://localhost:7687)" >&2

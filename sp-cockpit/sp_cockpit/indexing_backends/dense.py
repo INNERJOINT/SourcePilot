@@ -1,6 +1,6 @@
-"""Dense (Milvus) backend integrator.
+"""Dense (Qdrant) backend integrator.
 
-NO pymilvus import here — heavy ops run inside the dense-indexer container
+NO qdrant_client import here — heavy ops run inside the dense-indexer container
 (see deploy/dense/indexer/Dockerfile).
 """
 from __future__ import annotations

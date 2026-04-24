@@ -47,7 +47,7 @@ def feishu_result_to_dict(hit: dict) -> dict:
 def dense_result_to_dict(hit: dict) -> dict:
     """将向量数据库返回的 hit 转换为与 Zoekt 相同的 dict 格式。
 
-    输入 hit 格式（来自 Milvus）:
+    输入 hit 格式（来自 Qdrant）:
         {"id": "...", "score": 0.85, "metadata": {"repo": "frameworks/base",
          "path": "core/java/...", "start_line": 1, "end_line": 100,
          "content": "..."}}

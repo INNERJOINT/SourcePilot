@@ -13,10 +13,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Reuse src/ deps (httpx, starlette, neo4j, tree-sitter, ...) and add pymilvus for dense.
+# Reuse src/ deps (httpx, starlette, neo4j, tree-sitter, ...) and add qdrant-client for dense.
 COPY src/requirements.txt /tmp/src-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/src-requirements.txt \
-    && pip install --no-cache-dir "pymilvus>=2.4,<3"
+    && pip install --no-cache-dir "qdrant-client>=1.12,<2"
 
 COPY src/ /app/src/
 COPY scripts/indexing/build_dense_index.py /app/scripts/build_dense_index.py

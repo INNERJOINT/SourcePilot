@@ -1,7 +1,7 @@
 """
 DenseAdapter — 向量数据库检索适配器
 
-封装 Milvus 向量数据库客户端和 embedding 调用，实现 SearchAdapter 接口。
+封装 Qdrant 向量数据库客户端和 embedding 调用，实现 SearchAdapter 接口。
 """
 
 import logging
@@ -32,7 +32,7 @@ _FEISHU_OUTPUT_FIELDS = ["title", "url", "space_id", "node_token", "content"]
 
 
 class DenseAdapter(SearchAdapter):
-    """Milvus 向量数据库检索适配器"""
+    """Qdrant 向量数据库检索适配器"""
 
     def __init__(
         self,
@@ -53,15 +53,15 @@ class DenseAdapter(SearchAdapter):
             base_url=embedding_url,
             model=embedding_model,
         )
-        self._milvus_client = None
+        self._qdrant_client = None
 
-    def _get_milvus_client(self):
-        """Lazy-init Milvus client."""
-        if self._milvus_client is None:
-            from pymilvus import MilvusClient
+    def _get_qdrant_client(self):
+        """Lazy-init Qdrant client."""
+        if self._qdrant_client is None:
+            from qdrant_client import QdrantClient
 
-            self._milvus_client = MilvusClient(uri=self._vector_db_url)
-        return self._milvus_client
+            self._qdrant_client = QdrantClient(url=self._vector_db_url)
+        return self._qdrant_client
 
     @property
     def backend_name(self) -> str:
@@ -124,32 +124,34 @@ class DenseAdapter(SearchAdapter):
         query_vector = await self._embedding_client.embed_query(query)
 
         # 2. 构建过滤条件
-        filter_expr = ""
+        query_filter = None
         if repos and "repo" in self._output_fields:
-            filter_expr = f'repo == "{repos}"'
+            from qdrant_client import models
 
-        # 3. Milvus ANN 搜索
-        client = self._get_milvus_client()
-        search_results = client.search(
+            query_filter = models.Filter(
+                must=[models.FieldCondition(key="repo", match=models.MatchValue(value=repos))]
+            )
+
+        # 3. Qdrant ANN 搜索
+        client = self._get_qdrant_client()
+        search_results = client.query_points(
             collection_name=self._collection_name,
-            data=[query_vector],
+            query=query_vector,
             limit=top_k,
-            output_fields=self._output_fields,
-            filter=filter_expr if filter_expr else None,
+            with_payload=True,
+            query_filter=query_filter,
         )
 
         # 4. 转换结果
         hits = []
-        for result_list in search_results:
-            for hit in result_list:
-                entity = hit.get("entity", {})
-                hits.append(
-                    {
-                        "id": str(hit.get("id", "")),
-                        "score": hit.get("distance", 0.0),
-                        "metadata": {field: entity.get(field) for field in self._output_fields},
-                    }
-                )
+        for point in search_results.points:
+            hits.append(
+                {
+                    "id": str(point.id),
+                    "score": point.score,
+                    "metadata": {field: point.payload.get(field) for field in self._output_fields},
+                }
+            )
 
         return hits
 
@@ -164,13 +166,12 @@ class DenseAdapter(SearchAdapter):
         )
 
     async def health_check(self) -> bool:
-        """检查 Milvus 和 embedding 服务是否可用"""
+        """检查 Qdrant 和 embedding 服务是否可用"""
         try:
-            client = self._get_milvus_client()
+            client = self._get_qdrant_client()
             # 检查 collection 是否存在
-            collections = client.list_collections()
-            if self._collection_name not in collections:
-                logger.warning("Milvus collection '%s' not found", self._collection_name)
+            if not client.collection_exists(self._collection_name):
+                logger.warning("Qdrant collection '%s' not found", self._collection_name)
                 return False
             # 检查 embedding 服务
             test_vec = await self._embedding_client.embed_query("test")

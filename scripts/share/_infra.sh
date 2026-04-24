@@ -66,23 +66,23 @@ infra_start_zoekt() {
     done
 }
 
-# ── dense stack (etcd + minio + milvus + embedding-server) ──
+# ── dense stack (qdrant + embedding-server) ──
 infra_start_dense() {
     if [ "${DENSE_ENABLED:-false}" != "true" ]; then
         return
     fi
 
-    info "启动 Dense 检索栈 (etcd + minio + milvus + embedding-server)..."
-    docker compose -f "$COMPOSE_FILE" up -d etcd minio milvus embedding-server
+    info "启动 Dense 检索栈 (qdrant + embedding-server)..."
+    docker compose -f "$COMPOSE_FILE" up -d qdrant embedding-server
 
-    # 等待 Milvus 健康检查
-    info "等待 Milvus 就绪..."
+    # 等待 Qdrant 健康检查
+    info "等待 Qdrant 就绪..."
     for i in $(seq 1 $MAX_RETRIES); do
-        if curl -sf "http://localhost:${MILVUS_HEALTH_PORT:-9091}/healthz" >/dev/null 2>&1; then
-            info "Milvus 就绪"
+        if curl -sf "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null 2>&1; then
+            info "Qdrant 就绪"
             return
         fi
-        [ "$i" -eq "$MAX_RETRIES" ] && warn "Milvus 健康检查超时 (${MAX_RETRIES}s)，Dense 检索可能不可用"
+        [ "$i" -eq "$MAX_RETRIES" ] && warn "Qdrant 健康检查超时 (${MAX_RETRIES}s)，Dense 检索可能不可用"
         sleep 1
     done
 }

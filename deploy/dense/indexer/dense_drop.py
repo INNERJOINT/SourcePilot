@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Drop all Milvus vectors for a given repo. Runs inside dense-indexer container."""
+"""Drop all Qdrant vectors for a given repo. Runs inside dense-indexer container."""
 import json
 import os
 import sys
 
-from pymilvus import connections, Collection, utility
+from qdrant_client import QdrantClient, models
 
 
 def main() -> None:
@@ -13,21 +13,31 @@ def main() -> None:
         sys.exit(1)
 
     repo_path = sys.argv[1]
-    uri = os.getenv("DENSE_VECTOR_DB_URL", "http://milvus:19530")
+    uri = os.getenv("DENSE_VECTOR_DB_URL", "http://qdrant:6333")
     collection_name = os.getenv("DENSE_COLLECTION_NAME", "aosp_code")
 
-    connections.connect(uri=uri)
+    client = QdrantClient(url=uri)
 
-    if not utility.has_collection(collection_name):
+    if not client.collection_exists(collection_name):
         print(json.dumps({"deleted": 0, "repo": repo_path}))
         return
 
-    col = Collection(collection_name)
-    expr = f'repo == "{repo_path}"'
-    result = col.delete(expr)
-    col.flush()
+    count_before = client.count(
+        collection_name,
+        count_filter=models.Filter(must=[
+            models.FieldCondition(key="repo", match=models.MatchValue(value=repo_path))
+        ]),
+        exact=True,
+    ).count
 
-    print(json.dumps({"deleted": result.delete_count, "repo": repo_path}))
+    client.delete(
+        collection_name,
+        points_selector=models.FilterSelector(filter=models.Filter(must=[
+            models.FieldCondition(key="repo", match=models.MatchValue(value=repo_path))
+        ])),
+    )
+
+    print(json.dumps({"deleted": count_before, "repo": repo_path}))
 
 
 if __name__ == "__main__":

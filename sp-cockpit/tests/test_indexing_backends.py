@@ -152,13 +152,13 @@ class TestGraphHardDelete:
 
 
 # ---------------------------------------------------------------------------
-# No pymilvus / neo4j imports at module level in sp-cockpit
+# No qdrant_client / neo4j imports at module level in sp-cockpit
 # ---------------------------------------------------------------------------
 
 class TestNoPymilvusNeo4jImports:
 
     def test_pymilvus_neo4j_not_imported_at_module_level(self):
-        """Verify that pymilvus and neo4j are NOT imported by any sp_cockpit module."""
+        """Verify that qdrant_client and neo4j are NOT imported by any sp_cockpit module."""
         # Import all backend modules to trigger their top-level imports
         import sp_cockpit.indexing_backends.dense  # noqa
         import sp_cockpit.indexing_backends.graph  # noqa
@@ -166,7 +166,7 @@ class TestNoPymilvusNeo4jImports:
         import sp_cockpit.indexing_backends  # noqa
 
         # Check sys.modules for the forbidden packages
-        forbidden = {"pymilvus", "neo4j"}
+        forbidden = {"qdrant_client", "neo4j"}
         loaded = {k.split(".")[0] for k in sys.modules}
         bad = forbidden & loaded
         assert not bad, (

@@ -70,7 +70,7 @@ services:
       NL_API_KEY: ${NL_API_KEY:-}
       NL_API_BASE: ${NL_API_BASE:-}
       DENSE_ENABLED: ${DENSE_ENABLED:-false}
-      DENSE_VECTOR_DB_URL: http://milvus:19530
+      DENSE_VECTOR_DB_URL: http://qdrant:6333
       DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
@@ -160,74 +160,23 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ── Milvus stack (dense lane) ────────────────────────────────────────
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.16
-    environment:
-      ETCD_AUTO_COMPACTION_MODE: revision
-      ETCD_AUTO_COMPACTION_RETENTION: "1000"
-      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
-      ETCD_SNAPSHOT_COUNT: "50000"
-    command: >
-      etcd
-      --advertise-client-urls=http://127.0.0.1:2379
-      --listen-client-urls=http://0.0.0.0:2379
-      --data-dir=/etcd
+  # ── Qdrant (dense lane) ──────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.12.6
     volumes:
-      - etcd_data:/etcd
+      - qdrant_data:/qdrant/storage
     ports:
-      - "${ETCD_PORT:-2379}:2379"
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:6333/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     networks:
       - sourcepilot-net
-
-  minio:
-    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
-    environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-    command: minio server /minio_data --console-address ":9001"
-    volumes:
-      - minio_data:/minio_data
-    ports:
-      - "${MINIO_PORT:-9010}:9000"
-      - "9001:9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - sourcepilot-net
-
-  milvus:
-    image: milvusdb/milvus:v2.4.17
-    command: ["milvus", "run", "standalone"]
-    environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    depends_on:
-      etcd:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    volumes:
-      - milvus_data:/var/lib/milvus
-    ports:
-      - "${MILVUS_PORT:-19530}:19530"
-      - "${MILVUS_HEALTH_PORT:-9091}:9091"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    networks:
-      - sourcepilot-net
+    restart: unless-stopped
 
   embedding-server:
     build:
@@ -255,12 +204,12 @@ services:
     profiles: ["indexer"]
     restart: "no"
     depends_on:
-      milvus:
+      qdrant:
         condition: service_healthy
       embedding-server:
         condition: service_healthy
     environment:
-      DENSE_VECTOR_DB_URL: http://milvus:19530
+      DENSE_VECTOR_DB_URL: http://qdrant:6333
       DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
@@ -327,19 +276,9 @@ networks:
     driver: bridge
 
 # ── Volumes ─────────────────────────────────────────────────────────────
-# Volume names are pinned to their pre-merge identifiers (`dense-deploy_*`
-# prefix on Milvus stack) to preserve existing data. They are NOT marked
-# `external: true` so a fresh host can still bring the stack up; on a host
-# that already has these volumes the explicit `name:` binds to existing data.
-# See deploy/README.md ADR #3.
 volumes:
   zoekt_index:
-  etcd_data:
-    name: dense-deploy_etcd_data
-  minio_data:
-    name: dense-deploy_minio_data
-  milvus_data:
-    name: dense-deploy_milvus_data
+  qdrant_data:
   neo4j_data:
   neo4j_logs:
   neo4j_import:

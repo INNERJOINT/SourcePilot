@@ -16,9 +16,9 @@ WORKDIR /app
 COPY src/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Dense lane is optional; add pymilvus only when explicitly requested.
+# Dense lane is optional; add qdrant-client only when explicitly requested.
 ARG INSTALL_DENSE=false
-RUN if [ "$INSTALL_DENSE" = "true" ]; then pip install --no-cache-dir "pymilvus>=2.4,<3"; fi
+RUN if [ "$INSTALL_DENSE" = "true" ]; then pip install --no-cache-dir "qdrant-client>=1.12,<2"; fi
 
 COPY src/ /app/src/
 
