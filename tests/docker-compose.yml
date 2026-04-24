@@ -2,7 +2,7 @@ name: dify-test
 
 services:
   zoekt-indexer:
-    build: ../deploy/zoekt
+    build: ../deploy/sparse/zoekt
     entrypoint: ["sh", "-c"]
     command:
       - |
@@ -20,7 +20,7 @@ services:
     restart: "no"
 
   zoekt-webserver:
-    build: ../deploy/zoekt
+    build: ../deploy/sparse/zoekt
     command: ["zoekt-webserver", "-index", "/data/index"]
     volumes:
       - zoekt_index:/data/index:ro

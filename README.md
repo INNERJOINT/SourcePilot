@@ -49,7 +49,7 @@ flowchart TD
 | Dependency | Purpose | Check |
 |---|---|---|
 | Python 3 virtualenv | Runtime for SourcePilot, MCP, sp-cockpit | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
-| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/zoekt/` |
+| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/sparse/zoekt/` |
 | Node.js + npm | Build sp-cockpit frontend (optional) | `node --version` |
 | curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
 
