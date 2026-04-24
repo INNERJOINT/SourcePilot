@@ -19,7 +19,7 @@ services:
       - zoekt_index:/data/index
     restart: "no"
 
-  zoekt-webserver:
+  sparse-index-zoekt:
     build: ../deploy/sparse/zoekt
     command: ["zoekt-webserver", "-index", "/data/index"]
     volumes:
@@ -43,7 +43,7 @@ services:
       context: ..
       dockerfile: deploy/gateway/Dockerfile
     environment:
-      ZOEKT_URL: http://zoekt-webserver:6070
+      ZOEKT_URL: http://sparse-index-zoekt:6070
       NL_ENABLED: "false"
       DENSE_ENABLED: "false"
       STRUCTURAL_ENABLED: "false"
@@ -51,7 +51,7 @@ services:
     ports:
       - "9000:9000"
     depends_on:
-      zoekt-webserver:
+      sparse-index-zoekt:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/health"]

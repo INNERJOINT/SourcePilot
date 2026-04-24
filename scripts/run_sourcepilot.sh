@@ -3,8 +3,8 @@
 #  SourcePilot 全栈启动脚本（不含 MCP）
 #
 #  启动顺序：
-#    1. zoekt-webserver（索引服务）
-#    2. Dense 检索栈（etcd/minio/milvus/embedding-server，DENSE_ENABLED=true 时）
+#    1. sparse-index-zoekt（索引服务）
+#    2. Dense 检索栈（qdrant/dense-index-coderankembed，DENSE_ENABLED=true 时）
 #    3. Neo4j 结构化检索（STRUCTURAL_ENABLED=true 时）
 #    4. SourcePilot（搜索引擎 API，Docker，端口 9000）
 #    5. sp-cockpit（审计面板，Docker，端口 9100）
@@ -64,7 +64,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── 1. 启动 zoekt-webserver ──────────────────────────
+# ── 1. 启动 sparse-index-zoekt ──────────────────────────
 infra_start_zoekt
 
 # ── 2. 启动 Dense 检索栈 ─────────────────────────────
@@ -84,9 +84,9 @@ echo "" >&2
 echo "════════════════════════════════════════════" >&2
 echo "  所有服务已启动（不含 MCP）：" >&2
 if [ "$ZOEKT_DOCKER" = true ]; then
-echo "    zoekt-webserver  (Docker)       ($ZOEKT_URL)" >&2
+echo "    sparse-index-zoekt  (Docker)       ($ZOEKT_URL)" >&2
 else
-echo "    zoekt-webserver  PID ${PIDS[0]:-?}  ($ZOEKT_URL)" >&2
+echo "    sparse-index-zoekt  PID ${PIDS[0]:-?}  ($ZOEKT_URL)" >&2
 fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
 echo "    Dense 检索栈     (Docker)       (Qdrant :6333)" >&2

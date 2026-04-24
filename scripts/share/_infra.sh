@@ -7,7 +7,7 @@
 #
 # Functions:
 #   infra_start_zoekt        — detect Docker/native zoekt, start + healthcheck
-#   infra_start_dense        — docker compose up dense stack (etcd/minio/milvus/embedding-server)
+#   infra_start_dense        — docker compose up dense stack (qdrant + dense-index-coderankembed)
 #   infra_start_structural  — docker compose up neo4j
 #   infra_start_sourcepilot  — docker compose up sourcepilot-gateway + healthcheck
 #   infra_start_mcp          — docker compose up mcp-server + healthcheck
@@ -37,7 +37,7 @@ infra_start_zoekt() {
     ZOEKT_DOCKER=false
 
     if curl -sf "$zoekt_url/" >/dev/null 2>&1; then
-        info "检测到 zoekt-webserver 已在运行 ($zoekt_url)，跳过启动"
+        info "检测到 sparse-index-zoekt 已在运行 ($zoekt_url)，跳过启动"
         ZOEKT_DOCKER=true
         return
     fi
@@ -51,29 +51,29 @@ infra_start_zoekt() {
         die "ZOEKT_INDEX_PATH 目录不存在: $index_path"
     fi
 
-    info "启动 zoekt-webserver (index: $index_path)..."
+    info "启动 sparse-index-zoekt (index: $index_path)..."
     zoekt-webserver -index "$index_path" &
     PIDS+=($!)
     local pid=${PIDS[-1]}
 
     for i in $(seq 1 $MAX_RETRIES); do
         if curl -sf "$zoekt_url/" >/dev/null 2>&1; then
-            info "zoekt-webserver 就绪 (PID $pid)"
+            info "sparse-index-zoekt 就绪 (PID $pid)"
             return
         fi
-        [ "$i" -eq "$MAX_RETRIES" ] && die "zoekt-webserver 启动超时 (${MAX_RETRIES}s)"
+        [ "$i" -eq "$MAX_RETRIES" ] && die "sparse-index-zoekt 启动超时 (${MAX_RETRIES}s)"
         sleep 1
     done
 }
 
-# ── dense stack (qdrant + embedding-server) ──
+# ── dense stack (qdrant + dense-index-coderankembed) ──
 infra_start_dense() {
     if [ "${DENSE_ENABLED:-false}" != "true" ]; then
         return
     fi
 
-    info "启动 Dense 检索栈 (qdrant + embedding-server)..."
-    docker compose -f "$COMPOSE_FILE" up -d qdrant embedding-server
+    info "启动 Dense 检索栈 (qdrant + dense-index-coderankembed)..."
+    docker compose -f "$COMPOSE_FILE" up -d qdrant dense-index-coderankembed
 
     # 等待 Qdrant 健康检查
     info "等待 Qdrant 就绪..."

@@ -21,10 +21,10 @@ projects:
       include:
         - frameworks/base
 
-  - name: aosp15
-    source_root: /mnt/code/AOSP15
-    repo_path: /mnt/code/AOSP15/.repo
+  - name: t2
+    source_root: /mnt/code/T2
+    repo_path: /mnt/code/T2/.repo
 
     sparse_index:
-      index_dir: /mnt/code/AOSP15/.repo/.zoekt
+      index_dir: /mnt/code/T2/.repo/.zoekt
       zoekt_url: http://localhost:6071

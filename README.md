@@ -49,7 +49,7 @@ flowchart TD
 | Dependency | Purpose | Check |
 |---|---|---|
 | Python 3 virtualenv | Runtime for SourcePilot, MCP, sp-cockpit | `/opt/pyenv/versions/dify_py3_env/bin/python3 --version` |
-| Zoekt (`zoekt-webserver`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/sparse/zoekt/` |
+| Zoekt (`sparse-index-zoekt`) | BM25 code search backend | `zoekt-webserver -help` or Docker via `deploy/sparse/zoekt/` |
 | Node.js + npm | Build sp-cockpit frontend (optional) | `node --version` |
 | curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
 
@@ -73,7 +73,7 @@ Edit `.env` — at minimum set:
 scripts/run_all.sh
 ```
 
-This launches (in order): zoekt-webserver → SourcePilot (port 9000) → MCP Server (port 8888) → sp-cockpit (port 9100). Press `Ctrl+C` to stop all.
+This launches (in order): sparse-index-zoekt → SourcePilot (port 9000) → MCP Server (port 8888) → sp-cockpit (port 9100). Press `Ctrl+C` to stop all.
 
 **3. Verify**
 

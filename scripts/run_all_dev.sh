@@ -60,7 +60,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── 1a. 启动多项目 zoekt-webserver（按 projects.yaml）──
+# ── 1a. 启动多项目 sparse-index-zoekt（按 projects.yaml）──
 _projects_cfg="${PROJECTS_CONFIG_PATH:-$PROJ_ROOT/config/projects.yaml}"
 
 if [ -f "$_projects_cfg" ]; then
@@ -98,11 +98,11 @@ EOF
 
     _project_count=$(echo "$_zoekt_entries" | grep -c '|' || true)
     if [ "${_project_count:-0}" -gt 1 ]; then
-        info "多项目模式：发现 $_project_count 个项目，逐一启动 zoekt-webserver"
+        info "多项目模式：发现 $_project_count 个项目，逐一启动 sparse-index-zoekt"
         while IFS='|' read -r _idx _port; do
             [ -z "$_idx" ] && continue
             if curl -sf "http://localhost:${_port}/" >/dev/null 2>&1; then
-                info "zoekt-webserver 已在运行 (port $_port, index: $_idx)，跳过启动"
+                info "sparse-index-zoekt 已在运行 (port $_port, index: $_idx)，跳过启动"
                 ZOEKT_DOCKER=true
                 continue
             fi
@@ -110,18 +110,18 @@ EOF
                 warn "index_dir 不存在: $_idx（跳过 port $_port）"
                 continue
             fi
-            info "启动 zoekt-webserver (index: $_idx, port: $_port)..."
+            info "启动 sparse-index-zoekt (index: $_idx, port: $_port)..."
             zoekt-webserver -index "$_idx" -listen ":$_port" &
             _zpid=$!
             PIDS+=($_zpid)
             ZOEKT_PIDS+=($_zpid)
-            info "  zoekt-webserver PID $_zpid 监听 :$_port"
+            info "  sparse-index-zoekt PID $_zpid 监听 :$_port"
             for i in $(seq 1 "$MAX_RETRIES"); do
                 if curl -sf "http://localhost:${_port}/" >/dev/null 2>&1; then
-                    info "  zoekt-webserver (port $_port) 就绪"
+                    info "  sparse-index-zoekt (port $_port) 就绪"
                     break
                 fi
-                [ "$i" -eq "$MAX_RETRIES" ] && warn "  zoekt-webserver (port $_port) 启动超时"
+                [ "$i" -eq "$MAX_RETRIES" ] && warn "  sparse-index-zoekt (port $_port) 启动超时"
                 sleep 1
             done
         done <<< "$_zoekt_entries"
@@ -222,9 +222,9 @@ echo "" >&2
 echo "════════════════════════════════════════════" >&2
 echo "  开发模式 — 所有服务已启动：" >&2
 if [ "$ZOEKT_DOCKER" = true ]; then
-echo "    zoekt-webserver  (Docker)          ($ZOEKT_URL)" >&2
+echo "    sparse-index-zoekt  (Docker)          ($ZOEKT_URL)" >&2
 else
-echo "    zoekt-webserver  PID ${PIDS[0]:-?}     ($ZOEKT_URL)" >&2
+echo "    sparse-index-zoekt  PID ${PIDS[0]:-?}     ($ZOEKT_URL)" >&2
 fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
 echo "    Dense 检索栈     (Docker)          (Qdrant :6333)" >&2

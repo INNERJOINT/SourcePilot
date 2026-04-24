@@ -21,7 +21,7 @@ def export_and_quantize(hf_name: str, output_dir: str):
 
     # Export to ONNX
     print(f"Exporting {hf_name} to ONNX...")
-    model = ORTModelForFeatureExtraction.from_pretrained(hf_name, export=True)
+    model = ORTModelForFeatureExtraction.from_pretrained(hf_name, export=True, trust_remote_code=True)
     model.save_pretrained(str(out))
 
     # Quantize to INT8 (AVX-512 VNNI for i9-9980XE)
@@ -35,7 +35,7 @@ def export_and_quantize(hf_name: str, output_dir: str):
     tokenizer_path = out / "tokenizer.json"
     if not tokenizer_path.exists():
         from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(hf_name)
+        tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
         tokenizer.save_pretrained(str(out))
         print(f"Saved tokenizer to {out}")
 

@@ -7,7 +7,7 @@
 # Project name is pinned to `dify` so direct invocation and the root shim
 # resolve to the same network/volume prefix (otherwise direct -f produces a
 # `deploy_*` prefix while shim produces `dify_*`).
-name: dify
+name: sourcepilot
 
 services:
   # ── Zoekt (search index) ─────────────────────────────────────────────
@@ -15,14 +15,14 @@ services:
   # ZOEKT_INDEX_PATH is bound from config/projects.yaml[0].index_dir.
   #
   # To add a second project, duplicate this service block and change:
-  #   - Service name:    zoekt-webserver-<project-name>
+  #   - Service name:    sparse-index-zoekt-<project-name>
   #   - Volume source:   ZOEKT_INDEX_PATH_2 (point to second project's index dir)
   #   - Port mapping:    ZOEKT_PORT_2:6071  (pick a unique host port)
   #   - Healthcheck URL: http://localhost:6071/
   # Then add a ZOEKT_URL_<project> entry in .env pointing to that port,
   # and add a matching entry in config/projects.yaml.
-  zoekt-webserver:
-    build: ./zoekt
+  sparse-index-zoekt:
+    build: ./sparse/zoekt
     volumes:
       - ${ZOEKT_INDEX_PATH:-/mnt/code/ACE/.repo/.zoekt}:/data/index:ro
     ports:
@@ -43,7 +43,7 @@ services:
         max-file: "3"
 
   zoekt-indexserver:
-    build: ./zoekt
+    build: ./sparse/zoekt
     entrypoint: ["zoekt-git-index"]
     command: ["-index", "/data/index", "/data/repo/"]
     volumes:
@@ -62,7 +62,7 @@ services:
       args:
         INSTALL_DENSE: "${GATEWAY_INSTALL_DENSE:-false}"
     environment:
-      ZOEKT_URL: ${ZOEKT_URL:-http://zoekt-webserver:6070}
+      ZOEKT_URL: ${ZOEKT_URL:-http://sparse-index-zoekt:6070}
       AUDIT_LOG_FILE: /var/log/sourcepilot/audit.log
       AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
       NL_ENABLED: ${NL_ENABLED:-false}
@@ -71,7 +71,7 @@ services:
       NL_API_BASE: ${NL_API_BASE:-}
       DENSE_ENABLED: ${DENSE_ENABLED:-false}
       DENSE_VECTOR_DB_URL: http://qdrant:6333
-      DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
+      DENSE_EMBEDDING_URL: http://dense-index-coderankembed:8080/v1
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
       DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
@@ -84,7 +84,7 @@ services:
     ports:
       - "${SOURCEPILOT_PORT:-9000}:9000"
     depends_on:
-      zoekt-webserver:
+      sparse-index-zoekt:
         condition: service_healthy
     networks:
       - sourcepilot-net
@@ -178,7 +178,7 @@ services:
       - sourcepilot-net
     restart: unless-stopped
 
-  embedding-server:
+  dense-index-coderankembed:
     build:
       context: ./dense/embedding-server
     environment:
@@ -206,11 +206,11 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      embedding-server:
+      dense-index-coderankembed:
         condition: service_healthy
     environment:
       DENSE_VECTOR_DB_URL: http://qdrant:6333
-      DENSE_EMBEDDING_URL: http://embedding-server:8080/v1
+      DENSE_EMBEDDING_URL: http://dense-index-coderankembed:8080/v1
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
       DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}

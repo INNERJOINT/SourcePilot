@@ -5,7 +5,7 @@ Single source of truth for the runtime stack.
 ```
 deploy/
 ├── docker-compose.yml          # Merged compose (this directory)
-├── dense/                      # Milvus + embedding-server + dense-indexer
+├── dense/                      # Qdrant + dense-index-coderankembed + dense-indexer
 │   ├── embedding-server/
 │   ├── indexer/Dockerfile
 │   ├── scripts/

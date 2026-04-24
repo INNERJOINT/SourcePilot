@@ -4,3 +4,4 @@ onnxruntime>=1.17
 tokenizers>=0.15
 numpy>=1.24
 pydantic>=2.5
+einops>=0.7

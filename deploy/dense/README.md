@@ -78,8 +78,8 @@ After switching embedding models you **must rebuild the index**, otherwise searc
 # 2. Update the MODEL_VERSION file
 echo "model=new-model dim=1024" > MODEL_VERSION
 # 3. Rebuild the embedding image
-docker compose build embedding-server
-docker compose up -d embedding-server
+docker compose build dense-index-coderankembed
+docker compose up -d dense-index-coderankembed
 # 4. Drop the old collection and rebuild the index
 ./scripts/build_index.sh \
     --source-dir /mnt/code/ACE/frameworks/base \

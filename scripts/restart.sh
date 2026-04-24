@@ -7,7 +7,7 @@
 #
 #  用法：
 #    ./restart.sh                      # 重启全栈（run_all.sh）
-#    ./restart.sh --with-zoekt         # 同时重启 zoekt-webserver
+#    ./restart.sh --with-zoekt         # 同时重启 sparse-index-zoekt
 #    ./restart.sh --only sp            # 只重启 SourcePilot 容器
 #    ./restart.sh --only mcp           # 只重启 MCP
 #    ./restart.sh --only av            # 只重启 sp-cockpit
@@ -73,8 +73,8 @@ info "停止服务..."
 
 case "$ONLY" in
     dense)
-        info "重启 Dense 检索栈 (qdrant + embedding-server)..."
-        docker compose -f "$COMPOSE_FILE" restart qdrant embedding-server
+        info "重启 Dense 检索栈 (qdrant + dense-index-coderankembed)..."
+        docker compose -f "$COMPOSE_FILE" restart qdrant dense-index-coderankembed
         info "Dense 检索栈已重启"
         exit 0
         ;;
@@ -91,7 +91,7 @@ case "$ONLY" in
         info "[sp-cockpit] 停止容器..."
         docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
         if [ "$WITH_ZOEKT" = true ]; then
-            kill_port "$ZOEKT_PORT_DEFAULT" "zoekt-webserver"
+            kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
         fi
         if [ "$STOP_ONLY" = true ]; then
             info "已停止。"
@@ -121,7 +121,7 @@ case "$ONLY" in
         info "[sp-cockpit] 停止容器..."
         docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
         if [ "$WITH_ZOEKT" = true ]; then
-            kill_port "$ZOEKT_PORT_DEFAULT" "zoekt-webserver"
+            kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
         fi
         ;;
     *)
