@@ -2,17 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install optimum for model export (build-time only)
+RUN pip install --no-cache-dir optimum[onnxruntime]
+
+COPY download_models.py .
 COPY server.py .
 
-# 预下载模型（构建时缓存，避免运行时下载）
-ARG EMBEDDING_MODEL=microsoft/unixcoder-base
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
+# Download and quantize models at build time
+ENV OMP_NUM_THREADS=18
+RUN python download_models.py
 
 EXPOSE 8080
 

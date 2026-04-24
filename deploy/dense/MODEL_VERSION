@@ -1,1 +1,2 @@
-model=unixcoder-base dim=768
+code_model=nomic-ai/CodeRankEmbed dim=768 backend=onnx-int8
+zh_model=BAAI/bge-base-zh-v1.5 dim=768 backend=onnx-int8

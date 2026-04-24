@@ -28,6 +28,7 @@ class ProjectConfig:
     zoekt_url: str
     dense_collection_name: str = ""
     project_type: str = "aosp"  # "aosp" or "feishu"
+    embedding_model: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,20 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         if not dense_collection_name:
             dense_collection_name = entry.get("collection_name", "") or f"aosp_code_{name}"
 
+        # Resolve embedding_model: YAML > project_type default
+        embedding_model_yaml = ""
+        if isinstance(dense_index, dict):
+            embedding_model_yaml = dense_index.get("embedding_model", "") or ""
+
+        if embedding_model_yaml:
+            resolved_embedding_model = embedding_model_yaml
+        elif project_type == "feishu":
+            from config.base import DENSE_EMBEDDING_MODEL_ZH
+            resolved_embedding_model = DENSE_EMBEDDING_MODEL_ZH
+        else:
+            from config.base import DENSE_EMBEDDING_MODEL_CODE
+            resolved_embedding_model = DENSE_EMBEDDING_MODEL_CODE
+
         projects.append(
             ProjectConfig(
                 name=name,
@@ -129,6 +144,7 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
                 zoekt_url=zoekt_url,
                 dense_collection_name=dense_collection_name,
                 project_type=project_type,
+                embedding_model=resolved_embedding_model,
             )
         )
 

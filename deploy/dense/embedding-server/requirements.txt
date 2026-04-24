@@ -1,5 +1,6 @@
-fastapi>=0.110
-uvicorn[standard]>=0.27
-sentence-transformers>=2.2.0
-torch>=2.0.0
+fastapi>=0.100
+uvicorn[standard]>=0.23
+onnxruntime>=1.17
+tokenizers>=0.15
+numpy>=1.24
 pydantic>=2.5

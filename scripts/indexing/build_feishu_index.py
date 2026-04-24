@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -92,12 +93,12 @@ def load_documents(jsonl_path: str) -> list[dict]:
     return docs
 
 
-async def build_index(args, collection_name: str):
+async def build_index(args, collection_name: str, embedding_model: str | None = None):
     """主索引构建流程。"""
     from adapters.embedding import EmbeddingClient
     from config import DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
 
-    embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=DENSE_EMBEDDING_MODEL)
+    embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL)
 
     # 1. 加载文档
     logger.info("Loading documents from %s ...", args.jsonl_path)
@@ -257,12 +258,25 @@ def main():
     parser.add_argument("--collection-name", default="feishu_lurk_docs", help="Milvus collection name (default: feishu_lurk_docs)")
     parser.add_argument("--window-size", type=int, default=500, help="Sliding window size in characters (default: 500)")
     parser.add_argument("--overlap", type=int, default=100, help="Overlap characters (default: 100)")
-    parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size (default: 32)")
+    parser.add_argument("--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")), help="Embedding batch size (default: 64)")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
+    parser.add_argument("--project-name", default=None, help="Project name for embedding model resolution")
     args = parser.parse_args()
 
+    collection_name = args.collection_name
+
+    # Resolve embedding model from project config
+    embedding_model = None
+    if args.project_name:
+        try:
+            from config.projects import get_project
+            proj = get_project(args.project_name)
+            embedding_model = proj.embedding_model
+        except (ImportError, ValueError) as e:
+            logger.warning("Could not resolve project '%s': %s", args.project_name, e)
+
     start = time.time()
-    asyncio.run(build_index(args, args.collection_name))
+    asyncio.run(build_index(args, collection_name, embedding_model))
     elapsed = time.time() - start
     logger.info("Total time: %.1f seconds", elapsed)
 

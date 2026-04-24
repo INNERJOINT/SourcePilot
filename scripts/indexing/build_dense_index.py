@@ -131,14 +131,14 @@ def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dic
         return []
 
 
-async def build_index(args, collection_name: str):
+async def build_index(args, collection_name: str, embedding_model: str | None = None):
     """主索引构建流程。"""
     from adapters.embedding import EmbeddingClient
     from config import DENSE_COLLECTION_NAME, DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
 
     DENSE_COLLECTION_NAME = collection_name  # override with resolved name
 
-    embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=DENSE_EMBEDDING_MODEL)
+    embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL)
 
     # 1. 扫描本地文件
     logger.info("Scanning source files in %s ...", args.source_dir)
@@ -294,7 +294,7 @@ def main():
     parser.add_argument("--repo-name", default="frameworks/base", help="Repo name stored in metadata (default: frameworks/base)")
     parser.add_argument("--window-size", type=int, default=30, help="Sliding window size in lines (default: 30)")
     parser.add_argument("--overlap", type=int, default=10, help="Overlap lines (default: 10)")
-    parser.add_argument("--batch-size", type=int, default=32, help="Embedding batch size (default: 32)")
+    parser.add_argument("--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")), help="Embedding batch size (default: 64)")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
     parser.add_argument("--project-name", default=None, help="Project name for collection naming (e.g. 'ace' → collection 'aosp_code_ace')")
     parser.add_argument("--collection-name", default=None, help="Override Milvus collection name")
@@ -309,8 +309,20 @@ def main():
         from config import DENSE_COLLECTION_NAME
         collection_name = DENSE_COLLECTION_NAME
 
+    # Resolve embedding model from project config
+    embedding_model = None
+    if args.project_name:
+        try:
+            from config.projects import get_project
+            proj = get_project(args.project_name)
+            if not args.collection_name:
+                collection_name = proj.dense_collection_name
+            embedding_model = proj.embedding_model
+        except (ImportError, ValueError) as e:
+            logger.warning("Could not resolve project '%s': %s", args.project_name, e)
+
     start = time.time()
-    asyncio.run(build_index(args, collection_name))
+    asyncio.run(build_index(args, collection_name, embedding_model))
     elapsed = time.time() - start
     logger.info("Total time: %.1f seconds", elapsed)
 
