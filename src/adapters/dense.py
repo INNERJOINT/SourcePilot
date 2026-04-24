@@ -27,6 +27,10 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
+_AOSP_OUTPUT_FIELDS = ["repo", "path", "start_line", "end_line", "content", "language"]
+_FEISHU_OUTPUT_FIELDS = ["title", "url", "space_id", "node_token", "content"]
+
+
 class DenseAdapter(SearchAdapter):
     """Milvus 向量数据库检索适配器"""
 
@@ -38,11 +42,13 @@ class DenseAdapter(SearchAdapter):
         embedding_model: str = DENSE_EMBEDDING_MODEL,
         embedding_dim: int = DENSE_EMBEDDING_DIM,
         top_k: int = DENSE_TOP_K,
+        output_fields: list[str] | None = None,
     ):
         self._vector_db_url = vector_db_url
         self._collection_name = collection_name
         self._embedding_dim = embedding_dim
         self._top_k = top_k
+        self._output_fields = output_fields if output_fields is not None else _AOSP_OUTPUT_FIELDS
         self._embedding_client = EmbeddingClient(
             base_url=embedding_url,
             model=embedding_model,
@@ -119,7 +125,7 @@ class DenseAdapter(SearchAdapter):
 
         # 2. 构建过滤条件
         filter_expr = ""
-        if repos:
+        if repos and "repo" in self._output_fields:
             filter_expr = f'repo == "{repos}"'
 
         # 3. Milvus ANN 搜索
@@ -128,7 +134,7 @@ class DenseAdapter(SearchAdapter):
             collection_name=self._collection_name,
             data=[query_vector],
             limit=top_k,
-            output_fields=["repo", "path", "start_line", "end_line", "content", "language"],
+            output_fields=self._output_fields,
             filter=filter_expr if filter_expr else None,
         )
 
@@ -141,14 +147,7 @@ class DenseAdapter(SearchAdapter):
                     {
                         "id": str(hit.get("id", "")),
                         "score": hit.get("distance", 0.0),
-                        "metadata": {
-                            "repo": entity.get("repo", ""),
-                            "path": entity.get("path", ""),
-                            "start_line": entity.get("start_line"),
-                            "end_line": entity.get("end_line"),
-                            "content": entity.get("content", ""),
-                            "language": entity.get("language", ""),
-                        },
+                        "metadata": {field: entity.get(field) for field in self._output_fields},
                     }
                 )
 

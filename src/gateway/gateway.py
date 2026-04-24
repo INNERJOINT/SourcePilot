@@ -12,7 +12,7 @@ import logging
 import config
 from adapters.zoekt import ZoektAdapter
 from config import get_default_project, get_project
-from gateway.converters import dense_result_to_dict, graph_result_to_dict
+from gateway.converters import dense_result_to_dict, feishu_result_to_dict, graph_result_to_dict
 from gateway.fusion import rrf_merge
 from gateway.nl.classifier import classify_query
 from gateway.nl.rewriter import rewrite_query
@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 _adapters: dict[str, ZoektAdapter] = {}
 _dense_adapter: dict[tuple[str, str], object] | None = None
 _graph_adapter = None
+
+
+def _is_zoekt_project(project: str | None = None) -> bool:
+    """Return False for projects that have no Zoekt backend (e.g. Feishu)."""
+    try:
+        if project is None:
+            proj_cfg = get_default_project()
+        else:
+            proj_cfg = get_project(project)
+        return bool(proj_cfg.zoekt_url) and proj_cfg.project_type == "aosp"
+    except ValueError:
+        return True
 
 
 def _get_adapter(project: str | None = None) -> ZoektAdapter:
@@ -56,8 +68,9 @@ def _get_dense_adapter(project: str | None = None):
         _dense_adapter = {}
 
     if key not in _dense_adapter:
-        from adapters.dense import DenseAdapter
+        from adapters.dense import _FEISHU_OUTPUT_FIELDS, DenseAdapter
 
+        output_fields = _FEISHU_OUTPUT_FIELDS if proj_cfg.project_type == "feishu" else None
         _dense_adapter[key] = DenseAdapter(
             vector_db_url=config.DENSE_VECTOR_DB_URL,
             embedding_url=config.DENSE_EMBEDDING_URL,
@@ -65,6 +78,7 @@ def _get_dense_adapter(project: str | None = None):
             embedding_model=config.DENSE_EMBEDDING_MODEL,
             embedding_dim=config.DENSE_EMBEDDING_DIM,
             top_k=config.DENSE_TOP_K,
+            output_fields=output_fields,
         )
         logger.info(
             "Dense adapter initialized for project '%s' collection '%s': %s",
@@ -120,6 +134,10 @@ async def search(
 
     Returns raw list[dict] results. Formatting into MCP TextContent is done by entry layer.
     """
+    # Feishu-type projects: dense-only, skip Zoekt entirely
+    if not _is_zoekt_project(project):
+        return await _feishu_search(query=query, top_k=top_k, score_threshold=score_threshold)
+
     # NL classification
     async with audit_stage("classify", {"query": query}) as stg:
         if config.NL_ENABLED:
@@ -154,6 +172,35 @@ async def search(
             stg.set_result({"records_count": len(results), "records": results})
             stg.set_result_count(len(results))
         return results
+
+
+async def _feishu_search(
+    query: str,
+    top_k: int,
+    score_threshold: float,
+    project: str | None = None,
+) -> list[dict]:
+    """Dense-only search for Feishu projects (no Zoekt, no NL rewrite)."""
+    async with audit_stage("dense_search", {"query": query, "project": project}) as stg:
+        try:
+            dense = _get_dense_adapter(project)
+            if dense is None:
+                stg.set_result({"error": "dense not enabled", "records_count": 0})
+                return []
+            results = await asyncio.wait_for(
+                dense.search_by_embedding(query, top_k=top_k),
+                timeout=config.NL_TIMEOUT,
+            )
+            converted = [feishu_result_to_dict(h) for h in results]
+            if score_threshold > 0:
+                converted = [r for r in converted if r.get("score", 0) >= score_threshold]
+            stg.set_result({"records_count": len(converted), "records": converted})
+            stg.set_result_count(len(converted))
+            return converted
+        except Exception as e:
+            logger.warning("Feishu dense search failed: %s", e)
+            stg.set_result({"error": str(e), "records_count": 0})
+            return []
 
 
 async def _nl_search(

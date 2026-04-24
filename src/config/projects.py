@@ -27,6 +27,7 @@ class ProjectConfig:
     index_dir: str
     zoekt_url: str
     dense_collection_name: str = ""
+    project_type: str = "aosp"  # "aosp" or "feishu"
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +107,9 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         repo_path = entry.get("repo_path", "")
         index_dir = entry.get("index_dir", "")
         zoekt_url = entry.get("zoekt_url", "")
+        project_type = entry.get("project_type", "aosp")
 
-        if not zoekt_url:
+        if not zoekt_url and project_type == "aosp":
             raise ValueError(f"Project '{name}' missing 'zoekt_url' in {path}")
 
         dense_collection_name = ""
@@ -126,6 +128,7 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
                 index_dir=index_dir,
                 zoekt_url=zoekt_url,
                 dense_collection_name=dense_collection_name,
+                project_type=project_type,
             )
         )
 

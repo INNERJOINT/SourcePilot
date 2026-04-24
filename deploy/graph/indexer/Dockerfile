@@ -20,6 +20,6 @@ RUN pip install --no-cache-dir \
         tree-sitter-python
 
 # build_graph_index.py is self-contained — no src/ imports needed.
-COPY scripts/build_graph_index.py /app/scripts/build_graph_index.py
+COPY scripts/indexing/build_graph_index.py /app/scripts/build_graph_index.py
 
 ENTRYPOINT ["python3", "/app/scripts/build_graph_index.py"]

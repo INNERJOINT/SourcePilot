@@ -25,6 +25,25 @@ def graph_result_to_dict(hit: dict) -> dict:
     }
 
 
+def feishu_result_to_dict(hit: dict) -> dict:
+    """将 Feishu dense hit 转换为 RRF-compatible dict 格式。"""
+    meta = hit.get("metadata", {})
+    title = meta.get("title", "")
+    url = meta.get("url", "")
+    return {
+        "title": title or "Feishu Document",
+        "content": meta.get("content", ""),
+        "score": hit.get("score", 0.0),
+        "metadata": {
+            "title": title,
+            "url": url,
+            "space_id": meta.get("space_id", ""),
+            "node_token": meta.get("node_token", ""),
+            "source": "feishu",
+        },
+    }
+
+
 def dense_result_to_dict(hit: dict) -> dict:
     """将向量数据库返回的 hit 转换为与 Zoekt 相同的 dict 格式。
 

@@ -33,3 +33,12 @@ projects:
 
   - name: aosp15
     source_root: /mnt/code/AOSP15
+
+# Feishu Lurk knowledge base — dense-only project (no Zoekt backend).
+# Vectors live in a Milvus collection with Feishu document schema.
+# Feishu collection fields: title, url, space_id, node_token, content
+# - name: feishu_lurk
+#   project_type: feishu
+#   zoekt_url: ""
+#   dense_index:
+#     collection_name: feishu_lurk_docs

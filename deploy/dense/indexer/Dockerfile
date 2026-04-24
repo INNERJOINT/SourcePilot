@@ -19,6 +19,6 @@ RUN pip install --no-cache-dir -r /tmp/src-requirements.txt \
     && pip install --no-cache-dir "pymilvus>=2.4,<3"
 
 COPY src/ /app/src/
-COPY scripts/build_dense_index.py /app/scripts/build_dense_index.py
+COPY scripts/indexing/build_dense_index.py /app/scripts/build_dense_index.py
 
 ENTRYPOINT ["python3", "/app/scripts/build_dense_index.py"]
