@@ -1,0 +1,30 @@
+# AOSP Project Registry
+# Copy this file to config/projects.yaml and edit paths.
+# Backend scope is parsed by scripts/indexing/project_config.py.
+projects:
+  - name: ace
+    source_root: /mnt/code/ACE
+    repo_path: /mnt/code/ACE/.repo
+    collection_name: aosp_code_ace
+
+    sparse_index:
+      index_dir: /mnt/code/ACE/.repo/.zoekt
+      zoekt_url: http://localhost:6070
+
+    dense_index:
+      collection_name: aosp_code_ace_dense
+      embedding_model: nomic-ai/CodeRankEmbed
+      include:
+        - frameworks/base
+
+    graph_index:
+      include:
+        - frameworks/base
+
+  - name: aosp15
+    source_root: /mnt/code/AOSP15
+    repo_path: /mnt/code/AOSP15/.repo
+
+    sparse_index:
+      index_dir: /mnt/code/AOSP15/.repo/.zoekt
+      zoekt_url: http://localhost:6071
