@@ -5,9 +5,9 @@ Loads project definitions from config/projects.yaml. Each project represents
 an independent AOSP checkout with its own Zoekt webserver instance.
 """
 
-import os
 import logging
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,13 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ProjectConfig:
     """Configuration for a single AOSP project."""
+
     name: str
     source_root: str
     repo_path: str
     index_dir: str
     zoekt_url: str
+    dense_collection_name: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +110,24 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         if not zoekt_url:
             raise ValueError(f"Project '{name}' missing 'zoekt_url' in {path}")
 
-        projects.append(ProjectConfig(
-            name=name,
-            source_root=source_root,
-            repo_path=repo_path,
-            index_dir=index_dir,
-            zoekt_url=zoekt_url,
-        ))
+        dense_collection_name = ""
+        dense_index = entry.get("dense_index")
+        if isinstance(dense_index, dict):
+            dense_collection_name = dense_index.get("collection_name", "") or ""
+
+        if not dense_collection_name:
+            dense_collection_name = entry.get("collection_name", "") or f"aosp_code_{name}"
+
+        projects.append(
+            ProjectConfig(
+                name=name,
+                source_root=source_root,
+                repo_path=repo_path,
+                index_dir=index_dir,
+                zoekt_url=zoekt_url,
+                dense_collection_name=dense_collection_name,
+            )
+        )
 
     if config_path is None:
         _projects_cache = projects
@@ -124,17 +137,21 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
 def _fallback_from_env() -> list[ProjectConfig]:
     """Create a single-project config from legacy environment variables."""
     from config.base import ZOEKT_URL
+
     zoekt_index_path = os.getenv("ZOEKT_INDEX_PATH", "")
     zoekt_repo_path = os.getenv("ZOEKT_REPO_PATH", "")
     aosp_source_root = os.getenv("AOSP_SOURCE_ROOT", "")
 
-    return [ProjectConfig(
-        name="default",
-        source_root=aosp_source_root,
-        repo_path=zoekt_repo_path,
-        index_dir=zoekt_index_path,
-        zoekt_url=ZOEKT_URL,
-    )]
+    return [
+        ProjectConfig(
+            name="default",
+            source_root=aosp_source_root,
+            repo_path=zoekt_repo_path,
+            index_dir=zoekt_index_path,
+            zoekt_url=ZOEKT_URL,
+            dense_collection_name=os.getenv("DENSE_COLLECTION_NAME", "aosp_code_default"),
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

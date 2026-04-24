@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-_project_config.py — shell helper that reads config/projects.yaml and outputs
-project info as shell-eval-safe lines.
+_project_config.py — Zoekt-only legacy helper for reading config/projects.yaml.
 
 Usage:
     python3 scripts/indexing/_project_config.py --list
@@ -15,6 +14,8 @@ Output format (one block per project, blank-line separated):
     ZOEKT_URL=<zoekt_url>
 
 --list outputs one project name per line.
+
+Dense and graph scope resolution use scripts/indexing/project_config.py instead.
 """
 
 from __future__ import annotations

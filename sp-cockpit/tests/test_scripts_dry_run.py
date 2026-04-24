@@ -94,14 +94,26 @@ def test_reindex_dry_run_exits_zero(tmp_path):
 
 
 def test_build_dense_dry_run_skips_docker(tmp_path, monkeypatch):
-    """build_dense_index_batch.sh INDEXING_DRY_RUN=1 skips docker calls."""
-    # Create minimal AOSP-like structure with one repo that has source files
+    """build_dense_index_batch.sh dry-run emits dense wrapper command with collection."""
+    # Create minimal AOSP-like structure with default-discovery repos.
     frameworks = tmp_path / "frameworks" / "base"
     frameworks.mkdir(parents=True)
     (frameworks / "Foo.java").write_text("class Foo {}")
 
+    packages = tmp_path / "packages" / "apps" / "Settings"
+    packages.mkdir(parents=True)
+    (packages / "Bar.java").write_text("class Bar {}")
+
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        "projects:\n"
+        f"  - name: ace\n"
+        f"    source_root: {tmp_path}\n"
+        f"    collection_name: aosp_code_ace_custom\n"
+    )
+
     env = _dry_run_env({
-        "AOSP_SOURCE_ROOT": str(tmp_path),
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
         ["bash", "scripts/indexing/build_dense_index_batch.sh"],
@@ -110,16 +122,55 @@ def test_build_dense_dry_run_skips_docker(tmp_path, monkeypatch):
         text=True,
         env=env,
     )
-    # Script uses pipefail but not -e — should complete even if CLI fails
-    # We just check it doesn't invoke docker (no "docker" in stdout indicative of run)
-    # and eventually exits (may be non-zero if CLI unreachable, that's fine for dry-run)
+
     combined = result.stdout + result.stderr
-    # DRY_RUN path should print DRY_RUN message
+    assert result.returncode == 0, (
+        f"Expected 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
     assert "DRY_RUN" in combined or "dry" in combined.lower(), (
         f"Expected DRY_RUN indicator.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    # Should NOT have actually run the build_index.sh docker wrapper
-    assert "docker" not in result.stdout.lower() or "DRY_RUN" in result.stdout
+    assert "===== INDEX  frameworks/base" in combined
+    assert "===== INDEX  packages/apps/Settings" in combined
+    assert "--project-name ace" in combined
+    assert "--collection-name aosp_code_ace_custom" in combined
+
+
+def test_build_dense_include_mode_uses_only_config_includes(tmp_path):
+    """dense explicit include mode should not run default frameworks/packages discovery."""
+    included = tmp_path / "frameworks" / "base"
+    included.mkdir(parents=True)
+    (included / "Foo.java").write_text("class Foo {}")
+
+    not_included = tmp_path / "packages" / "apps" / "Settings"
+    not_included.mkdir(parents=True)
+    (not_included / "Bar.java").write_text("class Bar {}")
+
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        "projects:\n"
+        "  - name: ace\n"
+        f"    source_root: {tmp_path}\n"
+        "    dense_index:\n"
+        "      include:\n"
+        "        - frameworks/base\n"
+    )
+
+    env = _dry_run_env({
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
+    })
+    result = subprocess.run(
+        ["bash", "scripts/indexing/build_dense_index_batch.sh"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    combined = result.stdout + result.stderr
+    assert "mode=explicit" in combined
+    assert "===== INDEX  frameworks/base" in combined
+    assert "packages/apps/Settings" not in combined
 
 
 # ---------------------------------------------------------------------------
@@ -197,3 +248,116 @@ def test_reindex_single_project_dry_run(tmp_path):
     # Should mention the targeted project, not the other one
     assert "my-proj" in combined
     assert "other-proj" not in combined
+
+
+# ---------------------------------------------------------------------------
+# Graph batch tests
+# ---------------------------------------------------------------------------
+
+def test_build_graph_batch_dry_run(tmp_path):
+    """build_graph_index_batch.sh INDEXING_DRY_RUN=1 prints expected DRY_RUN output."""
+    frameworks = tmp_path / "frameworks" / "base"
+    frameworks.mkdir(parents=True)
+    (frameworks / "Foo.java").write_text("class Foo {}")
+
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        f"projects:\n"
+        f"  - name: ace\n"
+        f"    source_root: {tmp_path}\n"
+        f"    graph_index:\n"
+        f"      include:\n"
+        f"        - frameworks/base\n"
+    )
+
+    env = _dry_run_env({
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
+    })
+    result = subprocess.run(
+        ["bash", "scripts/indexing/build_graph_index_batch.sh"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        f"Expected 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "DRY_RUN" in combined
+    assert "--project-name" in combined
+    assert "--repo-name frameworks/base" in combined
+    assert "--source-root" in combined
+
+
+def test_build_graph_batch_rejects_managed_args(tmp_path):
+    """build_graph_index_batch.sh exits 2 and prints 'managed by' for managed args."""
+    managed_args = [
+        ["--source-root", "/tmp/foo"],
+        ["--project-name", "myproj"],
+        ["--repo-name", "frameworks/base"],
+        ["--source-root=/tmp/foo"],
+    ]
+
+    for extra_args in managed_args:
+        result = subprocess.run(
+            ["bash", "scripts/indexing/build_graph_index_batch.sh"] + extra_args,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2, (
+            f"Expected exit 2 for {extra_args}, got {result.returncode}\n"
+            f"stderr: {result.stderr}"
+        )
+        assert "managed by" in result.stderr, (
+            f"Expected 'managed by' in stderr for {extra_args}\nstderr: {result.stderr}"
+        )
+
+
+def test_build_graph_batch_reset_once_per_project(tmp_path):
+    """build_graph_index_batch.sh --reset passes --reset only to the first include."""
+    frameworks = tmp_path / "frameworks" / "base"
+    frameworks.mkdir(parents=True)
+    (frameworks / "Foo.java").write_text("class Foo {}")
+
+    settings = tmp_path / "packages" / "apps" / "Settings"
+    settings.mkdir(parents=True)
+    (settings / "Bar.java").write_text("class Bar {}")
+
+    projects_yaml = tmp_path / "projects.yaml"
+    projects_yaml.write_text(
+        f"projects:\n"
+        f"  - name: ace\n"
+        f"    source_root: {tmp_path}\n"
+        f"    graph_index:\n"
+        f"      include:\n"
+        f"        - frameworks/base\n"
+        f"        - packages/apps/Settings\n"
+    )
+
+    env = _dry_run_env({
+        "PROJECTS_CONFIG_PATH": str(projects_yaml),
+    })
+    result = subprocess.run(
+        ["bash", "scripts/indexing/build_graph_index_batch.sh", "--reset"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        f"Expected 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    # Count --reset occurrences in DRY_RUN_CMD lines only
+    dry_run_cmd_lines = [
+        line for line in combined.splitlines() if line.startswith("DRY_RUN_CMD")
+    ]
+    reset_count = sum(1 for line in dry_run_cmd_lines if "--reset" in line)
+    assert reset_count == 1, (
+        f"Expected --reset exactly once in DRY_RUN_CMD lines, got {reset_count}.\n"
+        f"DRY_RUN_CMD lines:\n" + "\n".join(dry_run_cmd_lines)
+    )

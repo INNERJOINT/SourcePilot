@@ -5,16 +5,18 @@ Graph lane 集成测试
 验证 GRAPH_ENABLED 开关、RRF 融合、降级行为。
 不连接真实 Neo4j。
 """
+
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 import config
 from gateway import gateway
 from gateway.gateway import _assemble_lane_indices
 
-
 # ─── Fixture ────────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def reset_adapters():
@@ -55,6 +57,7 @@ def _make_graph_hits(n: int = 1) -> list[dict]:
 
 # ─── GRAPH_ENABLED=false 零影响测试 ──────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_graph_disabled_zero_impact(monkeypatch):
     """GRAPH_ENABLED=false 时，结果与纯 Zoekt 路径完全一致。"""
@@ -65,9 +68,13 @@ async def test_graph_disabled_zero_impact(monkeypatch):
     zoekt_results = _make_zoekt_results(2)
     rewrite_output = [{"query": "SystemServer start"}]
 
-    with patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)), \
-         patch("gateway.gateway._default_adapter") as mock_adapter:
+    with (
+        patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
+        patch("gateway.gateway._get_adapter") as mock_get_adapter,
+    ):
+        mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=zoekt_results)
+        mock_get_adapter.return_value = mock_adapter
 
         result = await gateway._nl_search(
             query="how does SystemServer start",
@@ -83,6 +90,7 @@ async def test_graph_disabled_zero_impact(monkeypatch):
 
 
 # ─── GRAPH_ENABLED=true 结果进入 RRF 测试 ────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_graph_enabled_results_in_rrf(monkeypatch):
@@ -100,10 +108,14 @@ async def test_graph_enabled_results_in_rrf(monkeypatch):
     mock_graph_adapter = MagicMock()
     mock_graph_adapter.search_by_graph = AsyncMock(return_value=graph_hits)
 
-    with patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)), \
-         patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter), \
-         patch("gateway.gateway._default_adapter") as mock_adapter:
+    with (
+        patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
+        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_adapter") as mock_get_adapter,
+    ):
+        mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=zoekt_results)
+        mock_get_adapter.return_value = mock_adapter
 
         result = await gateway._nl_search(
             query="find startActivity",
@@ -112,9 +124,11 @@ async def test_graph_enabled_results_in_rrf(monkeypatch):
             repos=None,
         )
 
-    # 结果中应含 graph 来源文件
+    mock_graph_adapter.search_by_graph.assert_awaited_once_with(
+        "find startActivity", top_k=10, repos=None, project=None
+    )
+
     titles = [r["title"] for r in result]
-    graph_titles = [r["title"] for r in result if r.get("metadata", {}).get("source") == "graph"]
     assert isinstance(result, list)
     assert len(result) > 0
     # graph_result_to_dict 生成的 title 含 GraphFile
@@ -122,14 +136,55 @@ async def test_graph_enabled_results_in_rrf(monkeypatch):
     assert "GraphFile" in all_titles
 
 
-# ─── 四种 lane 组合参数化测试 ─────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_graph_lane_passes_project_to_adapter(monkeypatch):
+    """指定 project 时，graph lane 调用应透传 project 参数。"""
+    monkeypatch.setattr(config, "GRAPH_ENABLED", True)
+    monkeypatch.setattr(config, "DENSE_ENABLED", False)
+    monkeypatch.setattr(config, "NL_ENABLED", True)
+    monkeypatch.setattr(config, "DENSE_TOP_K", 10)
+    monkeypatch.setattr(config, "GRAPH_LANE_TIMEOUT_MS", 2000)
 
-@pytest.mark.parametrize("dense_on,graph_on", [
-    (False, False),
-    (True, False),
-    (False, True),
-    (True, True),
-])
+    zoekt_results = _make_zoekt_results(1)
+    graph_hits = _make_graph_hits(1)
+    rewrite_output = [{"query": "startActivity intent"}]
+
+    mock_graph_adapter = MagicMock()
+    mock_graph_adapter.search_by_graph = AsyncMock(return_value=graph_hits)
+
+    with (
+        patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
+        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_adapter") as mock_get_adapter,
+    ):
+        mock_adapter = MagicMock()
+        mock_adapter.search_zoekt = AsyncMock(return_value=zoekt_results)
+        mock_get_adapter.return_value = mock_adapter
+
+        result = await gateway._nl_search(
+            query="find startActivity",
+            top_k=10,
+            score_threshold=0.0,
+            repos=None,
+            project="beta",
+        )
+
+    mock_graph_adapter.search_by_graph.assert_awaited_once_with(
+        "find startActivity", top_k=10, repos=None, project="beta"
+    )
+    assert isinstance(result, list)
+    assert len(result) > 0
+
+
+@pytest.mark.parametrize(
+    "dense_on,graph_on",
+    [
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+    ],
+)
 def test_all_4_lane_combinations_index(dense_on, graph_on):
     """_assemble_lane_indices 在四种 lane 开关组合下均返回正确索引。"""
     zoekt_count = 2
@@ -146,6 +201,7 @@ def test_all_4_lane_combinations_index(dense_on, graph_on):
 
 
 # ─── Graph 超时降级测试 ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_graph_timeout_degrades(monkeypatch):
@@ -167,10 +223,14 @@ async def test_graph_timeout_degrades(monkeypatch):
     mock_graph_adapter = MagicMock()
     mock_graph_adapter.search_by_graph = _slow_search
 
-    with patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)), \
-         patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter), \
-         patch("gateway.gateway._default_adapter") as mock_adapter:
+    with (
+        patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
+        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_adapter") as mock_get_adapter,
+    ):
+        mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=zoekt_results)
+        mock_get_adapter.return_value = mock_adapter
 
         result = await gateway._nl_search(
             query="find startActivity",

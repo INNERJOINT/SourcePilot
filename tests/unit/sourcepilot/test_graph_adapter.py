@@ -3,12 +3,14 @@ GraphAdapter 单元测试
 
 所有 Neo4j 驱动均通过 AsyncMock 模拟，不连接真实数据库。
 """
+
 import sys
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ─── 辅助工具 ─────────────────────────────────────────────────────────────────
+
 
 def _make_driver_mock(seed_records=None, neighbor_records=None, index_names=None):
     """构造 Neo4j 异步驱动 mock，支持自定义返回数据。"""
@@ -55,16 +57,19 @@ def _make_driver_mock(seed_records=None, neighbor_records=None, index_names=None
 
 # ─── Fixture：重置适配器单例 ──────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def reset_graph_adapter():
     """每个测试前后重置 gateway 中的 _graph_adapter 单例。"""
     import gateway.gateway as gw
+
     gw._graph_adapter = None
     yield
     gw._graph_adapter = None
 
 
 # ─── 测试套件 ─────────────────────────────────────────────────────────────────
+
 
 class TestGraphAdapterInit:
     def test_lazy_neo4j_import(self):
@@ -73,6 +78,7 @@ class TestGraphAdapterInit:
         saved = sys.modules.pop("neo4j", None)
         try:
             from adapters.graph import GraphAdapter
+
             _ = GraphAdapter(
                 neo4j_uri="bolt://fake:7687",
                 neo4j_user="neo4j",
@@ -87,7 +93,7 @@ class TestGraphAdapterInit:
 @pytest.mark.asyncio
 class TestSearchByGraph:
     async def test_search_by_graph_returns_formatted_hits(self):
-        """search_by_graph 返回格式正确的 hit 字典（包含 repo/path/start_line/end_line/content/score）。"""
+        """search_by_graph 返回格式正确的 hit 字典（含核心字段）。"""
         from adapters.graph import GraphAdapter
 
         seed_records = [
@@ -137,6 +143,102 @@ class TestSearchByGraph:
         assert results == []
 
 
+@pytest.mark.asyncio
+class TestProjectScoping:
+    async def test_search_by_graph_passes_project_to_traversal(self):
+        """search_by_graph 应将 project 透传给 traversal 查询，避免跨项目污染。"""
+        from adapters.graph import GraphAdapter
+
+        seed_nodes = [{"nid": 1, "kind": "Symbol", "props": {}, "score": 1.0}]
+        neighbor_nodes = [
+            {
+                "file_props": {
+                    "repo": "frameworks/base",
+                    "path": "core/Foo.java",
+                    "start_line": 1,
+                    "end_line": 2,
+                    "content": "class Foo {}",
+                },
+                "path_length": 1,
+                "anchor_nids": [1],
+            }
+        ]
+
+        mock_fulltext = AsyncMock(return_value=seed_nodes)
+        mock_expand = AsyncMock(return_value=neighbor_nodes)
+
+        adapter = GraphAdapter()
+        adapter._driver = MagicMock()
+
+        with (
+            patch("adapters.graph.fulltext_search_nodes", new=mock_fulltext),
+            patch("adapters.graph.expand_neighbors", new=mock_expand),
+        ):
+            results = await adapter.search_by_graph("find startActivity", top_k=5, project="beta")
+
+        assert len(results) == 1
+        assert mock_fulltext.await_args.kwargs["project"] == "beta"
+        assert mock_fulltext.await_args.kwargs["limit"] == 20
+        assert mock_expand.await_args.kwargs["project"] == "beta"
+        assert mock_expand.await_args.kwargs["max_hops"] == 2
+
+    async def test_fulltext_search_nodes_scopes_by_project_in_query(self):
+        """fulltext_search_nodes 在 Cypher 和参数里都应带 project 过滤。"""
+        from adapters.graph_traversal import fulltext_search_nodes
+
+        empty_result = MagicMock()
+
+        async def _iter_empty():
+            for r in []:
+                yield r
+
+        empty_result.__aiter__ = lambda self: _iter_empty()
+
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.run = AsyncMock(return_value=empty_result)
+
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=session)
+
+        await fulltext_search_nodes(driver, ["startactivity"], project="beta")
+
+        assert session.run.await_count == 2
+        for call in session.run.await_args_list:
+            cypher = call.args[0]
+            params = call.args[1]
+            assert "node.project = $project" in cypher
+            assert params["project"] == "beta"
+
+    async def test_expand_neighbors_scopes_by_project_in_query(self):
+        """expand_neighbors 在 Cypher 和参数里都应带 project 过滤。"""
+        from adapters.graph_traversal import expand_neighbors
+
+        empty_result = MagicMock()
+
+        async def _iter_empty():
+            for r in []:
+                yield r
+
+        empty_result.__aiter__ = lambda self: _iter_empty()
+
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.run = AsyncMock(return_value=empty_result)
+
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=session)
+
+        await expand_neighbors(driver, [1], project="beta")
+
+        cypher = session.run.await_args.args[0]
+        params = session.run.await_args.args[1]
+        assert "file.project = $project" in cypher
+        assert params["project"] == "beta"
+
+
 class TestComputeGraphScore:
     def test_score_blend_alpha_0_6(self):
         """alpha=0.6, path=1, match=2, max=4 → 0.6*(1/1) + 0.4*(2/4) = 0.6+0.2 = 0.8"""
@@ -154,7 +256,7 @@ class TestComputeGraphScore:
 
 class TestExtractQueryEntities:
     def test_camel_and_snake(self):
-        """'find startActivity in service_manager' 提取 startActivity 和 service_manager（大小写去重）。"""
+        """提取 startActivity 与 service_manager，且大小写去重。"""
         from adapters.graph_traversal import extract_query_entities
 
         terms = extract_query_entities("find startActivity in service_manager")

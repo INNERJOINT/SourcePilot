@@ -1,14 +1,35 @@
 # AOSP Project Registry
-# Each entry defines an independent AOSP checkout to index.
+# Copy this file to config/projects.yaml and edit paths.
+# Dense/graph scope is parsed by scripts/indexing/project_config.py.
 projects:
   - name: ace
     source_root: /mnt/code/ACE
-    # Optional overrides:
-    # collection_name: aosp_code_ace   # Default: aosp_code_{name}
+    repo_path: /mnt/code/ACE/.repo
+    index_dir: /mnt/code/ACE/.repo/.zoekt
+    zoekt_url: http://localhost:6070
+    collection_name: aosp_code_ace
+
+    # Dense collection precedence:
+    #   1. dense_index.collection_name
+    #   2. collection_name
+    #   3. aosp_code_{name}
+    dense_index:
+      # enabled: false
+      # include: []  # explicit disable
+      collection_name: aosp_code_ace_dense
+      include:
+        - frameworks/base
+
+    # Graph identity uses (project, repo, path) and displays repo/path.
+    graph_index:
+      # enabled: false
+      # include: []  # explicit disable
+      include:
+        - frameworks/base
+
+    # Legacy shared scope example (do not combine with dense_index.include/graph_index.include):
     # sub_project_globs:
-    #   - frameworks/*
-    #   - packages/*/*
-    #   - system/core/*
+    #   - frameworks/base
 
   - name: aosp15
     source_root: /mnt/code/AOSP15

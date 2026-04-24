@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# project_config.sh — Shell helper for multi-AOSP project configuration.
+# project_config.sh — Legacy Zoekt-only shell helper for multi-AOSP project configuration.
 # Source this file; do not execute directly.
 #
 # Exports:

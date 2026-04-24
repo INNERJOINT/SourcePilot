@@ -8,13 +8,13 @@ extract_query_entities 和 format_hit 等工具函数，供 GraphAdapter 调用�
 """
 
 import re
-from typing import Any
 
 
 async def fulltext_search_nodes(
     driver,
     query_terms: list[str],
     limit: int = 20,
+    project: str | None = None,
 ) -> list[dict]:
     """全文检索 Neo4j 节点，同时查询 symbol_name_idx 和 doc_entity_idx。
 
@@ -28,6 +28,7 @@ async def fulltext_search_nodes(
     cypher = """
     CALL db.index.fulltext.queryNodes($idx, $q)
     YIELD node, score
+    WHERE $project IS NULL OR node.project = $project
     RETURN id(node) AS nid, labels(node)[0] AS kind,
            properties(node) AS props, score
     LIMIT $limit
@@ -39,7 +40,7 @@ async def fulltext_search_nodes(
             try:
                 result = await session.run(
                     cypher,
-                    {"idx": idx_name, "q": q, "limit": limit},
+                    {"idx": idx_name, "q": q, "limit": limit, "project": project},
                 )
                 async for record in result:
                     nid = record["nid"]
@@ -61,6 +62,7 @@ async def expand_neighbors(
     driver,
     node_ids: list[int],
     max_hops: int = 2,
+    project: str | None = None,
 ) -> list[dict]:
     """从种子节点出发，沿关系边扩展至最多 max_hops 跳，返回到达的 File 节点信息。
 
@@ -73,6 +75,7 @@ async def expand_neighbors(
     cypher = """
     MATCH (seed) WHERE id(seed) IN $ids
     MATCH (seed)-[*1..$hops]-(file:File)
+    WHERE $project IS NULL OR file.project = $project
     WITH file, min(length((seed)-[*]-(file))) AS dist, collect(id(seed)) AS anchors
     RETURN properties(file) AS file_props, dist AS path_length, anchors
     ORDER BY dist ASC
@@ -84,14 +87,16 @@ async def expand_neighbors(
         try:
             result = await session.run(
                 cypher,
-                {"ids": node_ids, "hops": max_hops},
+                {"ids": node_ids, "hops": max_hops, "project": project},
             )
             async for record in result:
-                results.append({
-                    "file_props": dict(record["file_props"]),
-                    "path_length": record["path_length"],
-                    "anchor_nids": list(record["anchors"]),
-                })
+                results.append(
+                    {
+                        "file_props": dict(record["file_props"]),
+                        "path_length": record["path_length"],
+                        "anchor_nids": list(record["anchors"]),
+                    }
+                )
         except Exception:
             pass
 

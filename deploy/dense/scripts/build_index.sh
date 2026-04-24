@@ -21,7 +21,22 @@ DIR=$(cd "$(dirname "$0")/.." && pwd)             # deploy/dense
 PROJ_ROOT=$(cd "$DIR/../.." && pwd)                # repo root
 COMPOSE_FILE="$PROJ_ROOT/deploy/docker-compose.yml"
 
-# 加载 .env（项目根优先，deploy/dense 覆盖）
+# 加载 .env（项目根优先，deploy/dense 覆盖）；但保留调用方显式传入的关键变量。
+_PRESERVE_ENV_VARS=(
+    AOSP_SOURCE_ROOT
+    DENSE_ENABLED
+    DENSE_COLLECTION_NAME
+    DENSE_VECTOR_DB_URL
+    DENSE_EMBEDDING_URL
+    DENSE_EMBEDDING_MODEL
+    DENSE_EMBEDDING_DIM
+)
+declare -A _PRESERVE_ENV_VALS=()
+for _var in "${_PRESERVE_ENV_VARS[@]}"; do
+    if [[ -v "$_var" ]]; then
+        _PRESERVE_ENV_VALS["$_var"]="${!_var}"
+    fi
+done
 for envfile in "$PROJ_ROOT/.env" "$DIR/.env"; do
     if [ -f "$envfile" ]; then
         set -a
@@ -29,6 +44,9 @@ for envfile in "$PROJ_ROOT/.env" "$DIR/.env"; do
         source "$envfile"
         set +a
     fi
+done
+for _var in "${!_PRESERVE_ENV_VALS[@]}"; do
+    export "$_var=${_PRESERVE_ENV_VALS[$_var]}"
 done
 
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT:-/mnt/code/ACE}"

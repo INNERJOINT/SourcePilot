@@ -3,12 +3,14 @@
 #
 # 用法:
 #   ./scripts/build_graph_index.sh [--source-root /src/frameworks/base] \
-#       [--languages java,cpp,python] [--max-files 500] [--reset] [--strict] [其他参数]
+#       [--repo-name frameworks/base] [--languages java,cpp,python] \
+#       [--max-files 500] [--reset] [--strict] [其他参数]
 #
 # 说明:
 #   - 若未传 --source-root，默认注入 --source-root /src（即挂进容器的 AOSP_SOURCE_ROOT 根）。
 #   - 若传入宿主机绝对路径并落在 $AOSP_SOURCE_ROOT 下，会自动翻译为 /src/<subpath>；
 #     否则保持原样（允许用户直接给 /src/... 的容器内路径）。
+#   - 调用方显式设置的关键环境变量优先于 .env。
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/../.." && pwd)         # 项目根
@@ -19,6 +21,18 @@ COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 source "$(dirname "$0")/_indexing_lib.sh"
 source "$(dirname "$0")/../share/_common.sh"
 
+_PRESERVE_ENV_VARS=(
+    AOSP_SOURCE_ROOT
+    GRAPH_NEO4J_URI
+    GRAPH_NEO4J_USER
+    GRAPH_NEO4J_PASSWORD
+)
+declare -A _PRESERVE_ENV_VALS=()
+for _var in "${_PRESERVE_ENV_VARS[@]}"; do
+    if [[ -v "$_var" ]]; then
+        _PRESERVE_ENV_VALS["$_var"]="${!_var}"
+    fi
+done
 for envfile in "$DIR/.env" "$GRAPH_DIR/.env"; do
     if [ -f "$envfile" ]; then
         set -a
@@ -26,6 +40,9 @@ for envfile in "$DIR/.env" "$GRAPH_DIR/.env"; do
         source "$envfile"
         set +a
     fi
+done
+for _var in "${!_PRESERVE_ENV_VALS[@]}"; do
+    export "$_var=${_PRESERVE_ENV_VALS[$_var]}"
 done
 
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT:-/mnt/code/ACE}"
@@ -50,6 +67,8 @@ translate_path() {
 ARGS=()
 HAS_SOURCE_ROOT=false
 _GRAPH_PROJECT_NAME=""
+_GRAPH_REPO_NAME=""
+_GRAPH_SOURCE_ROOT_LABEL="$AOSP_SOURCE_ROOT"
 i=0
 argv=("$@")
 n=$#
@@ -66,6 +85,7 @@ while (( i < n )); do
             container_path=$(translate_path "$host_path") || exit 2
             ARGS+=("--source-root" "$container_path")
             HAS_SOURCE_ROOT=true
+            _GRAPH_SOURCE_ROOT_LABEL="$container_path"
             i=$((i+2))
             ;;
         --source-root=*)
@@ -73,6 +93,7 @@ while (( i < n )); do
             container_path=$(translate_path "$host_path") || exit 2
             ARGS+=("--source-root=$container_path")
             HAS_SOURCE_ROOT=true
+            _GRAPH_SOURCE_ROOT_LABEL="$container_path"
             i=$((i+1))
             ;;
         --project-name)
@@ -85,6 +106,16 @@ while (( i < n )); do
             ARGS+=("$arg")
             i=$((i+1))
             ;;
+        --repo-name)
+            _GRAPH_REPO_NAME="${argv[$((i+1))]:-}"
+            ARGS+=("$arg" "$_GRAPH_REPO_NAME")
+            i=$((i+2))
+            ;;
+        --repo-name=*)
+            _GRAPH_REPO_NAME="${arg#--repo-name=}"
+            ARGS+=("$arg")
+            i=$((i+1))
+            ;;
         *)
             ARGS+=("$arg")
             i=$((i+1))
@@ -94,15 +125,16 @@ done
 
 if ! $HAS_SOURCE_ROOT; then
     ARGS=("--source-root" "/src" "${ARGS[@]}")
+    _GRAPH_SOURCE_ROOT_LABEL="/src"
+fi
+
+if [[ -n "$_GRAPH_REPO_NAME" ]]; then
+    _GRAPH_REPO_LABEL="$_GRAPH_REPO_NAME"
+else
+    _GRAPH_REPO_LABEL="$_GRAPH_SOURCE_ROOT_LABEL"
 fi
 
 echo "[graph-indexer] AOSP_SOURCE_ROOT=$AOSP_SOURCE_ROOT  ARGS=${ARGS[*]}"
-
-# Determine repo label for job tracking (use source-root arg or default /src)
-_GRAPH_REPO_LABEL="${AOSP_SOURCE_ROOT}"
-for _a in "${ARGS[@]}"; do
-    case "$_a" in /src*) _GRAPH_REPO_LABEL="$_a"; break ;; esac
-done
 start_indexing_job "$_GRAPH_REPO_LABEL" graph "$_GRAPH_PROJECT_NAME"
 
 if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then

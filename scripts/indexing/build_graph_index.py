@@ -25,12 +25,13 @@ build_graph_index.py — SourcePilot 图谱索引构建脚本
 
 import argparse
 import os
+import re as _re
 import sys
-
 
 # ---------------------------------------------------------------------------
 # 1. Argparse — 必须在 import 重量级依赖之前，保证 --help 不因缺包而失败
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -89,6 +90,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Project tag for per-project isolation",
     )
+    p.add_argument(
+        "--repo-name",
+        default=None,
+        help=(
+            "Repository label stored on File.repo (e.g. frameworks/base). "
+            "When omitted, default mode derives repo from frameworks/* and packages/*/* "
+            "or falls back to synthetic project-root repo."
+        ),
+    )
     # DocEntity LLM 提取（Pass 2）
     p.add_argument(
         "--extract-doc-entities",
@@ -120,9 +130,11 @@ def _build_parser() -> argparse.ArgumentParser:
 # 2. 延迟导入重量级依赖（tree-sitter / neo4j 驱动）
 # ---------------------------------------------------------------------------
 
+
 def _import_neo4j():
     try:
         from neo4j import GraphDatabase  # noqa: F401
+
         return GraphDatabase
     except ImportError:
         print(
@@ -185,7 +197,9 @@ EXT_TO_LANG: dict[str, str] = {
 }
 
 
-def _collect_files(source_root: str, languages: list[str], max_files: int | None) -> list[tuple[str, str]]:
+def _collect_files(
+    source_root: str, languages: list[str], max_files: int | None
+) -> list[tuple[str, str]]:
     """返回 [(文件绝对路径, 语言)] 列表"""
     results: list[tuple[str, str]] = []
     lang_set = set(languages)
@@ -204,7 +218,63 @@ def _collect_files(source_root: str, languages: list[str], max_files: int | None
 # 4. tree-sitter 解析：提取节点与边
 # ---------------------------------------------------------------------------
 
-def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: str = None) -> tuple[dict, list]:
+
+def _normalize_rel_path(path: str) -> str:
+    return path.replace(os.sep, "/")
+
+
+def _derive_repo_and_path(
+    file_path: str,
+    source_root: str,
+    project: str,
+    repo_name: str | None = None,
+) -> tuple[str, str, str]:
+    """
+    计算图谱身份中的 repo/path。
+
+    返回 (repo, repo_relative_path, repo_mode):
+      - repo_mode=explicit: 来自 --repo-name
+      - repo_mode=derived: 从默认约定推导（frameworks/* 或 packages/*/*）
+      - repo_mode=project_root: 无法推导时使用 synthetic repo（project）
+    """
+    abs_root = os.path.abspath(source_root)
+    abs_file = os.path.abspath(file_path)
+    rel = _normalize_rel_path(os.path.relpath(abs_file, abs_root))
+
+    if rel == "." or rel.startswith("../"):
+        raise ValueError(f"文件不在 source_root 下: file={file_path}, source_root={source_root}")
+
+    if repo_name:
+        return repo_name, rel, "explicit"
+
+    # 默认 whole-project 模式：优先按 frameworks/* 与 packages/*/* 推导 repo 边界
+    parts = rel.split("/")
+    if len(parts) >= 3 and parts[0] == "frameworks":
+        repo = f"frameworks/{parts[1]}"
+        return repo, "/".join(parts[2:]), "derived"
+    if len(parts) >= 4 and parts[0] == "packages":
+        repo = f"packages/{parts[1]}/{parts[2]}"
+        return repo, "/".join(parts[3:]), "derived"
+
+    # 若 source_root 本身就是 frameworks/<repo> 或 packages/<org>/<repo>，也做兼容推导
+    root_parts = _normalize_rel_path(abs_root).strip("/").split("/")
+    if len(root_parts) >= 2 and root_parts[-2] == "frameworks":
+        return f"frameworks/{root_parts[-1]}", rel, "derived"
+    if len(root_parts) >= 3 and root_parts[-3] == "packages":
+        return f"packages/{root_parts[-2]}/{root_parts[-1]}", rel, "derived"
+
+    # synthetic project-root 模式（用于无法按约定切 repo 的文件）
+    return project, rel, "project_root"
+
+
+def _extract_nodes_edges(
+    file_path: str,
+    lang: str,
+    parser,
+    source_root: str,
+    project: str,
+    repo_name: str | None = None,
+) -> tuple[dict, list]:
     """
     返回:
         nodes: {"file": {...}, "classes": [...], "methods": [...]}
@@ -222,7 +292,23 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: 
     except Exception:
         return None, None
 
-    file_node = {"path": file_path, "repo": repo, "language": lang, "project": project}
+    try:
+        repo, repo_rel_path, repo_mode = _derive_repo_and_path(
+            file_path=file_path,
+            source_root=source_root,
+            project=project,
+            repo_name=repo_name,
+        )
+    except ValueError:
+        return None, None
+
+    file_node = {
+        "path": repo_rel_path,
+        "repo": repo,
+        "language": lang,
+        "project": project,
+        "graph_repo_mode": repo_mode,
+    }
     classes: list[dict] = []
     methods: list[dict] = []
     edges: list[dict] = []
@@ -231,7 +317,7 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: 
 
     # --- 通用 AST 遍历 ---
     def node_text(n) -> str:
-        return source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
+        return source[n.start_byte : n.end_byte].decode("utf-8", errors="replace")
 
     def walk(n, current_class: str | None = None):
         # Java / C++ class / struct
@@ -241,26 +327,42 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: 
                 cname = node_text(name_node)
                 cls = {
                     "name": cname,
-                    "path": file_path,
+                    "path": repo_rel_path,
+                    "repo": repo,
                     "start_line": n.start_point[0] + 1,
                     "end_line": n.end_point[0] + 1,
                     "project": project,
                 }
                 classes.append(cls)
-                edges.append({"type": "DEFINED_IN", "from": cname, "from_label": "Class", "to_path": file_path, "project": project})
+                edges.append(
+                    {
+                        "type": "DEFINED_IN",
+                        "from": cname,
+                        "from_label": "Class",
+                        "from_path": repo_rel_path,
+                        "from_repo": repo,
+                        "to_path": repo_rel_path,
+                        "to_repo": repo,
+                        "project": project,
+                    }
+                )
                 # 继承关系（Java: superclass / C++: base_class_clause）
                 for child in n.children:
                     if child.type in ("superclass", "base_class_clause"):
                         for sc in child.children:
                             if sc.type in ("type_identifier", "identifier"):
-                                edges.append({
-                                    "type": "INHERITS",
-                                    "from": cname,
-                                    "from_label": "Class",
-                                    "to": node_text(sc),
-                                    "to_label": "Class",
-                                    "project": project,
-                                })
+                                edges.append(
+                                    {
+                                        "type": "INHERITS",
+                                        "from": cname,
+                                        "from_repo": repo,
+                                        "from_path": repo_rel_path,
+                                        "from_label": "Class",
+                                        "to": node_text(sc),
+                                        "to_label": "Class",
+                                        "project": project,
+                                    }
+                                )
                 # 递归处理类体
                 for child in n.children:
                     walk(child, current_class=cname)
@@ -281,49 +383,76 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: 
                 sig = mname + (node_text(params_node) if params_node else "()")
                 method = {
                     "name": mname,
-                    "path": file_path,
+                    "path": repo_rel_path,
+                    "repo": repo,
                     "start_line": n.start_point[0] + 1,
                     "end_line": n.end_point[0] + 1,
                     "signature": sig,
                     "project": project,
                 }
                 methods.append(method)
-                edges.append({"type": "DEFINED_IN", "from": mname, "from_label": "Method", "to_path": file_path, "project": project})
-                if current_class:
-                    edges.append({
-                        "type": "MEMBER_OF",
+                edges.append(
+                    {
+                        "type": "DEFINED_IN",
                         "from": mname,
+                        "from_signature": sig,
                         "from_label": "Method",
-                        "to": current_class,
-                        "to_label": "Class",
+                        "from_path": repo_rel_path,
+                        "from_repo": repo,
+                        "to_path": repo_rel_path,
+                        "to_repo": repo,
                         "project": project,
-                    })
+                    }
+                )
+                if current_class:
+                    edges.append(
+                        {
+                            "type": "MEMBER_OF",
+                            "from": mname,
+                            "from_signature": sig,
+                            "from_label": "Method",
+                            "from_path": repo_rel_path,
+                            "from_repo": repo,
+                            "to": current_class,
+                            "to_label": "Class",
+                            "to_path": repo_rel_path,
+                            "to_repo": repo,
+                            "project": project,
+                        }
+                    )
                 # CALLS 边：扫描方法体中的调用表达式（best-effort）
                 body = n.child_by_field_name("body")
                 if body:
-                    _extract_calls(body, mname, source, edges)
+                    _extract_calls(body, mname, sig, source, edges)
 
         for child in n.children:
             walk(child, current_class=current_class)
 
-    def _extract_calls(body_node, caller: str, src: bytes, out_edges: list):
+    def _extract_calls(body_node, caller: str, caller_sig: str, src: bytes, out_edges: list):
         """递归提取 call_expression 中被调用的方法名"""
         for child in body_node.children:
             if child.type in ("call_expression", "method_invocation"):
                 fn_node = child.child_by_field_name("function") or child.child_by_field_name("name")
                 if fn_node:
-                    callee_text = src[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="replace")
+                    callee_text = src[fn_node.start_byte : fn_node.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
                     # 取最后一段（去掉 obj. 前缀）
                     callee = callee_text.rsplit(".", 1)[-1]
-                    out_edges.append({
-                        "type": "CALLS",
-                        "from": caller,
-                        "from_label": "Method",
-                        "to": callee,
-                        "to_label": "Method",
-                        "project": project,
-                    })
-            _extract_calls(child, caller, src, out_edges)
+                    out_edges.append(
+                        {
+                            "type": "CALLS",
+                            "from": caller,
+                            "from_signature": caller_sig,
+                            "from_label": "Method",
+                            "from_path": repo_rel_path,
+                            "from_repo": repo,
+                            "to": callee,
+                            "to_label": "Method",
+                            "project": project,
+                        }
+                    )
+            _extract_calls(child, caller, caller_sig, src, out_edges)
 
     walk(root)
     return {"file": file_node, "classes": classes, "methods": methods}, edges
@@ -334,10 +463,10 @@ def _extract_nodes_edges(file_path: str, lang: str, parser, repo: str, project: 
 # ---------------------------------------------------------------------------
 
 SCHEMA_CYPHER = [
-    "CREATE CONSTRAINT file_path IF NOT EXISTS FOR (f:File) REQUIRE f.path IS UNIQUE",
     "CREATE INDEX class_name IF NOT EXISTS FOR (c:Class) ON (c.name)",
     "CREATE INDEX method_name IF NOT EXISTS FOR (m:Method) ON (m.name)",
     "CREATE INDEX node_project IF NOT EXISTS FOR (f:File) ON (f.project)",
+    "CREATE INDEX file_repo IF NOT EXISTS FOR (f:File) ON (f.repo)",
     "CREATE INDEX class_project IF NOT EXISTS FOR (c:Class) ON (c.project)",
     "CREATE INDEX method_project IF NOT EXISTS FOR (m:Method) ON (m.project)",
 ]
@@ -346,14 +475,68 @@ FULLTEXT_INDEX_NAME = "symbol_name_idx"
 DOC_ENTITY_INDEX_NAME = "doc_entity_idx"
 
 
+def _preflight_file_identity_constraints(session):
+    """
+    迁移前检查并确保 File 唯一性从 path 升级到 (project, repo, path)。
+
+    流程：
+      1) 检查现有 File 节点是否具备 project/repo/path（非空）
+      2) 检查 (project, repo, path) 是否存在重复
+      3) 创建 composite 唯一约束
+      4) 删除旧 File.path 单字段唯一约束（若存在）
+
+    若检查失败，抛出 RuntimeError 并附带 remediation 提示。
+    """
+    missing = session.run(
+        "MATCH (f:File) "
+        "WHERE f.project IS NULL OR f.repo IS NULL OR f.path IS NULL "
+        "   OR trim(toString(f.project)) = '' "
+        "   OR trim(toString(f.repo)) = '' "
+        "   OR trim(toString(f.path)) = '' "
+        "RETURN count(f) AS cnt"
+    ).single()["cnt"]
+    if missing > 0:
+        raise RuntimeError(
+            "File 节点缺少 project/repo/path，无法安全迁移到复合唯一约束。"
+            "请先执行 --reset 重建，或先补齐历史数据再重试。"
+        )
+
+    dup = session.run(
+        "MATCH (f:File) "
+        "WITH f.project AS project, f.repo AS repo, f.path AS path, count(*) AS c "
+        "WHERE c > 1 "
+        "RETURN project, repo, path, c "
+        "ORDER BY c DESC LIMIT 5"
+    ).data()
+    if dup:
+        sample = "; ".join(f"({d['project']}, {d['repo']}, {d['path']}) x{d['c']}" for d in dup)
+        raise RuntimeError(
+            "检测到 File 复合键重复，无法安全创建 (project,repo,path) 唯一约束。"
+            f"样例: {sample}. "
+            "请先执行 --reset 重建，或手动清理重复数据后重试。"
+        )
+
+    session.run(
+        "CREATE CONSTRAINT file_project_repo_path IF NOT EXISTS "
+        "FOR (f:File) REQUIRE (f.project, f.repo, f.path) IS UNIQUE"
+    )
+
+    constraints = session.run(
+        "SHOW CONSTRAINTS YIELD name, labelsOrTypes, properties "
+        "WHERE 'File' IN labelsOrTypes RETURN name, properties"
+    ).data()
+    for c in constraints:
+        props = c.get("properties") or []
+        if c.get("name") == "file_path" or props == ["path"]:
+            session.run(f"DROP CONSTRAINT {c['name']} IF EXISTS")
+
+
 def _bootstrap_schema(session):
+    _preflight_file_identity_constraints(session)
     for stmt in SCHEMA_CYPHER:
         session.run(stmt)
     # 仅在不存在时创建全文索引（SHOW INDEXES 检查）
-    existing = {
-        rec["name"]
-        for rec in session.run("SHOW INDEXES YIELD name")
-    }
+    existing = {rec["name"] for rec in session.run("SHOW INDEXES YIELD name")}
     if FULLTEXT_INDEX_NAME not in existing:
         session.run(
             f"CREATE FULLTEXT INDEX {FULLTEXT_INDEX_NAME} IF NOT EXISTS "
@@ -384,8 +567,8 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     files = [n["file"] for n in nodes_batch]
     session.run(
         "UNWIND $files AS f "
-        "MERGE (node:File {path: f.path, project: f.project}) "
-        "SET node.repo = f.repo, node.language = f.language",
+        "MERGE (node:File {project: f.project, repo: f.repo, path: f.path}) "
+        "SET node.language = f.language, node.graph_repo_mode = f.graph_repo_mode",
         files=files,
     )
     # Class 节点
@@ -393,7 +576,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if classes:
         session.run(
             "UNWIND $cls AS c "
-            "MERGE (node:Class {name: c.name, path: c.path, project: c.project}) "
+            "MERGE (node:Class {name: c.name, path: c.path, repo: c.repo, project: c.project}) "
             "SET node.start_line = c.start_line, node.end_line = c.end_line",
             cls=classes,
         )
@@ -402,9 +585,11 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if methods:
         session.run(
             "UNWIND $mth AS m "
-            "MERGE (node:Method {name: m.name, path: m.path, project: m.project}) "
-            "SET node.start_line = m.start_line, node.end_line = m.end_line, "
-            "    node.signature = m.signature",
+            "MERGE (node:Method {"
+            "name: m.name, signature: m.signature, path: m.path, "
+            "repo: m.repo, project: m.project"
+            "}) "
+            "SET node.start_line = m.start_line, node.end_line = m.end_line",
             mth=methods,
         )
 
@@ -412,24 +597,54 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     defined_in = [e for e in edges_batch if e["type"] == "DEFINED_IN"]
     if defined_in:
         for e in defined_in:
-            session.run(
-                f"MATCH (src:{e['from_label']} {{name: $from_name, project: $project}}) "
-                "MATCH (f:File {path: $to_path, project: $project}) "
-                "MERGE (src)-[:DEFINED_IN]->(f)",
-                from_name=e["from"],
-                to_path=e["to_path"],
-                project=e.get("project"),
-            )
+            if e["from_label"] == "Method":
+                session.run(
+                    "MATCH (src:Method {"
+                    "name: $from_name, signature: $from_signature, "
+                    "project: $project, repo: $from_repo, path: $from_path"
+                    "}) "
+                    "MATCH (f:File {project: $project, repo: $to_repo, path: $to_path}) "
+                    "MERGE (src)-[:DEFINED_IN]->(f)",
+                    from_name=e["from"],
+                    from_signature=e["from_signature"],
+                    from_repo=e["from_repo"],
+                    from_path=e["from_path"],
+                    to_repo=e["to_repo"],
+                    to_path=e["to_path"],
+                    project=e.get("project"),
+                )
+            else:
+                session.run(
+                    "MATCH (src:Class {"
+                    "name: $from_name, project: $project, "
+                    "repo: $from_repo, path: $from_path"
+                    "}) "
+                    "MATCH (f:File {project: $project, repo: $to_repo, path: $to_path}) "
+                    "MERGE (src)-[:DEFINED_IN]->(f)",
+                    from_name=e["from"],
+                    from_repo=e["from_repo"],
+                    from_path=e["from_path"],
+                    to_repo=e["to_repo"],
+                    to_path=e["to_path"],
+                    project=e.get("project"),
+                )
     # 边：MEMBER_OF (Method → Class)
     member_of = [e for e in edges_batch if e["type"] == "MEMBER_OF"]
     if member_of:
         for e in member_of:
             session.run(
-                "MATCH (m:Method {name: $mname, project: $project}) "
-                "MATCH (c:Class {name: $cname, project: $project}) "
+                "MATCH (m:Method {"
+                "name: $mname, signature: $msig, project: $project, repo: $mrepo, path: $mpath"
+                "}) "
+                "MATCH (c:Class {name: $cname, project: $project, repo: $crepo, path: $cpath}) "
                 "MERGE (m)-[:MEMBER_OF]->(c)",
                 mname=e["from"],
+                msig=e["from_signature"],
+                mrepo=e["from_repo"],
+                mpath=e["from_path"],
                 cname=e["to"],
+                crepo=e["to_repo"],
+                cpath=e["to_path"],
                 project=e.get("project"),
             )
     # 边：INHERITS (Class → Class)
@@ -437,12 +652,18 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if inherits:
         for e in inherits:
             session.run(
-                "MATCH (child:Class {name: $child, project: $project}) "
+                "MATCH (child:Class {"
+                "name: $child, project: $project, repo: $child_repo, path: $child_path"
+                "}) "
                 "WITH child "
-                "OPTIONAL MATCH (parent:Class {name: $parent, project: $project}) "
+                "OPTIONAL MATCH (parent:Class {"
+                "name: $parent, project: $project, repo: $child_repo"
+                "}) "
                 "WITH child, parent WHERE parent IS NOT NULL "
                 "MERGE (child)-[:INHERITS]->(parent)",
                 child=e["from"],
+                child_repo=e["from_repo"],
+                child_path=e["from_path"],
                 parent=e["to"],
                 project=e.get("project"),
             )
@@ -451,12 +672,20 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     if calls:
         for e in calls:
             session.run(
-                "MATCH (caller:Method {name: $caller, project: $project}) "
+                "MATCH (caller:Method {"
+                "name: $caller, signature: $caller_sig, "
+                "project: $project, repo: $caller_repo, path: $caller_path"
+                "}) "
                 "WITH caller "
-                "OPTIONAL MATCH (callee:Method {name: $callee, project: $project}) "
+                "OPTIONAL MATCH (callee:Method {"
+                "name: $callee, project: $project, repo: $caller_repo"
+                "}) "
                 "WITH caller, callee WHERE callee IS NOT NULL "
                 "MERGE (caller)-[:CALLS]->(callee)",
                 caller=e["from"],
+                caller_sig=e["from_signature"],
+                caller_repo=e["from_repo"],
+                caller_path=e["from_path"],
                 callee=e["to"],
                 project=e.get("project"),
             )
@@ -466,17 +695,15 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
 # 7. Pass 2 — DocEntity LLM 提取（仅在 --extract-doc-entities 时运行）
 # ---------------------------------------------------------------------------
 
-import re as _re
-
 # Javadoc / block comment 正则（用于无 tree-sitter 时的回退）
 _BLOCK_COMMENT_RE = _re.compile(
-    r'/\*\*?.*?\*/|\'\'\'.*?\'\'\'',
+    r"/\*\*?.*?\*/|\'\'\'.*?\'\'\'",
     _re.DOTALL,
 )
 
 _DOC_ENTITY_PROMPT = (
     "请从以下代码注释中提取 1-3 词的领域概念名词短语（英文或中文均可）。"
-    "只输出严格 JSON，格式：[{{\"name\":\"概念名\",\"concept_text\":\"注释原文片段\"}}]。"
+    '只输出严格 JSON，格式：[{{"name":"概念名","concept_text":"注释原文片段"}}]。'
     "最多提取 5 个。\n\n注释内容：\n{comment}"
 )
 
@@ -501,7 +728,9 @@ def _extract_comments_from_file(file_path: str, lang: str, parser) -> list[dict]
 
             def _walk(n):
                 if n.type == "comment":
-                    text = source[n.start_byte:n.end_byte].decode("utf-8", errors="replace").strip()
+                    text = (
+                        source[n.start_byte : n.end_byte].decode("utf-8", errors="replace").strip()
+                    )
                     if len(text) > 20:  # 过滤单行短注释
                         comments.append({"text": text, "line": n.start_point[0] + 1})
                 for child in n.children:
@@ -536,8 +765,9 @@ def _call_llm_for_entities(
     同步调用 LLM，返回 [{"name": str, "concept_text": str}]。
     失败时静默返回 []。
     """
-    import httpx as _httpx
     import json as _json
+
+    import httpx as _httpx
 
     prompt = _DOC_ENTITY_PROMPT.format(comment=comment_text[:800])
     try:
@@ -579,24 +809,39 @@ def _upsert_doc_entities(session, doc_entities: list[dict]):
     # 节点
     session.run(
         "UNWIND $ents AS e "
-        "MERGE (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
+        "MERGE (d:DocEntity {"
+        "name: e.name, source_path: e.source_path, "
+        "source_repo: e.source_repo, project: e.project"
+        "}) "
         "SET d.concept_text = e.concept_text, d.source_line = e.source_line",
         ents=doc_entities,
     )
     # MENTIONED_IN → File
     session.run(
         "UNWIND $ents AS e "
-        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
-        "MATCH (f:File {path: e.source_path, project: e.project}) "
+        "MATCH (d:DocEntity {"
+        "name: e.name, source_path: e.source_path, "
+        "source_repo: e.source_repo, project: e.project"
+        "}) "
+        "MATCH (f:File {project: e.project, repo: e.source_repo, path: e.source_path}) "
         "MERGE (d)-[:MENTIONED_IN]->(f)",
         ents=doc_entities,
     )
     # RELATED_TO → Class/Method（name 完全匹配同文件内符号，best-effort）
     session.run(
         "UNWIND $ents AS e "
-        "MATCH (d:DocEntity {name: e.name, source_path: e.source_path, project: e.project}) "
-        "OPTIONAL MATCH (c:Class {name: e.name, path: e.source_path, project: e.project}) "
-        "OPTIONAL MATCH (m:Method {name: e.name, path: e.source_path, project: e.project}) "
+        "MATCH (d:DocEntity {"
+        "name: e.name, source_path: e.source_path, "
+        "source_repo: e.source_repo, project: e.project"
+        "}) "
+        "OPTIONAL MATCH (c:Class {"
+        "name: e.name, path: e.source_path, "
+        "repo: e.source_repo, project: e.project"
+        "}) "
+        "OPTIONAL MATCH (m:Method {"
+        "name: e.name, path: e.source_path, "
+        "repo: e.source_repo, project: e.project"
+        "}) "
         "FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END | "
         "  MERGE (d)-[:RELATED_TO]->(c)) "
         "FOREACH (_ IN CASE WHEN m IS NOT NULL THEN [1] ELSE [] END | "
@@ -610,12 +855,14 @@ def _run_doc_entity_pass(
     parsers: dict,
     args,
     driver,
+    source_root: str,
+    project: str,
+    repo_name: str | None,
 ):
     """
     Pass 2: 从注释中提取 DocEntity 节点，直到达到 --max-doc-entities 上限。
     返回 (llm_calls, total_entities)。
     """
-    import logging as _logging
 
     api_key = os.environ.get("NL_API_KEY", "")
     api_base = os.environ.get("NL_API_BASE", "https://api.openai.com/v1")
@@ -656,8 +903,17 @@ def _run_doc_entity_pass(
         for i in range(0, len(comments), args.doc_entity_batch_size):
             if total_entities >= cap:
                 break
-            batch = comments[i: i + args.doc_entity_batch_size]
+            batch = comments[i : i + args.doc_entity_batch_size]
             combined_text = "\n\n---\n\n".join(c["text"] for c in batch)
+            try:
+                repo, repo_rel_path, _repo_mode = _derive_repo_and_path(
+                    file_path=fpath,
+                    source_root=source_root,
+                    project=project,
+                    repo_name=repo_name,
+                )
+            except ValueError:
+                continue
             entities = _call_llm_for_entities(combined_text, model, api_key, api_base)
             llm_calls += 1
 
@@ -666,12 +922,16 @@ def _run_doc_entity_pass(
                     break
                 # 关联到最近注释块的行号
                 source_line = batch[0]["line"] if batch else 0
-                entity_buf.append({
-                    "name": ent.get("name", ""),
-                    "concept_text": ent.get("concept_text", ""),
-                    "source_path": fpath,
-                    "source_line": source_line,
-                })
+                entity_buf.append(
+                    {
+                        "name": ent.get("name", ""),
+                        "concept_text": ent.get("concept_text", ""),
+                        "source_path": repo_rel_path,
+                        "source_repo": repo,
+                        "source_line": source_line,
+                        "project": project,
+                    }
+                )
                 total_entities += 1
 
             # 每 50 个实体写一次
@@ -695,6 +955,7 @@ def _run_doc_entity_pass(
 # ---------------------------------------------------------------------------
 # 8. 主流程
 # ---------------------------------------------------------------------------
+
 
 def main():
     args = _build_parser().parse_args()
@@ -742,9 +1003,17 @@ def main():
             parse_failures += 1
             continue
 
-        nodes, edges = _extract_nodes_edges(fpath, lang, parser, repo, project)
+        nodes, edges = _extract_nodes_edges(
+            file_path=fpath,
+            lang=lang,
+            parser=parser,
+            source_root=source_root,
+            project=project,
+            repo_name=args.repo_name,
+        )
         if nodes is None:
             import logging
+
             logging.warning("解析失败: %s", fpath)
             parse_failures += 1
             continue
@@ -794,7 +1063,15 @@ def main():
             args.neo4j_uri,
             auth=(args.neo4j_user, args.neo4j_password),
         )
-        _run_doc_entity_pass(files, parsers, args, driver2)
+        _run_doc_entity_pass(
+            files,
+            parsers,
+            args,
+            driver2,
+            source_root=source_root,
+            project=project,
+            repo_name=args.repo_name,
+        )
         driver2.close()
 
 

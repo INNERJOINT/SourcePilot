@@ -53,12 +53,17 @@ class DenseAdapter(SearchAdapter):
         """Lazy-init Milvus client."""
         if self._milvus_client is None:
             from pymilvus import MilvusClient
+
             self._milvus_client = MilvusClient(uri=self._vector_db_url)
         return self._milvus_client
 
     @property
     def backend_name(self) -> str:
         return "dense"
+
+    @property
+    def collection_name(self) -> str:
+        return self._collection_name
 
     @property
     def supported_content_types(self) -> list[ContentType]:
@@ -132,18 +137,20 @@ class DenseAdapter(SearchAdapter):
         for result_list in search_results:
             for hit in result_list:
                 entity = hit.get("entity", {})
-                hits.append({
-                    "id": str(hit.get("id", "")),
-                    "score": hit.get("distance", 0.0),
-                    "metadata": {
-                        "repo": entity.get("repo", ""),
-                        "path": entity.get("path", ""),
-                        "start_line": entity.get("start_line"),
-                        "end_line": entity.get("end_line"),
-                        "content": entity.get("content", ""),
-                        "language": entity.get("language", ""),
-                    },
-                })
+                hits.append(
+                    {
+                        "id": str(hit.get("id", "")),
+                        "score": hit.get("distance", 0.0),
+                        "metadata": {
+                            "repo": entity.get("repo", ""),
+                            "path": entity.get("path", ""),
+                            "start_line": entity.get("start_line"),
+                            "end_line": entity.get("end_line"),
+                            "content": entity.get("content", ""),
+                            "language": entity.get("language", ""),
+                        },
+                    }
+                )
 
         return hits
 
@@ -171,7 +178,8 @@ class DenseAdapter(SearchAdapter):
             if len(test_vec) != self._embedding_dim:
                 logger.warning(
                     "Embedding dim mismatch: expected %d, got %d",
-                    self._embedding_dim, len(test_vec),
+                    self._embedding_dim,
+                    len(test_vec),
                 )
                 return False
             return True
