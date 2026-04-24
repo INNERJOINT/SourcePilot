@@ -10,13 +10,13 @@
 # must not abort remaining repos.
 set -uo pipefail
 
-# shellcheck source=./_indexing_lib.sh
-source "$(dirname "$0")/_indexing_lib.sh"
-source "$(dirname "$0")/../share/_common.sh"
+# shellcheck source=../_indexing_lib.sh
+source "$(dirname "$0")/../_indexing_lib.sh"
+source "$(dirname "$0")/../../share/_common.sh"
 
 SKIP_EXISTING=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_SCRIPT="$(cd "$(dirname "$0")/../../deploy/dense" && pwd)/scripts/build_index.sh"
+BUILD_SCRIPT="$(cd "$(dirname "$0")/../../../deploy/dense" && pwd)/scripts/build_index.sh"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -32,7 +32,7 @@ if [[ ! -x "$BUILD_SCRIPT" ]] && [[ "${INDEXING_DRY_RUN:-0}" != "1" ]]; then
 fi
 
 _emit_dense_project_lines() {
-    python3 - "$SCRIPT_DIR/project_config.py" <<'PYEOF'
+    python3 - "$SCRIPT_DIR/../project_config.py" <<'PYEOF'
 import json
 import subprocess
 import sys

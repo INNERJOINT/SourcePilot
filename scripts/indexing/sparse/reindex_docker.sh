@@ -5,9 +5,9 @@
 # container for each sub-project.  Produces one .zoekt shard per sub-project.
 #
 # Usage:
-#   ./scripts/indexing/reindex_docker.sh                        # all projects (default)
-#   ./scripts/indexing/reindex_docker.sh --project t2            # single AOSP project
-#   ./scripts/indexing/reindex_docker.sh --parallelism 8         # 8 concurrent containers
+#   ./scripts/indexing/sparse/reindex_docker.sh                        # all projects (default)
+#   ./scripts/indexing/sparse/reindex_docker.sh --project t2            # single AOSP project
+#   ./scripts/indexing/sparse/reindex_docker.sh --parallelism 8         # 8 concurrent containers
 #
 # Environment variables:
 #   INDEXING_DRY_RUN=1         Skip actual docker run (print commands only)
@@ -15,14 +15,14 @@
 #   ZOEKT_DOCKER_IMAGE         Override Docker image (default: dify-sparse-index-zoekt:latest)
 
 set -euo pipefail
-DIR=$(cd "$(dirname "$0")/../.." && pwd)
+DIR=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$DIR"
 
-source "$(dirname "$0")/../share/_common.sh"
+source "$(dirname "$0")/../../share/_common.sh"
 _common_parse_help "$@"
 
-# shellcheck source=./_indexing_lib.sh
-source "$(dirname "$0")/_indexing_lib.sh"
+# shellcheck source=../_indexing_lib.sh
+source "$(dirname "$0")/../_indexing_lib.sh"
 
 if [ -f "$DIR/.env" ]; then
     # shellcheck source=/dev/null

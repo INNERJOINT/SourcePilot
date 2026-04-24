@@ -100,13 +100,13 @@ python3 scripts/indexing/project_config.py --format json --backend dense
 python3 scripts/indexing/project_config.py --format json --backend structural --project ace
 
 # Batch indexing
-scripts/indexing/build_dense_index_batch.sh
-scripts/indexing/build_structural_index_batch.sh
+scripts/indexing/dense/build_dense_index_batch.sh
+scripts/indexing/structural/build_structural_index_batch.sh
 
 # Dry run (no Docker, no real indexing)
-INDEXING_DRY_RUN=1 scripts/indexing/build_dense_index_batch.sh
+INDEXING_DRY_RUN=1 scripts/indexing/dense/build_dense_index_batch.sh
 
 # Reset structural data for one project only
-python scripts/indexing/build_structural_index.py --source-root /mnt/code/ACE --project-name ace --reset
+python scripts/indexing/structural/build_structural_index.py --source-root /mnt/code/ACE --project-name ace --reset
 ```
 

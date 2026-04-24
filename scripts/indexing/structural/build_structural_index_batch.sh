@@ -8,16 +8,16 @@
 # must not abort remaining projects.
 set -uo pipefail
 
-# shellcheck source=./_indexing_lib.sh
-source "$(dirname "$0")/_indexing_lib.sh"
-# shellcheck source=../share/_common.sh
-source "$(dirname "$0")/../share/_common.sh"
+# shellcheck source=../_indexing_lib.sh
+source "$(dirname "$0")/../_indexing_lib.sh"
+# shellcheck source=../../share/_common.sh
+source "$(dirname "$0")/../../share/_common.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_SCRIPT="$SCRIPT_DIR/build_structural_index.sh"
 
 _emit_structural_project_lines() {
-    python3 - "$SCRIPT_DIR/project_config.py" <<'PYEOF'
+    python3 - "$SCRIPT_DIR/../project_config.py" <<'PYEOF'
 import json
 import subprocess
 import sys

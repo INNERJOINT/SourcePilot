@@ -13,13 +13,13 @@
 #   - 调用方显式设置的关键环境变量优先于 .env。
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$0")/../.." && pwd)         # 项目根
+DIR=$(cd "$(dirname "$0")/../../.." && pwd)       # 项目根
 STRUCTURAL_DIR="$DIR/deploy/structural"
 COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
-# shellcheck source=./_indexing_lib.sh
-source "$(dirname "$0")/_indexing_lib.sh"
-source "$(dirname "$0")/../share/_common.sh"
+# shellcheck source=../_indexing_lib.sh
+source "$(dirname "$0")/../_indexing_lib.sh"
+source "$(dirname "$0")/../../share/_common.sh"
 
 _PRESERVE_ENV_VARS=(
     AOSP_SOURCE_ROOT

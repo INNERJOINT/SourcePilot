@@ -46,12 +46,15 @@ scripts/
 | Script | Purpose |
 |---|---|
 | `_indexing_lib.sh` | Shared helpers for indexing scripts (CLI hooks, dry-run) |
-| `build_dense_index_batch.sh` | Batch-build dense vector index for AOSP repos |
-| `build_dense_index.py` | Dense index builder (Python) |
-| `build_graph_index.sh` | Build Neo4j structural index for a single repo |
-| `build_graph_index.py` | Structural index builder (Python) |
-| `reindex.sh` | Orchestrate full reindex (zoekt + dense + structural) |
-| `zoekt_delete_shard.sh` | Delete zoekt index shards for a repo |
+| `sparse/reindex.sh` | Orchestrate full reindex (zoekt) |
+| `sparse/reindex_docker.sh` | Docker-based Zoekt indexing for repo-managed projects |
+| `sparse/zoekt_delete_shard.sh` | Delete zoekt index shards for a repo |
+| `dense/build_dense_index_batch.sh` | Batch-build dense vector index for AOSP repos |
+| `dense/build_dense_index.py` | Dense index builder (Python) |
+| `structural/build_structural_index.sh` | Build Neo4j structural index for a single repo |
+| `structural/build_structural_index.py` | Structural index builder (Python) |
+| `structural/build_structural_index_batch.sh` | Batch structural index builder |
+| `feishu/build_feishu_index.py` | Feishu knowledge base vector index builder |
 
 ### Testing (testing/)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 _MODULE_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "indexing" / "build_structural_index.py"
+    Path(__file__).resolve().parents[2] / "scripts" / "indexing" / "structural" / "build_structural_index.py"
 )
 _SPEC = importlib.util.spec_from_file_location("build_structural_index_for_tests", _MODULE_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
@@ -161,7 +161,7 @@ def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
 
     # Create isolated project tree mirroring the script's expected layout:
-    #   <tmp>/scripts/indexing/build_structural_index.sh
+    #   <tmp>/scripts/indexing/structural/build_structural_index.sh
     #   <tmp>/scripts/indexing/_indexing_lib.sh
     #   <tmp>/scripts/share/_common.sh
     #   <tmp>/scripts/share/_env.sh
@@ -171,6 +171,8 @@ def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
 
     scripts_indexing = proj_root / "scripts" / "indexing"
     scripts_indexing.mkdir(parents=True)
+    scripts_indexing_structural = scripts_indexing / "structural"
+    scripts_indexing_structural.mkdir(parents=True)
     scripts_share = proj_root / "scripts" / "share"
     scripts_share.mkdir(parents=True)
 
@@ -180,8 +182,8 @@ def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
 
     for src, dst in [
         (
-            repo_root / "scripts" / "indexing" / "build_structural_index.sh",
-            scripts_indexing / "build_structural_index.sh",
+            repo_root / "scripts" / "indexing" / "structural" / "build_structural_index.sh",
+            scripts_indexing_structural / "build_structural_index.sh",
         ),
         (
             repo_root / "scripts" / "indexing" / "_indexing_lib.sh",
@@ -228,7 +230,7 @@ def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     proc = subprocess.run(
         [
             "bash",
-            str(scripts_indexing / "build_structural_index.sh"),
+            str(scripts_indexing_structural / "build_structural_index.sh"),
             "--source-root",
             str(source_dir),
             "--repo-name",
@@ -243,6 +245,6 @@ def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
 
     out = proc.stdout
     assert f"DOCKER_ENV:AOSP_SOURCE_ROOT={caller_root}" in out
-    assert "DOCKER_ENV:GRAPH_NEO4J_URI=bolt://caller:7687" in out
+    assert "DOCKER_ENV:STRUCTURAL_NEO4J_URI=bolt://caller:7687" in out
     assert "DOCKER_ARG:--source-root" in out
     assert "DOCKER_ARG:/src/frameworks/base" in out

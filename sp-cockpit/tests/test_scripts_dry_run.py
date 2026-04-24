@@ -16,9 +16,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("script", [
-    "scripts/indexing/build_dense_index_batch.sh",
-    "scripts/indexing/build_structural_index.sh",
-    "scripts/indexing/reindex.sh",
+    "scripts/indexing/dense/build_dense_index_batch.sh",
+    "scripts/indexing/structural/build_structural_index.sh",
+    "scripts/indexing/sparse/reindex.sh",
     "scripts/indexing/_indexing_lib.sh",
 ])
 def test_bash_syntax(script):
@@ -56,7 +56,7 @@ def test_build_structural_dry_run_exits_zero(tmp_path):
         "AOSP_SOURCE_ROOT": str(tmp_path),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_structural_index.sh", "--source-root", str(tmp_path)],
+        ["bash", "scripts/indexing/structural/build_structural_index.sh", "--source-root", str(tmp_path)],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -80,7 +80,7 @@ def test_reindex_dry_run_exits_zero(tmp_path):
         "ZOEKT_REPO_PATH": str(fake_repo),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/reindex.sh"],
+        ["bash", "scripts/indexing/sparse/reindex.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -116,7 +116,7 @@ def test_build_dense_dry_run_skips_docker(tmp_path, monkeypatch):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_dense_index_batch.sh"],
+        ["bash", "scripts/indexing/dense/build_dense_index_batch.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -160,7 +160,7 @@ def test_build_dense_include_mode_uses_only_config_includes(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_dense_index_batch.sh"],
+        ["bash", "scripts/indexing/dense/build_dense_index_batch.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -197,7 +197,7 @@ def test_reindex_all_dry_run(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/reindex.sh", "--all"],
+        ["bash", "scripts/indexing/sparse/reindex.sh", "--all"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -234,7 +234,7 @@ def test_reindex_single_project_dry_run(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/reindex.sh", "--project", "my-proj"],
+        ["bash", "scripts/indexing/sparse/reindex.sh", "--project", "my-proj"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -274,7 +274,7 @@ def test_build_structural_batch_dry_run(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_structural_index_batch.sh"],
+        ["bash", "scripts/indexing/structural/build_structural_index_batch.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -302,7 +302,7 @@ def test_build_structural_batch_rejects_managed_args(tmp_path):
 
     for extra_args in managed_args:
         result = subprocess.run(
-            ["bash", "scripts/indexing/build_structural_index_batch.sh"] + extra_args,
+            ["bash", "scripts/indexing/structural/build_structural_index_batch.sh"] + extra_args,
             cwd=str(PROJECT_ROOT),
             capture_output=True,
             text=True,
@@ -341,7 +341,7 @@ def test_build_structural_batch_reset_once_per_project(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_structural_index_batch.sh", "--reset"],
+        ["bash", "scripts/indexing/structural/build_structural_index_batch.sh", "--reset"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,

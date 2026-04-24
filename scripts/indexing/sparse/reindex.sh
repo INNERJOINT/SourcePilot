@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # 触发 zoekt 索引重建 (支持多项目)
 # 用法:
-#   ./scripts/indexing/reindex.sh                    # 索引所有项目 (默认)
-#   ./scripts/indexing/reindex.sh --all              # 索引所有项目
-#   ./scripts/indexing/reindex.sh --project <name>   # 索引单个项目
+#   ./scripts/indexing/sparse/reindex.sh                    # 索引所有项目 (默认)
+#   ./scripts/indexing/sparse/reindex.sh --all              # 索引所有项目
+#   ./scripts/indexing/sparse/reindex.sh --project <name>   # 索引单个项目
 #
 # 环境变量:
 #   INDEXING_DRY_RUN=1   跳过实际索引操作 (用于测试)
 #   PROJECTS_CONFIG_PATH 覆盖 config/projects.yaml 路径
 
 set -euo pipefail
-DIR=$(cd "$(dirname "$0")/../.." && pwd)
+DIR=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$DIR"
 
-source "$(dirname "$0")/../share/_common.sh"
+source "$(dirname "$0")/../../share/_common.sh"
 _common_parse_help "$@"
 
-# shellcheck source=./_indexing_lib.sh
-source "$(dirname "$0")/_indexing_lib.sh"
+# shellcheck source=../_indexing_lib.sh
+source "$(dirname "$0")/../_indexing_lib.sh"
 
 # 加载 .env 配置（如果存在）
 if [ -f "$DIR/.env" ]; then
@@ -85,7 +85,7 @@ _index_project() {
 # ---------------------------------------------------------------------------
 # Helper: eval output from _project_config.py then call _index_project
 # ---------------------------------------------------------------------------
-_PYHELPER="$(dirname "$0")/_project_config.py"
+_PYHELPER="$(dirname "$0")/../_project_config.py"
 
 _run_project_from_config() {
     local config_block

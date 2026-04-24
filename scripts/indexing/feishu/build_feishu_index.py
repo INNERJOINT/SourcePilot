@@ -6,7 +6,7 @@ build_feishu_index.py — Feishu Lurk 知识库向量索引构建脚本
 通过 embedding 服务写入 Milvus 向量数据库。
 
 Usage:
-    PYTHONPATH=src python scripts/indexing/build_feishu_index.py --jsonl-path docs.jsonl
+    PYTHONPATH=src python scripts/indexing/feishu/build_feishu_index.py --jsonl-path docs.jsonl
 """
 
 import argparse
