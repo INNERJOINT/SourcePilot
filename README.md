@@ -1,5 +1,5 @@
 <div align="center">
-  <img src=".github/assets/icon.png" alt="AOSP Code Search" width="400">
+  <img src=".github/assets/icon.svg" alt="AOSP Code Search" width="400">
   <h1>AOSP Code Search</h1>
   <p>Hybrid RAG code search over AOSP sources</p>
   <p>
