@@ -11,13 +11,30 @@ export default function RepoDetail() {
   const [err, setErr] = useState<string | null>(null);
   const [logJobId, setLogJobId] = useState<number | null>(null);
 
+  const numId = Number(id);
+  const isValidId = !!id && !isNaN(numId);
+
   useEffect(() => {
-    if (!id) return;
+    if (!isValidId) return;
     indexingApi
-      .getRepoDetail(Number(id))
+      .getRepoDetail(numId)
       .then(setDetail)
       .catch((e) => setErr(String(e)));
-  }, [id]);
+  }, [isValidId, numId]);
+
+  if (!isValidId) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/repos")} className="text-blue-600 hover:underline text-sm">
+            ← Repositories
+          </button>
+          <h1 className="text-2xl font-semibold">Repo Detail</h1>
+        </div>
+        <div className="p-3 bg-red-100 text-red-700 rounded">Invalid repository ID</div>
+      </div>
+    );
+  }
 
   function statusClass(s: string | null) {
     if (s === "success") return "text-emerald-600 font-semibold";

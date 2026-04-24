@@ -66,7 +66,21 @@ def _trace_from_request(request: Request) -> str:
 
 async def health(request: Request) -> JSONResponse:
     import config
-    backends: dict = {"zoekt": True}
+    from config import list_projects, get_project
+    from adapters.zoekt import ZoektAdapter
+
+    # Check each project's Zoekt instance
+    projects_status = {}
+    for proj in list_projects():
+        name = proj["name"]
+        try:
+            adapter = ZoektAdapter(zoekt_url=proj["zoekt_url"])
+            ok = await adapter.health_check()
+            projects_status[name] = ok
+        except Exception:
+            projects_status[name] = False
+
+    backends: dict = {"zoekt": projects_status}
     if config.DENSE_ENABLED:
         backends["dense"] = True
     if config.GRAPH_ENABLED:
@@ -94,6 +108,7 @@ async def api_search(request: Request) -> JSONResponse:
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
+    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -104,6 +119,7 @@ async def api_search(request: Request) -> JSONResponse:
         "lang": lang,
         "branch": branch,
         "case_sensitive": case_sensitive,
+        "project": project,
     }
 
     async with audit_tool_call("search", args, "http") as ctx:
@@ -116,6 +132,7 @@ async def api_search(request: Request) -> JSONResponse:
                 lang=lang,
                 branch=branch,
                 case_sensitive=case_sensitive,
+                project=project,
             )
             ctx.set_result_count(len(results))
             return _ok(results)
@@ -142,6 +159,7 @@ async def api_search_symbol(request: Request) -> JSONResponse:
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
+    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -151,6 +169,7 @@ async def api_search_symbol(request: Request) -> JSONResponse:
         "lang": lang,
         "branch": branch,
         "case_sensitive": case_sensitive,
+        "project": project,
     }
 
     async with audit_tool_call("search_symbol", args, "http") as ctx:
@@ -162,6 +181,7 @@ async def api_search_symbol(request: Request) -> JSONResponse:
                 lang=lang,
                 branch=branch,
                 case_sensitive=case_sensitive,
+                project=project,
             )
             ctx.set_result_count(len(results))
             return _ok(results)
@@ -188,6 +208,7 @@ async def api_search_file(request: Request) -> JSONResponse:
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
+    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -197,6 +218,7 @@ async def api_search_file(request: Request) -> JSONResponse:
         "lang": lang,
         "branch": branch,
         "case_sensitive": case_sensitive,
+        "project": project,
     }
 
     async with audit_tool_call("search_file", args, "http") as ctx:
@@ -208,6 +230,7 @@ async def api_search_file(request: Request) -> JSONResponse:
                 lang=lang,
                 branch=branch,
                 case_sensitive=case_sensitive,
+                project=project,
             )
             ctx.set_result_count(len(results))
             return _ok(results)
@@ -232,6 +255,7 @@ async def api_search_regex(request: Request) -> JSONResponse:
     top_k = body.get("top_k", 10)
     repos = body.get("repos") or None
     lang = body.get("lang") or None
+    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -239,6 +263,7 @@ async def api_search_regex(request: Request) -> JSONResponse:
         "top_k": top_k,
         "repos": repos,
         "lang": lang,
+        "project": project,
     }
 
     async with audit_tool_call("search_regex", args, "http") as ctx:
@@ -248,6 +273,7 @@ async def api_search_regex(request: Request) -> JSONResponse:
                 top_k=top_k,
                 repos=repos,
                 lang=lang,
+                project=project,
             )
             ctx.set_result_count(len(results))
             return _ok(results)
@@ -267,13 +293,14 @@ async def api_list_repos(request: Request) -> JSONResponse:
 
     query = body.get("query", "")
     top_k = body.get("top_k", 50)
+    project = body.get("project") or None
 
     _trace_from_request(request)
-    args = {"query": query, "top_k": top_k}
+    args = {"query": query, "top_k": top_k, "project": project}
 
     async with audit_tool_call("list_repos", args, "http") as ctx:
         try:
-            results = await gateway.list_repos(query=query, top_k=top_k)
+            results = await gateway.list_repos(query=query, top_k=top_k, project=project)
             ctx.set_result_count(len(results))
             return _ok(results)
         except httpx.RequestError as e:
@@ -297,6 +324,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
 
     start_line = body.get("start_line", 1)
     end_line = body.get("end_line") or None
+    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -304,6 +332,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
         "filepath": filepath,
         "start_line": start_line,
         "end_line": end_line,
+        "project": project,
     }
 
     async with audit_tool_call("get_file_content", args, "http") as ctx:
@@ -313,6 +342,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
                 filepath=filepath,
                 start_line=start_line,
                 end_line=end_line,
+                project=project,
             )
             ctx.set_result_count(1)
             return _ok(result)
@@ -326,6 +356,11 @@ async def api_get_file_content(request: Request) -> JSONResponse:
             ctx.set_error(str(e))
             logger.error("api_get_file_content error: %s", e)
             return _err(500, str(e))
+
+
+async def api_projects(request: Request) -> JSONResponse:
+    from config import list_projects
+    return _ok(list_projects())
 
 
 # ─── Lifespan ─────────────────────────────────────────
@@ -360,6 +395,7 @@ app = Starlette(
     lifespan=lifespan,
     routes=[
         Route("/api/health", health, methods=["GET"]),
+        Route("/api/projects", api_projects, methods=["GET"]),
         Route("/api/search", api_search, methods=["POST"]),
         Route("/api/search_symbol", api_search_symbol, methods=["POST"]),
         Route("/api/search_file", api_search_file, methods=["POST"]),

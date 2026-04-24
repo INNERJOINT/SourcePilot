@@ -131,6 +131,10 @@ async def list_tools() -> list[Tool]:
             "description": "大小写敏感模式：auto（默认，含大写则敏感）、yes、no",
             "default": "auto",
         },
+        "project": {
+            "type": "string",
+            "description": "可选，项目名称（如 aosp-14, aosp-15）。不指定则使用默认项目。",
+        },
     }
 
     return [
@@ -364,11 +368,15 @@ async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
 
 def _extract_filters(args: dict) -> dict:
     """从工具参数中提取通用过滤字段。"""
-    return {
+    result = {
         "lang": args.get("lang") or None,
         "branch": args.get("branch") or None,
         "case_sensitive": args.get("case_sensitive", "auto"),
     }
+    project = args.get("project") or None
+    if project:
+        result["project"] = project
+    return result
 
 
 async def _handle_search_code(args: dict, trace_id: str) -> list[TextContent]:
@@ -414,6 +422,7 @@ async def _handle_search_regex(args: dict, trace_id: str) -> list[TextContent]:
         "repos": args.get("repo", "") or None,
         "top_k": args.get("top_k", 10),
         "lang": args.get("lang") or None,
+        "project": args.get("project") or None,
     }
     results = await _post("/api/search_regex", body, trace_id)
     return [TextContent(type="text", text=_format_results(f"/{pattern}/", results))]
@@ -423,6 +432,7 @@ async def _handle_list_repos(args: dict, trace_id: str) -> list[TextContent]:
     body = {
         "query": args.get("query", ""),
         "top_k": args.get("top_k", 50),
+        "project": args.get("project") or None,
     }
     repos = await _post("/api/list_repos", body, trace_id)
 
@@ -449,6 +459,7 @@ async def _handle_get_file_content(args: dict, trace_id: str) -> list[TextConten
         "filepath": filepath,
         "start_line": args.get("start_line", 1),
         "end_line": args.get("end_line"),
+        "project": args.get("project") or None,
     }
     result = await _post("/api/get_file_content", body, trace_id)
 

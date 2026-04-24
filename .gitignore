@@ -182,3 +182,6 @@ test_mcp_endpoints_simple.sh
 
 # TypeScript incremental build artefacts (sp-cockpit frontend)
 sp-cockpit/frontend/*.tsbuildinfo
+
+# config
+config/projects.yaml

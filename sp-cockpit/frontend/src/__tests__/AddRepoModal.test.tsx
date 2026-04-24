@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import AddRepoModal from "../components/AddRepoModal";
 
 function mockFetch(response: unknown) {
@@ -78,6 +78,24 @@ describe("AddRepoModal", () => {
     expect(postCalls.length).toBe(1);
     const body = JSON.parse((postCalls[0][1] as RequestInit).body as string);
     expect(body.backend).toBe("graph");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("does NOT call onAdded when all jobs fail", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("HTTP 500"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onAdded = vi.fn();
+    render(<AddRepoModal open={true} onClose={vi.fn()} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/path/to/repo"), {
+      target: { value: "/test/repo" },
+    });
+    fireEvent.click(screen.getByText("提交"));
+
+    await waitFor(() => expect(screen.getByText(/✗ zoekt/)).toBeInTheDocument());
+    expect(onAdded).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });

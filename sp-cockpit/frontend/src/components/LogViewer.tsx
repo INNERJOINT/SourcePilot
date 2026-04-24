@@ -22,9 +22,12 @@ export default function LogViewer({ jobId }: LogViewerProps) {
       try {
         const page = await indexingApi.getJobLog(jobId, cursorRef.current);
         if (!mountedRef.current) return;
-        if (page.lines.length > 0) {
-          setLines((prev) => [...prev, ...page.lines]);
-          cursorRef.current = page.offset + page.lines.length;
+        if (page.content.length > 0) {
+          const newLines = page.content.split("\n").filter(l => l.length > 0);
+          if (newLines.length > 0) {
+            setLines((prev) => [...prev, ...newLines]);
+          }
+          cursorRef.current = page.next_offset;
         }
         if (page.eof) {
           setFinished(true);
@@ -34,7 +37,13 @@ export default function LogViewer({ jobId }: LogViewerProps) {
           }
         }
       } catch (e) {
-        if (mountedRef.current) setError(String(e));
+        if (mountedRef.current) {
+          setError(String(e));
+          if (intervalRef.current !== null) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        }
       }
     }
 
@@ -66,8 +75,11 @@ export default function LogViewer({ jobId }: LogViewerProps) {
         className="bg-slate-900 text-green-300 text-xs p-4 rounded overflow-auto max-h-96 whitespace-pre-wrap"
       >
         {lines.join("\n")}
-        {lines.length === 0 && !finished && (
+        {lines.length === 0 && !finished && !error && (
           <span className="text-slate-500">Loading...</span>
+        )}
+        {lines.length === 0 && finished && (
+          <span className="text-slate-500">No log output</span>
         )}
       </pre>
       {finished && (

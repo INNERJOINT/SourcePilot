@@ -52,8 +52,9 @@ export interface SearchResponse {
   total: number;
 }
 
-export interface HealthResponse {
-  status: string;
-  db_event_count: number;
-  latest_event_ts_ms: number | null;
+export interface ProjectInfo {
+  name: string;
+  source_root: string;
+  repo_path: string;
+  zoekt_url: string;
 }

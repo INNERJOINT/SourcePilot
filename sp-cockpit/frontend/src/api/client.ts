@@ -1,6 +1,6 @@
 import type {
   EventsResponse,
-  HealthResponse,
+  ProjectInfo,
   SearchResponse,
   StatsResponse,
   TraceResponse,
@@ -21,10 +21,10 @@ async function get<T>(path: string, params?: Record<string, string | number | un
 }
 
 export const api = {
-  health: () => get<HealthResponse>("/health"),
   stats: (window: string) => get<StatsResponse>("/stats", { window }),
   events: (params: Record<string, string | number | undefined>) =>
     get<EventsResponse>("/events", params),
   trace: (traceId: string) => get<TraceResponse>(`/trace/${encodeURIComponent(traceId)}`),
   search: (q: string, limit = 50) => get<SearchResponse>("/search", { q, limit }),
+  projects: () => get<ProjectInfo[]>("/projects"),
 };

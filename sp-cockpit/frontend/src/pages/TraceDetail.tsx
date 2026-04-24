@@ -36,8 +36,9 @@ export default function TraceDetail() {
         <h2 className="font-semibold mb-3">Waterfall</h2>
         <div className="space-y-1">
           {data.events.map((e) => {
-            const offset = ((e.ts_ms - e.duration_ms - data.started_ms) / total) * 100;
-            const width = Math.max(0.5, (e.duration_ms / total) * 100);
+            const rawOffset = ((e.ts_ms - e.duration_ms - data.started_ms) / total) * 100;
+            const offset = Math.max(0, Math.min(100, rawOffset));
+            const width = Math.max(0.5, Math.min(100 - offset, (e.duration_ms / total) * 100));
             const label = e.tool ?? e.stage ?? e.event;
             return (
               <div key={e.id} className="flex items-center gap-2 text-xs">

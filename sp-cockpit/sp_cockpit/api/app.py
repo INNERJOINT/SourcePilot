@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config
-from . import events, health, indexing, search, stats, trace
+from . import events, health, indexing, projects, search, stats, trace
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(trace.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
     app.include_router(indexing.router, prefix="/api")
+    app.include_router(projects.router, prefix="/api")
 
     if config.FRONTEND_DIST.exists():
         index_html = config.FRONTEND_DIST / "index.html"

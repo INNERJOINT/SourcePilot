@@ -37,6 +37,7 @@ fi
 
 # ── 进程管理 ──────────────────────────────────────────
 PIDS=()
+ZOEKT_PIDS=()
 ZOEKT_DOCKER=false
 SP_COCKPIT_RUNNING=false
 
@@ -59,8 +60,81 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── 1. 启动基础设施 (Docker) ─────────────────────────
-infra_start_zoekt
+# ── 1a. 启动多项目 zoekt-webserver（按 projects.yaml）──
+_projects_cfg="${PROJECTS_CONFIG_PATH:-$PROJ_ROOT/config/projects.yaml}"
+
+if [ -f "$_projects_cfg" ]; then
+    # 用内联 Python 从 YAML 提取 (index_dir, zoekt_url) 对，每行一个
+    _zoekt_entries=$("$VENV_PYTHON" - "$_projects_cfg" <<'EOF'
+import sys, re
+
+cfg = open(sys.argv[1]).read()
+
+# 简单逐行状态机，不依赖 PyYAML
+projects = []
+cur = {}
+for line in cfg.splitlines():
+    stripped = line.strip()
+    if stripped.startswith('- name:'):
+        if cur:
+            projects.append(cur)
+        cur = {}
+    for key in ('index_dir', 'zoekt_url'):
+        m = re.match(rf'\s*{key}:\s*(.+)', line)
+        if m:
+            cur[key] = m.group(1).strip()
+if cur:
+    projects.append(cur)
+
+for p in projects:
+    idx = p.get('index_dir', '')
+    url = p.get('zoekt_url', 'http://localhost:6070')
+    port = re.search(r':(\d+)$', url)
+    port = port.group(1) if port else '6070'
+    if idx:
+        print(f"{idx}|{port}")
+EOF
+    )
+
+    _project_count=$(echo "$_zoekt_entries" | grep -c '|' || true)
+    if [ "${_project_count:-0}" -gt 1 ]; then
+        info "多项目模式：发现 $_project_count 个项目，逐一启动 zoekt-webserver"
+        while IFS='|' read -r _idx _port; do
+            [ -z "$_idx" ] && continue
+            if curl -sf "http://localhost:${_port}/" >/dev/null 2>&1; then
+                info "zoekt-webserver 已在运行 (port $_port, index: $_idx)，跳过启动"
+                ZOEKT_DOCKER=true
+                continue
+            fi
+            if [ ! -d "$_idx" ]; then
+                warn "index_dir 不存在: $_idx（跳过 port $_port）"
+                continue
+            fi
+            info "启动 zoekt-webserver (index: $_idx, port: $_port)..."
+            zoekt-webserver -index "$_idx" -listen ":$_port" &
+            _zpid=$!
+            PIDS+=($_zpid)
+            ZOEKT_PIDS+=($_zpid)
+            info "  zoekt-webserver PID $_zpid 监听 :$_port"
+            for i in $(seq 1 "$MAX_RETRIES"); do
+                if curl -sf "http://localhost:${_port}/" >/dev/null 2>&1; then
+                    info "  zoekt-webserver (port $_port) 就绪"
+                    break
+                fi
+                [ "$i" -eq "$MAX_RETRIES" ] && warn "  zoekt-webserver (port $_port) 启动超时"
+                sleep 1
+            done
+        done <<< "$_zoekt_entries"
+    else
+        # 单项目：使用标准 infra_start_zoekt（兼容旧行为）
+        infra_start_zoekt
+    fi
+else
+    # 无配置文件：回退单项目模式
+    infra_start_zoekt
+fi
+
+# ── 1b. 启动 Dense / Graph 基础设施 (Docker) ─────────
 infra_start_dense
 infra_start_graph
 

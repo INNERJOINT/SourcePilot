@@ -2,15 +2,6 @@ import { render, screen, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import LogViewer from "../components/LogViewer";
 
-function makeLogPage(lines: string[], offset: number, eof: boolean) {
-  return Promise.resolve(
-    new Response(JSON.stringify({ lines, offset, eof }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    })
-  );
-}
-
 describe("LogViewer", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -24,7 +15,7 @@ describe("LogViewer", () => {
   it("starts polling on mount", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ lines: ["line1"], offset: 0, eof: false }),
+      json: async () => ({ content: "line1\n", offset: 0, next_offset: 6, eof: false }),
       text: async () => "",
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -52,7 +43,7 @@ describe("LogViewer", () => {
       const eof = callCount >= 2;
       return Promise.resolve({
         ok: true,
-        json: async () => ({ lines: [`line${callCount}`], offset: callCount - 1, eof }),
+        json: async () => ({ content: `line${callCount}\n`, offset: (callCount - 1) * 6, next_offset: callCount * 6, eof }),
         text: async () => "",
       });
     });
@@ -81,7 +72,7 @@ describe("LogViewer", () => {
   it("stops polling on unmount", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ lines: [], offset: 0, eof: false }),
+      json: async () => ({ content: "", offset: 0, next_offset: 0, eof: false }),
       text: async () => "",
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -108,7 +99,7 @@ describe("LogViewer", () => {
   it("appends lines to pre element", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ lines: ["hello", "world"], offset: 0, eof: false }),
+      json: async () => ({ content: "hello\nworld\n", offset: 0, next_offset: 12, eof: false }),
       text: async () => "",
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -120,6 +111,43 @@ describe("LogViewer", () => {
     const pre = screen.getByTestId("log-pre");
     expect(pre.textContent).toContain("hello");
     expect(pre.textContent).toContain("world");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("stops polling on fetch error", async () => {
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ content: "ok\n", offset: 0, next_offset: 3, eof: false }),
+          text: async () => "",
+        });
+      }
+      return Promise.reject(new Error("network failure"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => {
+      render(<LogViewer jobId={7} />);
+    });
+
+    // 1st poll succeeds; advance to trigger 2nd poll which errors
+    await act(async () => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    const callsAfterError = fetchMock.mock.calls.length;
+
+    // Advance more — no further polls should happen
+    await act(async () => {
+      vi.advanceTimersByTime(10000);
+    });
+
+    expect(fetchMock.mock.calls.length).toBe(callsAfterError);
+    expect(screen.getByText(/network failure/)).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });

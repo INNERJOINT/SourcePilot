@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Repositories from "../pages/Repositories";
 import type { ReposResponse } from "../api/indexing";

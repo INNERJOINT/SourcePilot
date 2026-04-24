@@ -47,11 +47,11 @@ export default function Dashboard() {
       {stats && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <Metric label="Total" value={stats.total_events.toLocaleString()} />
-            <Metric label="QPS" value={stats.qps.toFixed(2)} />
-            <Metric label="p50 (ms)" value={stats.p50_ms.toFixed(1)} />
-            <Metric label="p95 (ms)" value={stats.p95_ms.toFixed(1)} />
-            <Metric label="Error rate" value={`${(stats.error_rate * 100).toFixed(2)}%`} />
+            <Metric label="Total" value={(stats.total_events ?? 0).toLocaleString()} />
+            <Metric label="QPS" value={(stats.qps ?? 0).toFixed(2)} />
+            <Metric label="p50 (ms)" value={(stats.p50_ms ?? 0).toFixed(1)} />
+            <Metric label="p95 (ms)" value={(stats.p95_ms ?? 0).toFixed(1)} />
+            <Metric label="Error rate" value={`${((stats.error_rate ?? 0) * 100).toFixed(2)}%`} />
           </div>
           <div className="bg-white border rounded p-4" data-testid="latency-chart">
             <h2 className="font-semibold mb-2">Latency over time</h2>

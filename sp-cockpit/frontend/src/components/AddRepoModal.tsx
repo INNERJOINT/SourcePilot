@@ -39,16 +39,20 @@ export default function AddRepoModal({ open, onClose, onAdded }: AddRepoModalPro
     setError(null);
     setProgress([]);
     const backends = Array.from(checked);
+    let successCount = 0;
     for (const backend of backends) {
       try {
         await indexingApi.createJob(repoPath.trim(), backend);
         setProgress((p) => [...p, `✓ ${backend} job triggered`]);
+        successCount++;
       } catch (e) {
         setProgress((p) => [...p, `✗ ${backend}: ${String(e)}`]);
       }
     }
     setSubmitting(false);
-    onAdded();
+    if (successCount > 0) {
+      onAdded();
+    }
   }
 
   function handleClose() {

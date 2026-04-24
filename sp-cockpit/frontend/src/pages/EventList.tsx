@@ -18,8 +18,9 @@ export default function EventList() {
 
   useEffect(() => {
     setErr(null);
+    const slowParam = slow === "true" ? "1" : slow === "false" ? "0" : "";
     api
-      .events({ tool, status, slow, event, limit: PAGE_SIZE, offset })
+      .events({ tool, status, slow: slowParam, event, limit: PAGE_SIZE, offset })
       .then(setData)
       .catch((e) => setErr(String(e)));
   }, [tool, status, slow, event, offset]);

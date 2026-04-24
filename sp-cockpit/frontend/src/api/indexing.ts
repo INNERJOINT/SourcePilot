@@ -53,8 +53,9 @@ export interface Job {
 }
 
 export interface LogPage {
-  lines: string[];
+  content: string;
   offset: number;
+  next_offset: number;
   eof: boolean;
 }
 
@@ -79,7 +80,7 @@ export const indexingApi = {
     post<Job>("/jobs", { repo_path, backend }),
 
   deleteRepo: (id: number, backend: BackendName) =>
-    del<{ ok: boolean }>(`/repos/${id}?backend=${backend}`),
+    del<{ ok: boolean }>(`/repos/${id}?backend=${encodeURIComponent(backend)}`),
 
   getJobLog: (jobId: number, offset = 0) =>
     get<LogPage>(`/jobs/${jobId}/log`, { offset }),

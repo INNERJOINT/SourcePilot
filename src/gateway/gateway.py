@@ -11,7 +11,7 @@ import logging
 
 from adapters.zoekt import ZoektAdapter
 import config
-from config import ZOEKT_URL
+from config import get_project, get_default_project
 from gateway.nl.classifier import classify_query
 from gateway.nl.rewriter import rewrite_query
 from gateway.fusion import rrf_merge
@@ -21,10 +21,23 @@ from observability.audit import audit_stage
 
 logger = logging.getLogger(__name__)
 
-# Default adapter instances
-_default_adapter = ZoektAdapter(zoekt_url=ZOEKT_URL)
+# Per-project adapter cache
+_adapters: dict[str, ZoektAdapter] = {}
 _dense_adapter = None
 _graph_adapter = None
+
+
+def _get_adapter(project: str | None = None) -> ZoektAdapter:
+    """Return a cached ZoektAdapter for the given project (or default)."""
+    if project is None:
+        proj_cfg = get_default_project()
+    else:
+        proj_cfg = get_project(project)  # raises ValueError for unknown project
+    name = proj_cfg.name
+    if name not in _adapters:
+        _adapters[name] = ZoektAdapter(zoekt_url=proj_cfg.zoekt_url)
+        logger.info("Created ZoektAdapter for project '%s' → %s", name, proj_cfg.zoekt_url)
+    return _adapters[name]
 
 
 def _get_dense_adapter():
@@ -60,10 +73,10 @@ def _get_graph_adapter():
 
 # ─── Internal helpers ────────────────────────────────────
 
-async def _search_with_audit(query: str, route_index: int, **kwargs) -> list[dict]:
+async def _search_with_audit(query: str, route_index: int, project: str | None = None, **kwargs) -> list[dict]:
     """单路 Zoekt 搜索，带 audit_stage 记录。"""
     async with audit_stage("zoekt_search", {"query": query, "route_index": route_index}) as stg:
-        records = await _default_adapter.search_zoekt(query=query, **kwargs)
+        records = await _get_adapter(project).search_zoekt(query=query, **kwargs)
         stg.set_result({"records_count": len(records), "records": records})
         stg.set_result_count(len(records))
         return records
@@ -79,6 +92,7 @@ async def search(
     lang: str | None = None,
     branch: str | None = None,
     case_sensitive: str = "auto",
+    project: str | None = None,
 ) -> list[dict]:
     """
     Unified search entry point — handles NL classification and dispatches accordingly.
@@ -98,11 +112,11 @@ async def search(
     if query_type == "natural_language":
         return await _nl_search(
             query=query, top_k=top_k, score_threshold=score_threshold,
-            repos=repos, lang=lang, branch=branch,
+            repos=repos, lang=lang, branch=branch, project=project,
         )
     else:
         async with audit_stage("zoekt_search", {"query": query, "repos": repos}) as stg:
-            results = await _default_adapter.search_zoekt(
+            results = await _get_adapter(project).search_zoekt(
                 query=query, top_k=top_k, score_threshold=score_threshold,
                 repos=repos, lang=lang, branch=branch, case_sensitive=case_sensitive,
             )
@@ -118,6 +132,7 @@ async def _nl_search(
     repos: str | None,
     lang: str | None = None,
     branch: str | None = None,
+    project: str | None = None,
 ) -> list[dict]:
     """
     NL enhanced search pipeline:
@@ -140,7 +155,7 @@ async def _nl_search(
     if not rewrite_results:
         # rewrite 完全失败时，降级为直接搜索
         async with audit_stage("fallback_search", {"query": query, "reason": "rewrite_empty"}) as stg:
-            records = await _default_adapter.search_zoekt(
+            records = await _get_adapter(project).search_zoekt(
                 query=query, top_k=top_k,
                 score_threshold=score_threshold, repos=repos,
                 lang=lang, branch=branch,
@@ -158,6 +173,7 @@ async def _nl_search(
             _search_with_audit(
                 query=rq["query"],
                 route_index=i,
+                project=project,
                 top_k=20,
                 score_threshold=0,
                 repos=repos,
@@ -225,7 +241,7 @@ async def _nl_search(
     if not valid_zoekt and not dense_results and not graph_results:
         # 所有路都失败时，降级
         async with audit_stage("fallback_search", {"query": query, "reason": "all_routes_failed"}) as stg:
-            records = await _default_adapter.search_zoekt(
+            records = await _get_adapter(project).search_zoekt(
                 query=query, top_k=top_k,
                 score_threshold=score_threshold, repos=repos,
                 lang=lang, branch=branch,
@@ -328,11 +344,13 @@ async def search_symbol(
     lang: str | None = None,
     branch: str | None = None,
     case_sensitive: str = "auto",
+    project: str | None = None,
 ) -> list[dict]:
     """Symbol search via sym: prefix with fallback to plain search."""
     async with audit_stage("search_symbol", {"symbol": symbol, "repos": repos}) as stg:
         query = f"sym:{symbol}"
-        results = await _default_adapter.search_zoekt(
+        adapter = _get_adapter(project)
+        results = await adapter.search_zoekt(
             query=query, top_k=top_k, score_threshold=0,
             repos=repos, lang=lang, branch=branch, case_sensitive=case_sensitive,
         )
@@ -340,7 +358,7 @@ async def search_symbol(
         used_fallback = False
         if not results:
             used_fallback = True
-            results = await _default_adapter.search_zoekt(
+            results = await adapter.search_zoekt(
                 query=symbol, top_k=top_k, score_threshold=0,
                 repos=repos, lang=lang, branch=branch, case_sensitive=case_sensitive,
             )
@@ -357,6 +375,7 @@ async def search_file(
     lang: str | None = None,
     branch: str | None = None,
     case_sensitive: str = "auto",
+    project: str | None = None,
 ) -> list[dict]:
     """File search via file: prefix."""
     async with audit_stage("search_file", {"path": path, "extra_query": extra_query}) as stg:
@@ -364,7 +383,7 @@ async def search_file(
         if extra_query:
             query = f"file:{path} {extra_query}"
 
-        results = await _default_adapter.search_zoekt(
+        results = await _get_adapter(project).search_zoekt(
             query=query, top_k=top_k, score_threshold=0,
             repos=None, lang=lang, branch=branch, case_sensitive=case_sensitive,
         )
@@ -378,10 +397,11 @@ async def search_regex(
     top_k: int = 10,
     repos: str | None = None,
     lang: str | None = None,
+    project: str | None = None,
 ) -> list[dict]:
     """Regex search."""
     async with audit_stage("search_regex", {"pattern": pattern, "repos": repos}) as stg:
-        results = await _default_adapter.search_regex(
+        results = await _get_adapter(project).search_regex(
             pattern=pattern, top_k=top_k, score_threshold=0,
             repos=repos, lang=lang,
         )
@@ -393,10 +413,11 @@ async def search_regex(
 async def list_repos(
     query: str = "",
     top_k: int = 50,
+    project: str | None = None,
 ) -> list[dict]:
     """List matching repos."""
     async with audit_stage("list_repos", {"query": query}) as stg:
-        results = await _default_adapter.list_repos(query=query, top_k=top_k)
+        results = await _get_adapter(project).list_repos(query=query, top_k=top_k)
         stg.set_result({"records_count": len(results), "records": results})
         stg.set_result_count(len(results))
     return results
@@ -407,10 +428,11 @@ async def get_file_content(
     filepath: str,
     start_line: int = 1,
     end_line: int | None = None,
+    project: str | None = None,
 ) -> dict:
     """Get file content."""
     async with audit_stage("get_file_content", {"repo": repo, "filepath": filepath}) as stg:
-        result = await _default_adapter.fetch_file_content(
+        result = await _get_adapter(project).fetch_file_content(
             repo=repo, filepath=filepath,
             start_line=start_line, end_line=end_line,
         )
