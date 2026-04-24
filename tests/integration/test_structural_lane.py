@@ -1,8 +1,8 @@
 """
-Graph lane 集成测试
+Structural lane 集成测试
 
-直接调用 gateway._nl_search()，通过 monkeypatch 模拟 GraphAdapter，
-验证 GRAPH_ENABLED 开关、RRF 融合、降级行为。
+直接调用 gateway._nl_search()，通过 monkeypatch 模拟 StructuralAdapter，
+验证 STRUCTURAL_ENABLED 开关、RRF 融合、降级行为。
 不连接真实 Neo4j。
 """
 
@@ -21,10 +21,10 @@ from gateway.gateway import _assemble_lane_indices
 @pytest.fixture(autouse=True)
 def reset_adapters():
     """每个测试前后重置 gateway 中所有适配器单例。"""
-    gateway._graph_adapter = None
+    gateway._structural_adapter = None
     gateway._dense_adapter = None
     yield
-    gateway._graph_adapter = None
+    gateway._structural_adapter = None
     gateway._dense_adapter = None
 
 
@@ -40,14 +40,14 @@ def _make_zoekt_results(n: int = 2) -> list[dict]:
     ]
 
 
-def _make_graph_hits(n: int = 1) -> list[dict]:
+def _make_structural_hits(n: int = 1) -> list[dict]:
     return [
         {
             "repo": "frameworks/base",
-            "path": f"GraphFile{i}.java",
+            "path": f"StructuralFile{i}.java",
             "start_line": i * 10,
             "end_line": i * 10 + 50,
-            "content": f"graph content {i}",
+            "content": f"structural content {i}",
             "score": 0.75,
             "matched_terms": ["startActivity"],
         }
@@ -55,13 +55,13 @@ def _make_graph_hits(n: int = 1) -> list[dict]:
     ]
 
 
-# ─── GRAPH_ENABLED=false 零影响测试 ──────────────────────────────────────────
+# ─── STRUCTURAL_ENABLED=false 零影响测试 ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_graph_disabled_zero_impact(monkeypatch):
-    """GRAPH_ENABLED=false 时，结果与纯 Zoekt 路径完全一致。"""
-    monkeypatch.setattr(config, "GRAPH_ENABLED", False)
+async def test_structural_disabled_zero_impact(monkeypatch):
+    """STRUCTURAL_ENABLED=false 时，结果与纯 Zoekt 路径完全一致。"""
+    monkeypatch.setattr(config, "STRUCTURAL_ENABLED", False)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
 
@@ -83,34 +83,34 @@ async def test_graph_disabled_zero_impact(monkeypatch):
             repos=None,
         )
 
-    # graph adapter 不应被初始化
-    assert gateway._graph_adapter is None
+    # structural adapter 不应被初始化
+    assert gateway._structural_adapter is None
     assert isinstance(result, list)
     assert len(result) > 0
 
 
-# ─── GRAPH_ENABLED=true 结果进入 RRF 测试 ────────────────────────────────────
+# ─── STRUCTURAL_ENABLED=true 结果进入 RRF 测试 ────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_graph_enabled_results_in_rrf(monkeypatch):
-    """GRAPH_ENABLED=true 时，graph hits 通过 RRF 融合进入最终结果。"""
-    monkeypatch.setattr(config, "GRAPH_ENABLED", True)
+async def test_structural_enabled_results_in_rrf(monkeypatch):
+    """STRUCTURAL_ENABLED=true 时，structural hits 通过 RRF 融合进入最终结果。"""
+    monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_TOP_K", 10)
-    monkeypatch.setattr(config, "GRAPH_LANE_TIMEOUT_MS", 2000)
+    monkeypatch.setattr(config, "STRUCTURAL_LANE_TIMEOUT_MS", 2000)
 
     zoekt_results = _make_zoekt_results(2)
-    graph_hits = _make_graph_hits(1)
+    structural_hits = _make_structural_hits(1)
     rewrite_output = [{"query": "startActivity intent"}]
 
-    mock_graph_adapter = MagicMock()
-    mock_graph_adapter.search_by_graph = AsyncMock(return_value=graph_hits)
+    mock_structural_adapter = MagicMock()
+    mock_structural_adapter.search_by_structural = AsyncMock(return_value=structural_hits)
 
     with (
         patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
-        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_structural_adapter", return_value=mock_structural_adapter),
         patch("gateway.gateway._get_adapter") as mock_get_adapter,
     ):
         mock_adapter = MagicMock()
@@ -124,37 +124,37 @@ async def test_graph_enabled_results_in_rrf(monkeypatch):
             repos=None,
         )
 
-    mock_graph_adapter.search_by_graph.assert_awaited_once_with(
+    mock_structural_adapter.search_by_structural.assert_awaited_once_with(
         "find startActivity", top_k=10, repos=None, project=None
     )
 
     titles = [r["title"] for r in result]
     assert isinstance(result, list)
     assert len(result) > 0
-    # graph_result_to_dict 生成的 title 含 GraphFile
+    # structural_result_to_dict 生成的 title 含 StructuralFile
     all_titles = " ".join(titles)
-    assert "GraphFile" in all_titles
+    assert "StructuralFile" in all_titles
 
 
 @pytest.mark.asyncio
-async def test_graph_lane_passes_project_to_adapter(monkeypatch):
-    """指定 project 时，graph lane 调用应透传 project 参数。"""
-    monkeypatch.setattr(config, "GRAPH_ENABLED", True)
+async def test_structural_lane_passes_project_to_adapter(monkeypatch):
+    """指定 project 时，structural lane 调用应透传 project 参数。"""
+    monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_TOP_K", 10)
-    monkeypatch.setattr(config, "GRAPH_LANE_TIMEOUT_MS", 2000)
+    monkeypatch.setattr(config, "STRUCTURAL_LANE_TIMEOUT_MS", 2000)
 
     zoekt_results = _make_zoekt_results(1)
-    graph_hits = _make_graph_hits(1)
+    structural_hits = _make_structural_hits(1)
     rewrite_output = [{"query": "startActivity intent"}]
 
-    mock_graph_adapter = MagicMock()
-    mock_graph_adapter.search_by_graph = AsyncMock(return_value=graph_hits)
+    mock_structural_adapter = MagicMock()
+    mock_structural_adapter.search_by_structural = AsyncMock(return_value=structural_hits)
 
     with (
         patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
-        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_structural_adapter", return_value=mock_structural_adapter),
         patch("gateway.gateway._get_adapter") as mock_get_adapter,
     ):
         mock_adapter = MagicMock()
@@ -169,7 +169,7 @@ async def test_graph_lane_passes_project_to_adapter(monkeypatch):
             project="beta",
         )
 
-    mock_graph_adapter.search_by_graph.assert_awaited_once_with(
+    mock_structural_adapter.search_by_structural.assert_awaited_once_with(
         "find startActivity", top_k=10, repos=None, project="beta"
     )
     assert isinstance(result, list)
@@ -177,7 +177,7 @@ async def test_graph_lane_passes_project_to_adapter(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "dense_on,graph_on",
+    "dense_on,structural_on",
     [
         (False, False),
         (True, False),
@@ -185,33 +185,33 @@ async def test_graph_lane_passes_project_to_adapter(monkeypatch):
         (True, True),
     ],
 )
-def test_all_4_lane_combinations_index(dense_on, graph_on):
+def test_all_4_lane_combinations_index(dense_on, structural_on):
     """_assemble_lane_indices 在四种 lane 开关组合下均返回正确索引。"""
     zoekt_count = 2
-    idx = _assemble_lane_indices(zoekt_count, dense_on, graph_on)
+    idx = _assemble_lane_indices(zoekt_count, dense_on, structural_on)
 
-    if not dense_on and not graph_on:
-        assert idx == {"dense": None, "graph": None}
-    elif dense_on and not graph_on:
-        assert idx == {"dense": 2, "graph": None}
-    elif not dense_on and graph_on:
-        assert idx == {"dense": None, "graph": 2}
+    if not dense_on and not structural_on:
+        assert idx == {"dense": None, "structural": None}
+    elif dense_on and not structural_on:
+        assert idx == {"dense": 2, "structural": None}
+    elif not dense_on and structural_on:
+        assert idx == {"dense": None, "structural": 2}
     else:
-        assert idx == {"dense": 2, "graph": 3}
+        assert idx == {"dense": 2, "structural": 3}
 
 
-# ─── Graph 超时降级测试 ───────────────────────────────────────────────────────
+# ─── Structural 超时降级测试 ───────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_graph_timeout_degrades(monkeypatch):
-    """search_by_graph 超时时，gateway 降级为纯 Zoekt 结果，不抛异常。"""
-    monkeypatch.setattr(config, "GRAPH_ENABLED", True)
+async def test_structural_timeout_degrades(monkeypatch):
+    """search_by_structural 超时时，gateway 降级为纯 Zoekt 结果，不抛异常。"""
+    monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_TOP_K", 10)
     # 设置极短超时
-    monkeypatch.setattr(config, "GRAPH_LANE_TIMEOUT_MS", 1)
+    monkeypatch.setattr(config, "STRUCTURAL_LANE_TIMEOUT_MS", 1)
 
     zoekt_results = _make_zoekt_results(2)
     rewrite_output = [{"query": "startActivity"}]
@@ -220,12 +220,12 @@ async def test_graph_timeout_degrades(monkeypatch):
         await asyncio.sleep(10)  # 远超 timeout
         return []
 
-    mock_graph_adapter = MagicMock()
-    mock_graph_adapter.search_by_graph = _slow_search
+    mock_structural_adapter = MagicMock()
+    mock_structural_adapter.search_by_structural = _slow_search
 
     with (
         patch("gateway.gateway.rewrite_query", new=AsyncMock(return_value=rewrite_output)),
-        patch("gateway.gateway._get_graph_adapter", return_value=mock_graph_adapter),
+        patch("gateway.gateway._get_structural_adapter", return_value=mock_structural_adapter),
         patch("gateway.gateway._get_adapter") as mock_get_adapter,
     ):
         mock_adapter = MagicMock()
@@ -242,6 +242,6 @@ async def test_graph_timeout_degrades(monkeypatch):
     # 超时后 gateway 不抛异常，返回 Zoekt 结果
     assert isinstance(result, list)
     assert len(result) > 0
-    # 所有结果来自 Zoekt（无 graph source）
+    # 超时后所有结果来自 Zoekt（无 structural source）
     for r in result:
-        assert r.get("metadata", {}).get("source") != "graph"
+        assert r.get("metadata", {}).get("source") != "structural"

@@ -259,7 +259,7 @@ def test_dense_collection_precedence(tmp_path):
     assert project["includes"][0]["repo_name"] == "frameworks/base"
 
 
-def test_graph_omits_collection_name(tmp_path):
+def test_structural_omits_collection_name(tmp_path):
     src = tmp_path / "src"
     src.mkdir(parents=True)
     cfg = write_yaml(
@@ -271,7 +271,7 @@ def test_graph_omits_collection_name(tmp_path):
         """,
     )
 
-    payload = pc.build_backend_config("graph", config_path=cfg)
+    payload = pc.build_backend_config("structural", config_path=cfg)
     project = payload["projects"][0]
     assert "collection_name" not in project
     assert project["mode"] == "default"
@@ -306,12 +306,12 @@ def test_backend_include_empty_disables(tmp_path):
         projects:
           - name: ace
             source_root: {src}
-            graph_index:
+            structural_index:
               include: []
         """,
     )
 
-    payload = pc.build_backend_config("graph", config_path=cfg)
+    payload = pc.build_backend_config("structural", config_path=cfg)
     project = payload["projects"][0]
     assert project["mode"] == "disabled"
     assert project["includes"] == []
@@ -367,14 +367,14 @@ def test_include_validation_rejects_absolute(tmp_path):
         projects:
           - name: ace
             source_root: {src}
-            graph_index:
+            structural_index:
               include:
                 - /abs/path
         """,
     )
 
     with pytest.raises(ValueError, match="must be relative"):
-        pc.build_backend_config("graph", config_path=cfg)
+        pc.build_backend_config("structural", config_path=cfg)
 
 
 def test_include_validation_rejects_no_matches(tmp_path):
@@ -431,14 +431,14 @@ def test_include_validation_rejects_symlink_escape(tmp_path):
         projects:
           - name: ace
             source_root: {src}
-            graph_index:
+            structural_index:
               include:
                 - escape
         """,
     )
 
     with pytest.raises(ValueError, match="outside source_root"):
-        pc.build_backend_config("graph", config_path=cfg)
+        pc.build_backend_config("structural", config_path=cfg)
 
 
 def test_include_deduplicates_repo_names(tmp_path):
@@ -499,7 +499,7 @@ def test_project_filter(tmp_path):
         """,
     )
 
-    payload = pc.build_backend_config("graph", config_path=cfg, project="beta")
+    payload = pc.build_backend_config("structural", config_path=cfg, project="beta")
     assert [p["name"] for p in payload["projects"]] == ["beta"]
 
 
@@ -550,7 +550,7 @@ def test_cli_unknown_project_returns_error(tmp_path, monkeypatch, capsys):
             "--format",
             "json",
             "--backend",
-            "graph",
+            "structural",
             "--config",
             cfg,
             "--project",

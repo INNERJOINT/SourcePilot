@@ -83,13 +83,13 @@ async def health(request: Request) -> JSONResponse:
     backends: dict = {"zoekt": projects_status}
     if config.DENSE_ENABLED:
         backends["dense"] = True
-    if config.GRAPH_ENABLED:
+    if config.STRUCTURAL_ENABLED:
         try:
-            from adapters.graph import GraphAdapter
-            adapter = GraphAdapter()
-            backends["graph"] = await adapter.health_check()
+            from adapters.structural import StructuralAdapter
+            adapter = StructuralAdapter()
+            backends["structural"] = await adapter.health_check()
         except Exception:
-            backends["graph"] = False
+            backends["structural"] = False
     return _ok({"status": "ok", "service": "sourcepilot", "backends": backends})
 
 

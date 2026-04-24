@@ -43,7 +43,7 @@ def test_start_sends_correct_payload():
     mock_resp.json.return_value = {"job_id": 7}
 
     with patch.object(indexing_cli, "_post_with_retry", return_value=(mock_resp, None)) as mock_post:
-        args = _make_args("start", repo_path="/aosp/art", backend="graph", log_path="/tmp/art.log")
+        args = _make_args("start", repo_path="/aosp/art", backend="structural", log_path="/tmp/art.log")
         rc = indexing_cli.cmd_start(args)
 
     assert rc == 0
@@ -51,7 +51,7 @@ def test_start_sends_correct_payload():
     url, payload = mock_post.call_args[0]
     assert "/api/indexing/jobs/internal-start" in url
     assert payload["repo_path"] == "/aosp/art"
-    assert payload["backend"] == "graph"
+    assert payload["backend"] == "structural"
     assert payload["log_path"] == "/tmp/art.log"
 
 

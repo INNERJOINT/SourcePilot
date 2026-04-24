@@ -3,7 +3,7 @@ GraphRAG 评测套件
 
 默认跳过 (需要 RUN_EVAL=1 或 --run-eval 参数)。
 支持两种模式:
-  EVAL_BACKEND_MODE=live  — 连接真实 Zoekt/Dense/Graph 后端
+  EVAL_BACKEND_MODE=live  — 连接真实 Zoekt/Dense/Structural 后端
   EVAL_BACKEND_MODE=mock  — 跳过，无真实后端时安全运行
 
 运行示例:
@@ -97,9 +97,9 @@ async def test_eval_three_configs():
     assert len(queries) >= 20, f"评测集应有 >=20 条，实际: {len(queries)}"
 
     configs = [
-        ("Zoekt only",          {"DENSE_ENABLED": False, "GRAPH_ENABLED": False}),
-        ("Zoekt + Dense",       {"DENSE_ENABLED": True,  "GRAPH_ENABLED": False}),
-        ("Zoekt + Dense + Graph", {"DENSE_ENABLED": True, "GRAPH_ENABLED": True}),
+        ("Zoekt only",          {"DENSE_ENABLED": False, "STRUCTURAL_ENABLED": False}),
+        ("Zoekt + Dense",       {"DENSE_ENABLED": True,  "STRUCTURAL_ENABLED": False}),
+        ("Zoekt + Dense + Structural", {"DENSE_ENABLED": True, "STRUCTURAL_ENABLED": True}),
     ]
 
     for cfg_name, env_overrides in configs:
@@ -207,7 +207,7 @@ def test_capture_baseline_latencies():
     if not AUDIT_LOG.exists():
         pytest.skip("audit.log 不存在，跳过基线采集")
 
-    latencies: dict[str, list[float]] = {"zoekt_search": [], "dense_search": [], "graph_search": []}
+    latencies: dict[str, list[float]] = {"zoekt_search": [], "dense_search": [], "structural_search": []}
     with open(AUDIT_LOG) as f:
         for line in f:
             line = line.strip()

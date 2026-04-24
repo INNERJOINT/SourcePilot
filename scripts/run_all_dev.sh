@@ -9,7 +9,7 @@
 #  用法：
 #    ./run_all_dev.sh                           # 使用 .env 配置
 #    DENSE_ENABLED=true ./run_all_dev.sh        # 包含 Dense 检索栈
-#    GRAPH_ENABLED=true ./run_all_dev.sh        # 包含 Neo4j 图谱
+#    STRUCTURAL_ENABLED=true ./run_all_dev.sh        # 包含 Neo4j 结构化检索
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -134,9 +134,9 @@ else
     infra_start_zoekt
 fi
 
-# ── 1b. 启动 Dense / Graph 基础设施 (Docker) ─────────
+# ── 1b. 启动 Dense / Structural 基础设施 (Docker) ─────────
 infra_start_dense
-infra_start_graph
+infra_start_structural
 
 # ── 2. 启动 SourcePilot (裸进程, --reload) ───────────
 SP_PID=""
@@ -229,7 +229,7 @@ fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
 echo "    Dense 检索栈     (Docker)          (Qdrant :6333)" >&2
 fi
-if [ "${GRAPH_ENABLED:-false}" = "true" ]; then
+if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
 echo "    Neo4j            (Docker)          (bolt://localhost:7687)" >&2
 fi
 if [ -n "$SP_PID" ]; then

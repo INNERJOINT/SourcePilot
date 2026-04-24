@@ -8,7 +8,7 @@ interface AddRepoModalProps {
   onAdded: () => void;
 }
 
-const BACKENDS: BackendName[] = ["zoekt", "dense", "graph"];
+const BACKENDS: BackendName[] = ["zoekt", "dense", "structural"];
 
 export default function AddRepoModal({ open, onClose, onAdded }: AddRepoModalProps) {
   const [repoPath, setRepoPath] = useState("");

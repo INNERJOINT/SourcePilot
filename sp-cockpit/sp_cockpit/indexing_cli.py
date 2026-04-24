@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_start = sub.add_parser("start", help="Register the start of an indexing job")
     p_start.add_argument("--repo-path", required=True, help="Absolute path to the repository")
     p_start.add_argument(
-        "--backend", required=True, choices=["zoekt", "dense", "graph"],
+        "--backend", required=True, choices=["zoekt", "dense", "structural"],
         help="Indexing backend",
     )
     p_start.add_argument("--log-path", default=None, help="Path to the log file for this job")

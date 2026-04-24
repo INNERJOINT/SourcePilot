@@ -127,7 +127,7 @@ def test_list_repos_shows_created_job(client):
 # ---------------------------------------------------------------------------
 
 def test_duplicate_job_returns_409(client):
-    payload = {"repo_path": "frameworks/base", "backend": "graph"}
+    payload = {"repo_path": "frameworks/base", "backend": "structural"}
     r1 = client.post("/api/indexing/jobs", json=payload, headers=INTERNAL_HEADERS)
     assert r1.status_code == 201, r1.text
     r2 = client.post("/api/indexing/jobs", json=payload, headers=INTERNAL_HEADERS)
@@ -236,7 +236,7 @@ def test_delete_repo_backend_returns_200(client):
 def test_repo_gone_after_delete(client):
     r = client.post(
         "/api/indexing/jobs",
-        json={"repo_path": "to_delete/repo", "backend": "graph"},
+        json={"repo_path": "to_delete/repo", "backend": "structural"},
         headers=INTERNAL_HEADERS,
     )
     assert r.status_code == 201
@@ -252,7 +252,7 @@ def test_repo_gone_after_delete(client):
     assert repo is not None
     repo_id = repo["repo_id"]
 
-    client.delete(f"/api/indexing/repos/{repo_id}", params={"backend": "graph"})
+    client.delete(f"/api/indexing/repos/{repo_id}", params={"backend": "structural"})
 
     repos_after = client.get("/api/indexing/repos").json()["items"]
     remaining = [r for r in repos_after if r["repo_path"] == "to_delete/repo"]

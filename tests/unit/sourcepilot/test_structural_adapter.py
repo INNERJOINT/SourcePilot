@@ -1,5 +1,5 @@
 """
-GraphAdapter 单元测试
+StructuralAdapter 单元测试
 
 所有 Neo4j 驱动均通过 AsyncMock 模拟，不连接真实数据库。
 """
@@ -59,27 +59,27 @@ def _make_driver_mock(seed_records=None, neighbor_records=None, index_names=None
 
 
 @pytest.fixture(autouse=True)
-def reset_graph_adapter():
-    """每个测试前后重置 gateway 中的 _graph_adapter 单例。"""
+def reset_structural_adapter():
+    """每个测试前后重置 gateway 中的 _structural_adapter 单例。"""
     import gateway.gateway as gw
 
-    gw._graph_adapter = None
+    gw._structural_adapter = None
     yield
-    gw._graph_adapter = None
+    gw._structural_adapter = None
 
 
 # ─── 测试套件 ─────────────────────────────────────────────────────────────────
 
 
-class TestGraphAdapterInit:
+class TestStructuralAdapterInit:
     def test_lazy_neo4j_import(self):
-        """实例化 GraphAdapter 时不应导入 neo4j 包（懒加载验证）。"""
+        """实例化 StructuralAdapter 时不应导入 neo4j 包（懒加载验证）。"""
         # 清理可能已存在的 neo4j 模块
         saved = sys.modules.pop("neo4j", None)
         try:
-            from adapters.graph import GraphAdapter
+            from adapters.structural import StructuralAdapter
 
-            _ = GraphAdapter(
+            _ = StructuralAdapter(
                 neo4j_uri="bolt://fake:7687",
                 neo4j_user="neo4j",
                 neo4j_password="test",
@@ -91,10 +91,10 @@ class TestGraphAdapterInit:
 
 
 @pytest.mark.asyncio
-class TestSearchByGraph:
-    async def test_search_by_graph_returns_formatted_hits(self):
-        """search_by_graph 返回格式正确的 hit 字典（含核心字段）。"""
-        from adapters.graph import GraphAdapter
+class TestSearchByStructural:
+    async def test_search_by_structural_returns_formatted_hits(self):
+        """search_by_structural 返回格式正确的 hit 字典（含核心字段）。"""
+        from adapters.structural import StructuralAdapter
 
         seed_records = [
             {"nid": 1, "kind": "Symbol", "props": {"name": "startActivity"}, "score": 1.0},
@@ -115,14 +115,14 @@ class TestSearchByGraph:
 
         driver_mock = _make_driver_mock(seed_records, neighbor_records)
 
-        adapter = GraphAdapter(
+        adapter = StructuralAdapter(
             neo4j_uri="bolt://fake:7687",
             neo4j_user="neo4j",
             neo4j_password="test",
         )
         adapter._driver = driver_mock  # 跳过懒加载
 
-        results = await adapter.search_by_graph("startActivity", top_k=5)
+        results = await adapter.search_by_structural("startActivity", top_k=5)
 
         assert len(results) == 1
         hit = results[0]
@@ -135,19 +135,19 @@ class TestSearchByGraph:
 
     async def test_empty_terms_returns_empty(self):
         """查询字符串无法提取实体时，直接返回空列表，不调用驱动。"""
-        from adapters.graph import GraphAdapter
+        from adapters.structural import StructuralAdapter
 
-        adapter = GraphAdapter()
+        adapter = StructuralAdapter()
         # "_" 之类不含有效词元
-        results = await adapter.search_by_graph("a b", top_k=5)
+        results = await adapter.search_by_structural("a b", top_k=5)
         assert results == []
 
 
 @pytest.mark.asyncio
 class TestProjectScoping:
-    async def test_search_by_graph_passes_project_to_traversal(self):
-        """search_by_graph 应将 project 透传给 traversal 查询，避免跨项目污染。"""
-        from adapters.graph import GraphAdapter
+    async def test_search_by_structural_passes_project_to_traversal(self):
+        """search_by_structural 应将 project 透传给 traversal 查询，避免跨项目污染。"""
+        from adapters.structural import StructuralAdapter
 
         seed_nodes = [{"nid": 1, "kind": "Symbol", "props": {}, "score": 1.0}]
         neighbor_nodes = [
@@ -167,14 +167,14 @@ class TestProjectScoping:
         mock_fulltext = AsyncMock(return_value=seed_nodes)
         mock_expand = AsyncMock(return_value=neighbor_nodes)
 
-        adapter = GraphAdapter()
+        adapter = StructuralAdapter()
         adapter._driver = MagicMock()
 
         with (
-            patch("adapters.graph.fulltext_search_nodes", new=mock_fulltext),
-            patch("adapters.graph.expand_neighbors", new=mock_expand),
+            patch("adapters.structural.fulltext_search_nodes", new=mock_fulltext),
+            patch("adapters.structural.expand_neighbors", new=mock_expand),
         ):
-            results = await adapter.search_by_graph("find startActivity", top_k=5, project="beta")
+            results = await adapter.search_by_structural("find startActivity", top_k=5, project="beta")
 
         assert len(results) == 1
         assert mock_fulltext.await_args.kwargs["project"] == "beta"
@@ -184,7 +184,7 @@ class TestProjectScoping:
 
     async def test_fulltext_search_nodes_scopes_by_project_in_query(self):
         """fulltext_search_nodes 在 Cypher 和参数里都应带 project 过滤。"""
-        from adapters.graph_traversal import fulltext_search_nodes
+        from adapters.structural_traversal import fulltext_search_nodes
 
         empty_result = MagicMock()
 
@@ -213,7 +213,7 @@ class TestProjectScoping:
 
     async def test_expand_neighbors_scopes_by_project_in_query(self):
         """expand_neighbors 在 Cypher 和参数里都应带 project 过滤。"""
-        from adapters.graph_traversal import expand_neighbors
+        from adapters.structural_traversal import expand_neighbors
 
         empty_result = MagicMock()
 
@@ -239,25 +239,25 @@ class TestProjectScoping:
         assert params["project"] == "beta"
 
 
-class TestComputeGraphScore:
+class TestComputeStructuralScore:
     def test_score_blend_alpha_0_6(self):
         """alpha=0.6, path=1, match=2, max=4 → 0.6*(1/1) + 0.4*(2/4) = 0.6+0.2 = 0.8"""
-        from adapters.graph_traversal import compute_graph_score
+        from adapters.structural_traversal import compute_structural_score
 
-        score = compute_graph_score(path_length=1, match_count=2, max_match_count=4, alpha=0.6)
+        score = compute_structural_score(path_length=1, match_count=2, max_match_count=4, alpha=0.6)
         assert abs(score - 0.8) < 1e-9
 
     def test_score_clamped_to_0_1(self):
-        from adapters.graph_traversal import compute_graph_score
+        from adapters.structural_traversal import compute_structural_score
 
-        score = compute_graph_score(path_length=0, match_count=100, max_match_count=1, alpha=1.0)
+        score = compute_structural_score(path_length=0, match_count=100, max_match_count=1, alpha=1.0)
         assert 0.0 <= score <= 1.0
 
 
 class TestExtractQueryEntities:
     def test_camel_and_snake(self):
         """提取 startActivity 与 service_manager，且大小写去重。"""
-        from adapters.graph_traversal import extract_query_entities
+        from adapters.structural_traversal import extract_query_entities
 
         terms = extract_query_entities("find startActivity in service_manager")
         lower_terms = [t.lower() for t in terms]
@@ -266,7 +266,7 @@ class TestExtractQueryEntities:
 
     def test_dedup_case_insensitive(self):
         """同一词元不同大小写只保留一次。"""
-        from adapters.graph_traversal import extract_query_entities
+        from adapters.structural_traversal import extract_query_entities
 
         terms = extract_query_entities("ActivityManager activitymanager")
         lower_terms = [t.lower() for t in terms]
@@ -277,7 +277,7 @@ class TestExtractQueryEntities:
 class TestHealthCheck:
     async def test_health_check_pass(self):
         """驱动返回两个全文索引时，health_check() 返回 True。"""
-        from adapters.graph import GraphAdapter
+        from adapters.structural import StructuralAdapter
 
         session = MagicMock()
         session.__aenter__ = AsyncMock(return_value=session)
@@ -291,7 +291,7 @@ class TestHealthCheck:
         driver_mock = MagicMock()
         driver_mock.session = MagicMock(return_value=session)
 
-        adapter = GraphAdapter()
+        adapter = StructuralAdapter()
         adapter._driver = driver_mock
 
         ok = await adapter.health_check()
@@ -299,7 +299,7 @@ class TestHealthCheck:
 
     async def test_health_check_fail(self):
         """驱动抛异常时，health_check() 返回 False 而不传播异常。"""
-        from adapters.graph import GraphAdapter
+        from adapters.structural import StructuralAdapter
 
         session = MagicMock()
         session.__aenter__ = AsyncMock(return_value=session)
@@ -309,7 +309,7 @@ class TestHealthCheck:
         driver_mock = MagicMock()
         driver_mock.session = MagicMock(return_value=session)
 
-        adapter = GraphAdapter()
+        adapter = StructuralAdapter()
         adapter._driver = driver_mock
 
         ok = await adapter.health_check()
@@ -320,8 +320,8 @@ class TestHealthCheck:
 class TestGetContent:
     async def test_get_content_raises_not_implemented(self):
         """get_content() 应抛出 NotImplementedError。"""
-        from adapters.graph import GraphAdapter
+        from adapters.structural import StructuralAdapter
 
-        adapter = GraphAdapter()
+        adapter = StructuralAdapter()
         with pytest.raises(NotImplementedError):
-            await adapter.get_content("graph:some/file.java:1")
+            await adapter.get_content("structural:some/file.java:1")

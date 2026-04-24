@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 @pytest.mark.parametrize("script", [
     "scripts/indexing/build_dense_index_batch.sh",
-    "scripts/indexing/build_graph_index.sh",
+    "scripts/indexing/build_structural_index.sh",
     "scripts/indexing/reindex.sh",
     "scripts/indexing/_indexing_lib.sh",
 ])
@@ -50,13 +50,13 @@ def _dry_run_env(extra: dict | None = None) -> dict:
     return env
 
 
-def test_build_graph_dry_run_exits_zero(tmp_path):
-    """build_graph_index.sh INDEXING_DRY_RUN=1 exits 0 without docker."""
+def test_build_structural_dry_run_exits_zero(tmp_path):
+    """build_structural_index.sh INDEXING_DRY_RUN=1 exits 0 without docker."""
     env = _dry_run_env({
         "AOSP_SOURCE_ROOT": str(tmp_path),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_graph_index.sh", "--source-root", str(tmp_path)],
+        ["bash", "scripts/indexing/build_structural_index.sh", "--source-root", str(tmp_path)],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -251,11 +251,11 @@ def test_reindex_single_project_dry_run(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Graph batch tests
+# Structural batch tests
 # ---------------------------------------------------------------------------
 
-def test_build_graph_batch_dry_run(tmp_path):
-    """build_graph_index_batch.sh INDEXING_DRY_RUN=1 prints expected DRY_RUN output."""
+def test_build_structural_batch_dry_run(tmp_path):
+    """build_structural_index_batch.sh INDEXING_DRY_RUN=1 prints expected DRY_RUN output."""
     frameworks = tmp_path / "frameworks" / "base"
     frameworks.mkdir(parents=True)
     (frameworks / "Foo.java").write_text("class Foo {}")
@@ -265,7 +265,7 @@ def test_build_graph_batch_dry_run(tmp_path):
         f"projects:\n"
         f"  - name: ace\n"
         f"    source_root: {tmp_path}\n"
-        f"    graph_index:\n"
+        f"    structural_index:\n"
         f"      include:\n"
         f"        - frameworks/base\n"
     )
@@ -274,7 +274,7 @@ def test_build_graph_batch_dry_run(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_graph_index_batch.sh"],
+        ["bash", "scripts/indexing/build_structural_index_batch.sh"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
@@ -291,8 +291,8 @@ def test_build_graph_batch_dry_run(tmp_path):
     assert "--source-root" in combined
 
 
-def test_build_graph_batch_rejects_managed_args(tmp_path):
-    """build_graph_index_batch.sh exits 2 and prints 'managed by' for managed args."""
+def test_build_structural_batch_rejects_managed_args(tmp_path):
+    """build_structural_index_batch.sh exits 2 and prints 'managed by' for managed args."""
     managed_args = [
         ["--source-root", "/tmp/foo"],
         ["--project-name", "myproj"],
@@ -302,7 +302,7 @@ def test_build_graph_batch_rejects_managed_args(tmp_path):
 
     for extra_args in managed_args:
         result = subprocess.run(
-            ["bash", "scripts/indexing/build_graph_index_batch.sh"] + extra_args,
+            ["bash", "scripts/indexing/build_structural_index_batch.sh"] + extra_args,
             cwd=str(PROJECT_ROOT),
             capture_output=True,
             text=True,
@@ -316,8 +316,8 @@ def test_build_graph_batch_rejects_managed_args(tmp_path):
         )
 
 
-def test_build_graph_batch_reset_once_per_project(tmp_path):
-    """build_graph_index_batch.sh --reset passes --reset only to the first include."""
+def test_build_structural_batch_reset_once_per_project(tmp_path):
+    """build_structural_index_batch.sh --reset passes --reset only to the first include."""
     frameworks = tmp_path / "frameworks" / "base"
     frameworks.mkdir(parents=True)
     (frameworks / "Foo.java").write_text("class Foo {}")
@@ -331,7 +331,7 @@ def test_build_graph_batch_reset_once_per_project(tmp_path):
         f"projects:\n"
         f"  - name: ace\n"
         f"    source_root: {tmp_path}\n"
-        f"    graph_index:\n"
+        f"    structural_index:\n"
         f"      include:\n"
         f"        - frameworks/base\n"
         f"        - packages/apps/Settings\n"
@@ -341,7 +341,7 @@ def test_build_graph_batch_reset_once_per_project(tmp_path):
         "PROJECTS_CONFIG_PATH": str(projects_yaml),
     })
     result = subprocess.run(
-        ["bash", "scripts/indexing/build_graph_index_batch.sh", "--reset"],
+        ["bash", "scripts/indexing/build_structural_index_batch.sh", "--reset"],
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,

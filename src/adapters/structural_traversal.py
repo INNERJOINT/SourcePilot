@@ -1,8 +1,8 @@
 """
-graph_traversal — Neo4j 图谱遍历工具函数
+structural_traversal — Neo4j 结构化检索遍历工具函数
 
-提供 fulltext_search_nodes、expand_neighbors、compute_graph_score、
-extract_query_entities 和 format_hit 等工具函数，供 GraphAdapter 调用。
+提供 fulltext_search_nodes、expand_neighbors、compute_structural_score、
+extract_query_entities 和 format_hit 等工具函数，供 StructuralAdapter 调用。
 
 所有 Cypher 参数均使用参数化查询，严禁 f-string 拼接（防注入）。
 """
@@ -103,13 +103,13 @@ async def expand_neighbors(
     return results
 
 
-def compute_graph_score(
+def compute_structural_score(
     path_length: int,
     match_count: int,
     max_match_count: int,
     alpha: float = 0.6,
 ) -> float:
-    """计算图谱检索得分。
+    """计算结构化检索得分。
 
     score = alpha * (1/path_length) + (1-alpha) * (match_count / max_match_count)
     结果归一化到 [0, 1]。
@@ -155,7 +155,7 @@ def format_hit(
     path_length: int,
     matched_terms: list[str],
 ) -> dict:
-    """将图谱遍历结果格式化为 GraphAdapter 统一 hit dict。
+    """将结构化遍历结果格式化为 StructuralAdapter 统一 hit dict。
 
     输出格式：
         {"repo": str, "path": str, "start_line": int|None,
@@ -168,6 +168,6 @@ def format_hit(
         "start_line": file_node_props.get("start_line"),
         "end_line": file_node_props.get("end_line"),
         "content": file_node_props.get("content", ""),
-        "score": 0.0,  # 由调用方 compute_graph_score 填充
+        "score": 0.0,  # 由调用方 compute_structural_score 填充
         "matched_terms": matched_terms,
     }

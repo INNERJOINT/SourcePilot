@@ -4,12 +4,12 @@ This directory contains the declarative project registry for multi-AOSP indexing
 
 ## Canonical parser
 
-Use `scripts/indexing/project_config.py` for sparse, dense, and graph scope resolution:
+Use `scripts/indexing/project_config.py` for sparse, dense, and structural scope resolution:
 
 ```bash
 python3 scripts/indexing/project_config.py --format json --backend sparse [--project ace] [--config /path/projects.yaml]
 python3 scripts/indexing/project_config.py --format json --backend dense [--project ace] [--config /path/projects.yaml]
-python3 scripts/indexing/project_config.py --format json --backend graph [--project ace] [--config /path/projects.yaml]
+python3 scripts/indexing/project_config.py --format json --backend structural [--project ace] [--config /path/projects.yaml]
 ```
 
 Config precedence:
@@ -19,7 +19,7 @@ Config precedence:
 3. `<repo>/config/projects.yaml`
 4. fallback single project from `AOSP_SOURCE_ROOT`
 
-`_project_config.py` remains Zoekt-only legacy shell glue. Dense and graph batch scripts should use `project_config.py` for scope decisions.
+`_project_config.py` remains Zoekt-only legacy shell glue. Dense and structural batch scripts should use `project_config.py` for scope decisions.
 
 ## `projects.yaml`
 
@@ -36,11 +36,11 @@ Copy `config/projects.yaml.example` to `config/projects.yaml` and edit each proj
 | `sub_project_globs` | No | `[]` | Legacy shared scope. Do not combine with backend-specific non-empty `include` lists. |
 | `sparse_index` | No | `{}` | Sparse (Zoekt) backend override block. |
 | `dense_index` | No | `{}` | Dense backend override block. |
-| `graph_index` | No | `{}` | Graph backend override block. |
+| `structural_index` | No | `{}` | Structural backend override block. |
 
 ### Backend section schema
 
-All three backend sections (`sparse_index`, `dense_index`, `graph_index`) accept:
+All three backend sections (`sparse_index`, `dense_index`, `structural_index`) accept:
 
 | Key | Meaning |
 |-----|---------|
@@ -77,18 +77,18 @@ When dense indexing resolves a collection name, precedence is:
 2. top-level `collection_name`
 3. `aosp_code_{name}`
 
-### Graph identity and display
+### Structural identity and display
 
-Graph indexing stores source identity as `(project, repo, path)`.
+Structural indexing stores source identity as `(project, repo, path)`.
 
 - `repo` is the repo-relative identity, not the project name.
 - `path` is relative to `repo`.
-- Graph output should render as `repo/path`, not `project/repo/path`.
+- Structural output should render as `repo/path`, not `project/repo/path`.
 
 ## Data isolation
 
 - **Dense**: each project gets its own collection.
-- **Graph**: every node/edge should carry project-aware identity so projects do not collide.
+- **Structural**: every node/edge should carry project-aware identity so projects do not collide.
 - **Zoekt**: each project keeps its own `repo_path` and `index_dir`.
 
 ## Usage
@@ -97,16 +97,16 @@ Graph indexing stores source identity as `(project, repo, path)`.
 # Render backend config JSON
 python3 scripts/indexing/project_config.py --format json --backend sparse
 python3 scripts/indexing/project_config.py --format json --backend dense
-python3 scripts/indexing/project_config.py --format json --backend graph --project ace
+python3 scripts/indexing/project_config.py --format json --backend structural --project ace
 
 # Batch indexing
 scripts/indexing/build_dense_index_batch.sh
-scripts/indexing/build_graph_index_batch.sh
+scripts/indexing/build_structural_index_batch.sh
 
 # Dry run (no Docker, no real indexing)
 INDEXING_DRY_RUN=1 scripts/indexing/build_dense_index_batch.sh
 
-# Reset graph data for one project only
-python scripts/indexing/build_graph_index.py --source-root /mnt/code/ACE --project-name ace --reset
+# Reset structural data for one project only
+python scripts/indexing/build_structural_index.py --source-root /mnt/code/ACE --project-name ace --reset
 ```
 

@@ -28,7 +28,7 @@ async function del<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export type BackendName = "zoekt" | "dense" | "graph";
+export type BackendName = "zoekt" | "dense" | "structural";
 
 export interface Repo {
   id: number;

@@ -93,7 +93,7 @@ The compose service bind-mounts:
 
 ## Indexing Admin
 
-Web UI for managing AOSP indexing jobs across three backends (Zoekt, Milvus/dense, Neo4j/graph).
+Web UI for managing AOSP indexing jobs across three backends (Zoekt, Milvus/dense, Neo4j/structural).
 
 Access: **http://localhost:9100/repos**
 
@@ -135,7 +135,7 @@ React SPA → /repos
 |---|---|---|
 | `id` | INTEGER PK | auto |
 | `repo_id` | INTEGER FK | → `index_repos.id` |
-| `backend` | TEXT | `zoekt` \| `dense` \| `graph` |
+| `backend` | TEXT | `zoekt` \| `dense` \| `structural` |
 | `started_at` | INTEGER | epoch ms |
 | `finished_at` | INTEGER | NULL while running |
 | `status` | TEXT | `pending` / `running` / `success` / `fail` / `warn` |
@@ -185,7 +185,7 @@ python -m sp_cockpit.indexing_cli finish \
 **Via wrapper scripts** (preferred — handles trap/cleanup automatically):
 
 ```bash
-bash scripts/build_graph_index.sh  frameworks/base
+bash scripts/build_structural_index.sh  frameworks/base
 bash scripts/build_dense_index_batch.sh  frameworks/base
 bash scripts/reindex.sh  frameworks/base
 ```
@@ -202,8 +202,8 @@ Hard-delete and entity-count operations are executed inside the indexer containe
 ### Manual acceptance checklist
 
 - [ ] Navigate to `http://localhost:9100/repos` — page renders without errors
-- [ ] `frameworks/base` appears with `dense` and `graph` rows (status `success`)
-- [ ] Click **Trigger Reindex** on the `graph` row → status flips to `running`
+- [ ] `frameworks/base` appears with `dense` and `structural` rows (status `success`)
+- [ ] Click **Trigger Reindex** on the `structural` row → status flips to `running`
 - [ ] Log viewer streams output in real time; stops on job completion
 - [ ] Status turns `success` / `fail`, entity_count refreshes
 - [ ] Click **Delete** on a repo row → confirmation dialog → row disappears

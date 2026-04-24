@@ -15,7 +15,7 @@ Output format (one block per project, blank-line separated):
 
 --list outputs one project name per line.
 
-Dense and graph scope resolution use scripts/indexing/project_config.py instead.
+Dense and structural scope resolution use scripts/indexing/project_config.py instead.
 """
 
 from __future__ import annotations

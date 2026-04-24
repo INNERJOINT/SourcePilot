@@ -11,10 +11,10 @@ deploy/
 │   ├── scripts/
 │   ├── MODEL_VERSION
 │   └── README.md
-├── graph/                      # Neo4j + graph-indexer
+├── structural/                      # Neo4j + structural-indexer
 │   ├── indexer/Dockerfile
 │   └── README.md
-└── zoekt/                      # zoekt-webserver / zoekt-indexserver image
+└── sparse/                         # zoekt-webserver / zoekt-indexserver image
     └── Dockerfile
 ```
 
@@ -28,14 +28,14 @@ docker compose up -d
 
 # One-shot indexer runs (profile-gated)
 docker compose -f deploy/docker-compose.yml --profile indexer run --rm dense-indexer ...
-docker compose -f deploy/docker-compose.yml --profile indexer run --rm graph-indexer ...
+docker compose -f deploy/docker-compose.yml --profile indexer run --rm structural-indexer ...
 ```
 
 ## Migration history
 
-This tree replaces the previous `dense-deploy/`, `graph-deploy/`, and
+This tree replaces the previous `dense-deploy/`, `structural-deploy/`, and
 `zoekt-deploy/` directories. Wrapper scripts (`scripts/run_all.sh`,
-`scripts/build_dense_index_batch.sh`, `scripts/build_graph_index.sh`) and
+`scripts/build_dense_index_batch.sh`, `scripts/build_structural_index.sh`) and
 `scripts/verify_indexer_containers.sh` were updated to point at the new layout.
 
 ## Architecture Decision Records
@@ -72,9 +72,9 @@ Renaming the volumes was rejected because it required a manual
 
 ### ADR #4 — Neo4j joins `sourcepilot-net`
 
-Previously, `graph-deploy/docker-compose.yml` defined no `networks:` block,
+Previously, `structural-deploy/docker-compose.yml` defined no `networks:` block,
 which placed Neo4j on Compose's default project bridge. After the merge,
-Neo4j and `graph-indexer` join `sourcepilot-net` so any service in the merged
+Neo4j and `structural-indexer` join `sourcepilot-net` so any service in the merged
 compose can reach Neo4j by hostname (`neo4j:7687`). This was implicit
 isolation, not deliberate; auth (`NEO4J_AUTH=neo4j/sourcepilot`) remains the
 access-control mechanism.

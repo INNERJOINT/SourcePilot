@@ -8,7 +8,7 @@
 # Functions:
 #   infra_start_zoekt        — detect Docker/native zoekt, start + healthcheck
 #   infra_start_dense        — docker compose up dense stack (etcd/minio/milvus/embedding-server)
-#   infra_start_graph        — docker compose up neo4j
+#   infra_start_structural  — docker compose up neo4j
 #   infra_start_sourcepilot  — docker compose up sourcepilot-gateway + healthcheck
 #   infra_start_mcp          — docker compose up mcp-server + healthcheck
 #   infra_start_cockpit      — docker compose up sp-cockpit + healthcheck
@@ -87,17 +87,17 @@ infra_start_dense() {
     done
 }
 
-# ── graph (neo4j) ──────────────────────────────────────────
-infra_start_graph() {
-    if [ "${GRAPH_ENABLED:-false}" != "true" ]; then
+# ── structural (neo4j) ──────────────────────────────────────────
+infra_start_structural() {
+    if [ "${STRUCTURAL_ENABLED:-false}" != "true" ]; then
         return
     fi
 
-    local neo4j_host="${GRAPH_NEO4J_URI:-bolt://localhost:7687}"
+    local neo4j_host="${STRUCTURAL_NEO4J_URI:-bolt://localhost:7687}"
     local neo4j_port
     neo4j_port=$(echo "$neo4j_host" | grep -oP ':\K[0-9]+$' || echo "7687")
-    local neo4j_user="${GRAPH_NEO4J_USER:-neo4j}"
-    local neo4j_pass="${GRAPH_NEO4J_PASSWORD:-sourcepilot}"
+    local neo4j_user="${STRUCTURAL_NEO4J_USER:-neo4j}"
+    local neo4j_pass="${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}"
 
     if nc -z localhost "$neo4j_port" 2>/dev/null; then
         info "检测到 Neo4j 已在运行 (port $neo4j_port)，跳过启动"
@@ -113,7 +113,7 @@ infra_start_graph() {
             info "Neo4j 就绪"
             return
         fi
-        [ "$i" -eq "$MAX_RETRIES" ] && warn "Neo4j 启动超时 (${MAX_RETRIES}s)，图谱检索可能不可用"
+        [ "$i" -eq "$MAX_RETRIES" ] && warn "Neo4j 启动超时 (${MAX_RETRIES}s)，结构化检索可能不可用"
         sleep 1
     done
 }

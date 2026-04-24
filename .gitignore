@@ -185,3 +185,5 @@ sp-cockpit/frontend/*.tsbuildinfo
 
 # config
 config/projects.yaml
+
+refs/

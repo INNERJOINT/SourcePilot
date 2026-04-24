@@ -109,17 +109,17 @@ class TestDenseHardDelete:
 
 
 # ---------------------------------------------------------------------------
-# Graph
+# Structural
 # ---------------------------------------------------------------------------
 
-class TestGraphHardDelete:
+class TestStructuralHardDelete:
 
-    def test_graph_hard_delete_calls_docker_compose(self):
-        from sp_cockpit.indexing_backends import graph
+    def test_structural_hard_delete_calls_docker_compose(self):
+        from sp_cockpit.indexing_backends import structural
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            graph.hard_delete("frameworks/base")
+            structural.hard_delete("frameworks/base")
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -128,25 +128,25 @@ class TestGraphHardDelete:
         assert "compose" in cmd
         assert "--profile" in cmd
         assert "indexer" in cmd
-        assert "graph-indexer" in cmd
-        assert any("graph_drop" in str(c) for c in cmd)
+        assert "structural-indexer" in cmd
+        assert any("structural_drop" in str(c) for c in cmd)
         assert "frameworks/base" in cmd
 
-    def test_graph_hard_delete_raises_on_failure(self):
-        from sp_cockpit.indexing_backends import graph
+    def test_structural_hard_delete_raises_on_failure(self):
+        from sp_cockpit.indexing_backends import structural
         from sp_cockpit.indexing_backends.base import BackendError
 
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, "docker")
             with pytest.raises(BackendError):
-                graph.hard_delete("frameworks/base")
+                structural.hard_delete("frameworks/base")
 
-    def test_graph_collect_entity_count_returns_int(self):
-        from sp_cockpit.indexing_backends import graph
+    def test_structural_collect_entity_count_returns_int(self):
+        from sp_cockpit.indexing_backends import structural
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout='{"count": 99}\n')
-            count = graph.collect_entity_count("frameworks/base")
+            count = structural.collect_entity_count("frameworks/base")
 
         assert count == 99
 
@@ -161,7 +161,7 @@ class TestNoPymilvusNeo4jImports:
         """Verify that qdrant_client and neo4j are NOT imported by any sp_cockpit module."""
         # Import all backend modules to trigger their top-level imports
         import sp_cockpit.indexing_backends.dense  # noqa
-        import sp_cockpit.indexing_backends.graph  # noqa
+        import sp_cockpit.indexing_backends.structural  # noqa
         import sp_cockpit.indexing_backends.zoekt  # noqa
         import sp_cockpit.indexing_backends  # noqa
 

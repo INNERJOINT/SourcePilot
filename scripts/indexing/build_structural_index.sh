@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 图谱索引构建 — 通过 docker compose 调起 graph-indexer 容器
+# 结构化索引构建 — 通过 docker compose 调起 structural-indexer 容器
 #
 # 用法:
-#   ./scripts/build_graph_index.sh [--source-root /src/frameworks/base] \
+#   ./scripts/build_structural_index.sh [--source-root /src/frameworks/base] \
 #       [--repo-name frameworks/base] [--languages java,cpp,python] \
 #       [--max-files 500] [--reset] [--strict] [其他参数]
 #
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/../.." && pwd)         # 项目根
-GRAPH_DIR="$DIR/deploy/graph"
+STRUCTURAL_DIR="$DIR/deploy/structural"
 COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
 # shellcheck source=./_indexing_lib.sh
@@ -23,9 +23,9 @@ source "$(dirname "$0")/../share/_common.sh"
 
 _PRESERVE_ENV_VARS=(
     AOSP_SOURCE_ROOT
-    GRAPH_NEO4J_URI
-    GRAPH_NEO4J_USER
-    GRAPH_NEO4J_PASSWORD
+    STRUCTURAL_NEO4J_URI
+    STRUCTURAL_NEO4J_USER
+    STRUCTURAL_NEO4J_PASSWORD
 )
 declare -A _PRESERVE_ENV_VALS=()
 for _var in "${_PRESERVE_ENV_VARS[@]}"; do
@@ -33,7 +33,7 @@ for _var in "${_PRESERVE_ENV_VARS[@]}"; do
         _PRESERVE_ENV_VALS["$_var"]="${!_var}"
     fi
 done
-for envfile in "$DIR/.env" "$GRAPH_DIR/.env"; do
+for envfile in "$DIR/.env" "$STRUCTURAL_DIR/.env"; do
     if [ -f "$envfile" ]; then
         set -a
         # shellcheck disable=SC1090
@@ -66,9 +66,9 @@ translate_path() {
 
 ARGS=()
 HAS_SOURCE_ROOT=false
-_GRAPH_PROJECT_NAME=""
-_GRAPH_REPO_NAME=""
-_GRAPH_SOURCE_ROOT_LABEL="$AOSP_SOURCE_ROOT"
+_STRUCTURAL_PROJECT_NAME=""
+_STRUCTURAL_REPO_NAME=""
+_STRUCTURAL_SOURCE_ROOT_LABEL="$AOSP_SOURCE_ROOT"
 i=0
 argv=("$@")
 n=$#
@@ -85,7 +85,7 @@ while (( i < n )); do
             container_path=$(translate_path "$host_path") || exit 2
             ARGS+=("--source-root" "$container_path")
             HAS_SOURCE_ROOT=true
-            _GRAPH_SOURCE_ROOT_LABEL="$container_path"
+            _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
             i=$((i+2))
             ;;
         --source-root=*)
@@ -93,26 +93,26 @@ while (( i < n )); do
             container_path=$(translate_path "$host_path") || exit 2
             ARGS+=("--source-root=$container_path")
             HAS_SOURCE_ROOT=true
-            _GRAPH_SOURCE_ROOT_LABEL="$container_path"
+            _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
             i=$((i+1))
             ;;
         --project-name)
-            _GRAPH_PROJECT_NAME="${argv[$((i+1))]:-}"
-            ARGS+=("$arg" "$_GRAPH_PROJECT_NAME")
+            _STRUCTURAL_PROJECT_NAME="${argv[$((i+1))]:-}"
+            ARGS+=("$arg" "$_STRUCTURAL_PROJECT_NAME")
             i=$((i+2))
             ;;
         --project-name=*)
-            _GRAPH_PROJECT_NAME="${arg#--project-name=}"
+            _STRUCTURAL_PROJECT_NAME="${arg#--project-name=}"
             ARGS+=("$arg")
             i=$((i+1))
             ;;
         --repo-name)
-            _GRAPH_REPO_NAME="${argv[$((i+1))]:-}"
-            ARGS+=("$arg" "$_GRAPH_REPO_NAME")
+            _STRUCTURAL_REPO_NAME="${argv[$((i+1))]:-}"
+            ARGS+=("$arg" "$_STRUCTURAL_REPO_NAME")
             i=$((i+2))
             ;;
         --repo-name=*)
-            _GRAPH_REPO_NAME="${arg#--repo-name=}"
+            _STRUCTURAL_REPO_NAME="${arg#--repo-name=}"
             ARGS+=("$arg")
             i=$((i+1))
             ;;
@@ -125,20 +125,20 @@ done
 
 if ! $HAS_SOURCE_ROOT; then
     ARGS=("--source-root" "/src" "${ARGS[@]}")
-    _GRAPH_SOURCE_ROOT_LABEL="/src"
+    _STRUCTURAL_SOURCE_ROOT_LABEL="/src"
 fi
 
-if [[ -n "$_GRAPH_REPO_NAME" ]]; then
-    _GRAPH_REPO_LABEL="$_GRAPH_REPO_NAME"
+if [[ -n "$_STRUCTURAL_REPO_NAME" ]]; then
+    _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_REPO_NAME"
 else
-    _GRAPH_REPO_LABEL="$_GRAPH_SOURCE_ROOT_LABEL"
+    _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_SOURCE_ROOT_LABEL"
 fi
 
-echo "[graph-indexer] AOSP_SOURCE_ROOT=$AOSP_SOURCE_ROOT  ARGS=${ARGS[*]}"
-start_indexing_job "$_GRAPH_REPO_LABEL" graph "$_GRAPH_PROJECT_NAME"
+echo "[structural-indexer] AOSP_SOURCE_ROOT=$AOSP_SOURCE_ROOT  ARGS=${ARGS[*]}"
+start_indexing_job "$_STRUCTURAL_REPO_LABEL" structural "$_STRUCTURAL_PROJECT_NAME"
 
 if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
-    echo "[graph-indexer] DRY_RUN — skipping docker compose"
+    echo "[structural-indexer] DRY_RUN — skipping docker compose"
     trap - EXIT
     finish_indexing_job success 0
     exit 0
@@ -147,8 +147,8 @@ fi
 docker compose \
     -f "$COMPOSE_FILE" \
     --profile indexer \
-    run --rm graph-indexer "${ARGS[@]}" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
-_graph_exit=${PIPESTATUS[0]}
+    run --rm structural-indexer "${ARGS[@]}" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
+_structural_exit=${PIPESTATUS[0]}
 trap - EXIT
-finish_indexing_job "$([ "$_graph_exit" -eq 0 ] && echo success || echo fail)" "$_graph_exit"
-exit "$_graph_exit"
+finish_indexing_job "$([ "$_structural_exit" -eq 0 ] && echo success || echo fail)" "$_structural_exit"
+exit "$_structural_exit"

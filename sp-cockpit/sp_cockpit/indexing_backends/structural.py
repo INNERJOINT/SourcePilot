@@ -1,7 +1,7 @@
-"""Graph (Neo4j) backend integrator.
+"""Structural (Neo4j) backend integrator.
 
-NO neo4j driver import here — heavy ops run inside the graph-indexer container
-(see deploy/graph/indexer/Dockerfile).
+NO neo4j driver import here — heavy ops run inside the structural-indexer container
+(see deploy/structural/indexer/Dockerfile).
 """
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from typing import Optional
 from .base import IndexingBackend, BackendError
 
 _COMPOSE_FILE = "deploy/docker-compose.yml"
-_SERVICE = "graph-indexer"
+_SERVICE = "structural-indexer"
 
 
-class GraphBackend(IndexingBackend):
+class StructuralBackend(IndexingBackend):
 
     def trigger(self, repo_path: str, log_path: str, job_id: int) -> subprocess.Popen:
         return subprocess.Popen(
-            ["bash", "scripts/build_graph_index.sh", repo_path],
+            ["bash", "scripts/build_structural_index.sh", repo_path],
             stdout=open(log_path, "w"),
             stderr=subprocess.STDOUT,
             env={**os.environ, "INDEXING_JOB_ID": str(job_id)},
@@ -34,13 +34,13 @@ class GraphBackend(IndexingBackend):
                     "--profile", "indexer",
                     "-f", _COMPOSE_FILE,
                     "run", "--rm", _SERVICE,
-                    "python", "/app/scripts/graph_drop.py", repo_path,
+                    "python", "/app/scripts/structural_drop.py", repo_path,
                 ],
                 check=True,
                 timeout=300,
             )
         except subprocess.CalledProcessError as exc:
-            raise BackendError(f"graph hard_delete failed (exit {exc.returncode})") from exc
+            raise BackendError(f"structural hard_delete failed (exit {exc.returncode})") from exc
 
     def collect_entity_count(self, repo_path: str) -> Optional[int]:
         try:
@@ -50,7 +50,7 @@ class GraphBackend(IndexingBackend):
                     "--profile", "indexer",
                     "-f", _COMPOSE_FILE,
                     "run", "--rm", _SERVICE,
-                    "python", "/app/scripts/graph_count.py", repo_path,
+                    "python", "/app/scripts/structural_count.py", repo_path,
                 ],
                 check=True,
                 capture_output=True,
@@ -63,7 +63,7 @@ class GraphBackend(IndexingBackend):
             return None
 
 
-_backend = GraphBackend()
+_backend = StructuralBackend()
 
 trigger = _backend.trigger
 hard_delete = _backend.hard_delete

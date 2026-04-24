@@ -38,7 +38,7 @@ scripts/
 |---|---|
 | `_common.sh` | Shared library: logging, color, `--help` extraction |
 | `_env.sh` | Loads `.env` into environment |
-| `_infra.sh` | Reusable infrastructure startup functions (zoekt, dense, graph, cockpit) |
+| `_infra.sh` | Reusable infrastructure startup functions (zoekt, dense, structural, cockpit) |
 | `_start_sourcepilot.sh` | SourcePilot uvicorn launcher |
 
 ### Indexing (indexing/)
@@ -48,9 +48,9 @@ scripts/
 | `_indexing_lib.sh` | Shared helpers for indexing scripts (CLI hooks, dry-run) |
 | `build_dense_index_batch.sh` | Batch-build dense vector index for AOSP repos |
 | `build_dense_index.py` | Dense index builder (Python) |
-| `build_graph_index.sh` | Build Neo4j graph index for a single repo |
-| `build_graph_index.py` | Graph index builder (Python) |
-| `reindex.sh` | Orchestrate full reindex (zoekt + dense + graph) |
+| `build_graph_index.sh` | Build Neo4j structural index for a single repo |
+| `build_graph_index.py` | Structural index builder (Python) |
+| `reindex.sh` | Orchestrate full reindex (zoekt + dense + structural) |
 | `zoekt_delete_shard.sh` | Delete zoekt index shards for a repo |
 
 ### Testing (testing/)
@@ -59,7 +59,7 @@ scripts/
 |---|---|
 | `smoke_queries.sh` | Smoke-test search queries against running SourcePilot |
 | `test_dense.sh` | Test dense (Milvus) search pipeline |
-| `verify.sh` | Unified verification (`graphrag-audit` / `indexer-containers`) |
+| `verify.sh` | Unified verification (`structural-audit` / `indexer-containers`) |
 | `eval_hybrid.py` | Hybrid search evaluation (Python) |
 
 ## CI

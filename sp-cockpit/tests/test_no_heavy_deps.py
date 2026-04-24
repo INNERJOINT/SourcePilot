@@ -33,5 +33,5 @@ def test_pymilvus_not_declared():
 def test_neo4j_not_declared():
     deps = _get_all_declared_deps()
     assert "neo4j" not in deps, (
-        "neo4j driver declared in sp-cockpit pyproject.toml — it must stay inside the graph-indexer container"
+        "neo4j driver declared in sp-cockpit pyproject.toml — it must stay inside the structural-indexer container"
     )

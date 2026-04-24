@@ -1,4 +1,4 @@
-# Graph indexer — one-shot container that runs scripts/build_graph_index.py
+# Structural indexer — one-shot container that runs scripts/build_structural_index.py
 # Build context is the repository root (see deploy/docker-compose.yml).
 FROM python:3.11-slim
 
@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
         tree-sitter-cpp \
         tree-sitter-python
 
-# build_graph_index.py is self-contained — no src/ imports needed.
-COPY scripts/indexing/build_graph_index.py /app/scripts/build_graph_index.py
+# build_structural_index.py is self-contained — no src/ imports needed.
+COPY scripts/indexing/build_structural_index.py /app/scripts/build_structural_index.py
 
-ENTRYPOINT ["python3", "/app/scripts/build_graph_index.py"]
+ENTRYPOINT ["python3", "/app/scripts/build_structural_index.py"]

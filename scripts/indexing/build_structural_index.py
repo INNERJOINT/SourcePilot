@@ -1,26 +1,26 @@
 """
-build_graph_index.py — SourcePilot 图谱索引构建脚本
+build_structural_index.py — SourcePilot 结构化索引构建脚本
 
 用途:
     遍历 AOSP 源码目录，通过 tree-sitter 提取 Java/C++/Python 的
     文件、类、方法节点及其边关系，批量写入 Neo4j 图数据库。
 
 用法:
-    python scripts/build_graph_index.py \\
+    python scripts/build_structural_index.py \\
         --source-root /mnt/code/ACE/.repo/frameworks/base \\
         --languages java,cpp,python \\
         --batch-size 100
 
     # 重建（先清空所有节点）
-    python scripts/build_graph_index.py --source-root /path/to/src --reset
+    python scripts/build_structural_index.py --source-root /path/to/src --reset
 
     # 仅处理前 500 个文件（测试用）
-    python scripts/build_graph_index.py --source-root /path/to/src --max-files 500
+    python scripts/build_structural_index.py --source-root /path/to/src --max-files 500
 
 环境变量（可被命令行参数覆盖）:
-    GRAPH_NEO4J_URI      默认 bolt://localhost:7687
-    GRAPH_NEO4J_USER     默认 neo4j
-    GRAPH_NEO4J_PASSWORD 默认 sourcepilot
+    STRUCTURAL_NEO4J_URI      默认 bolt://localhost:7687
+    STRUCTURAL_NEO4J_USER     默认 neo4j
+    STRUCTURAL_NEO4J_PASSWORD 默认 sourcepilot
 """
 
 import argparse
@@ -35,7 +35,7 @@ import sys
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="构建 AOSP 源码 → Neo4j 图谱索引",
+        description="构建 AOSP 源码 → Neo4j 结构化索引",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
@@ -61,17 +61,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--neo4j-uri",
-        default=os.environ.get("GRAPH_NEO4J_URI", "bolt://localhost:7687"),
+        default=os.environ.get("STRUCTURAL_NEO4J_URI", "bolt://localhost:7687"),
         help="Neo4j Bolt URI（默认 bolt://localhost:7687）",
     )
     p.add_argument(
         "--neo4j-user",
-        default=os.environ.get("GRAPH_NEO4J_USER", "neo4j"),
+        default=os.environ.get("STRUCTURAL_NEO4J_USER", "neo4j"),
         help="Neo4j 用户名（默认 neo4j）",
     )
     p.add_argument(
         "--neo4j-password",
-        default=os.environ.get("GRAPH_NEO4J_PASSWORD", "sourcepilot"),
+        default=os.environ.get("STRUCTURAL_NEO4J_PASSWORD", "sourcepilot"),
         help="Neo4j 密码（默认 sourcepilot）",
     )
     p.add_argument(
@@ -230,7 +230,7 @@ def _derive_repo_and_path(
     repo_name: str | None = None,
 ) -> tuple[str, str, str]:
     """
-    计算图谱身份中的 repo/path。
+    计算结构化索引身份中的 repo/path。
 
     返回 (repo, repo_relative_path, repo_mode):
       - repo_mode=explicit: 来自 --repo-name
@@ -307,7 +307,7 @@ def _extract_nodes_edges(
         "repo": repo,
         "language": lang,
         "project": project,
-        "graph_repo_mode": repo_mode,
+        "structural_repo_mode": repo_mode,
     }
     classes: list[dict] = []
     methods: list[dict] = []
@@ -549,7 +549,7 @@ def _bootstrap_schema(session):
         )
 
 
-def _reset_graph(session, project=None):
+def _reset_structural(session, project=None):
     if project:
         session.run(
             "CALL { MATCH (n {project: $project}) "
@@ -568,7 +568,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
     session.run(
         "UNWIND $files AS f "
         "MERGE (node:File {project: f.project, repo: f.repo, path: f.path}) "
-        "SET node.language = f.language, node.graph_repo_mode = f.graph_repo_mode",
+        "SET node.language = f.language, node.structural_repo_mode = f.structural_repo_mode",
         files=files,
     )
     # Class 节点
@@ -980,7 +980,7 @@ def main():
     with driver.session() as session:
         if args.reset:
             print("⚠️  --reset: 清空所有图节点...", file=sys.stderr)
-            _reset_graph(session, project=args.project_name)
+            _reset_structural(session, project=args.project_name)
         _bootstrap_schema(session)
 
     # 3. 收集文件

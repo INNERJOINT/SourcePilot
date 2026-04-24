@@ -10,9 +10,9 @@ BACKENDS = {
         "enabled": False,  # 通过 DENSE_ENABLED 环境变量控制
         "adapter": "adapters.dense.DenseAdapter",
     },
-    "graph": {
-        "enabled": False,  # 通过 GRAPH_ENABLED 环境变量控制
-        "adapter": "adapters.graph.GraphAdapter",
+    "structural": {
+        "enabled": False,  # 通过 STRUCTURAL_ENABLED 环境变量控制
+        "adapter": "adapters.structural.StructuralAdapter",
     },
     # "feishu": {
     #     "enabled": False,

@@ -43,17 +43,17 @@ DENSE_EMBEDDING_DIM = int(os.getenv("DENSE_EMBEDDING_DIM", "768"))
 DENSE_TOP_K = int(os.getenv("DENSE_TOP_K", "20"))
 DENSE_RERANK_BOOST = float(os.getenv("DENSE_RERANK_BOOST", "0.05"))
 
-# ─── Graph 检索配置 ──────────────────────────────────────
-# 是否启用图谱（Neo4j）检索通道
-GRAPH_ENABLED = os.getenv("GRAPH_ENABLED", "false").lower() == "true"
+# ─── Structural 检索配置 ──────────────────────────────────────
+# 是否启用结构化（Neo4j）检索通道
+STRUCTURAL_ENABLED = os.getenv("STRUCTURAL_ENABLED", "false").lower() == "true"
 # Neo4j Bolt 连接地址
-GRAPH_NEO4J_URI = os.getenv("GRAPH_NEO4J_URI", "bolt://localhost:7687")
+STRUCTURAL_NEO4J_URI = os.getenv("STRUCTURAL_NEO4J_URI", "bolt://localhost:7687")
 # Neo4j 用户名
-GRAPH_NEO4J_USER = os.getenv("GRAPH_NEO4J_USER", "neo4j")
+STRUCTURAL_NEO4J_USER = os.getenv("STRUCTURAL_NEO4J_USER", "neo4j")
 # Neo4j 密码
-GRAPH_NEO4J_PASSWORD = os.getenv("GRAPH_NEO4J_PASSWORD", "sourcepilot")
-# Graph 检索通道超时（毫秒）
-GRAPH_LANE_TIMEOUT_MS = int(os.getenv("GRAPH_LANE_TIMEOUT_MS", "2000"))
+STRUCTURAL_NEO4J_PASSWORD = os.getenv("STRUCTURAL_NEO4J_PASSWORD", "sourcepilot")
+# Structural 检索通道超时（毫秒）
+STRUCTURAL_LANE_TIMEOUT_MS = int(os.getenv("STRUCTURAL_LANE_TIMEOUT_MS", "2000"))
 
 # ─── 审计日志配置 ──────────────────────────────────────
 # 审计日志总开关

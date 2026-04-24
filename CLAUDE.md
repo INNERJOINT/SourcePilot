@@ -84,7 +84,7 @@ shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
 
 Scripts are organized under `scripts/`:
 - `share/` — shared bash libraries (`_common.sh` logging, `_env.sh` dotenv loader, `_infra.sh` service starters)
-- `indexing/` — index build scripts (Zoekt, dense/Milvus, Neo4j graph)
+- `indexing/` — index build scripts (Zoekt, dense/Milvus, Neo4j structural)
 - `testing/` — smoke tests (`smoke_queries.sh`), dense verification, hybrid eval
 
 All scripts use `set -euo pipefail` and source `share/_common.sh`. Run any with `-h` for usage.

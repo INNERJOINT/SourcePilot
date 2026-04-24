@@ -94,7 +94,7 @@ def test_start_job(conn):
 
 def test_finish_job_success(conn):
     repo_id = indexing_db.upsert_repo(conn, "/aosp/frameworks/base")
-    job_id = indexing_db.create_job(conn, repo_id, "graph")
+    job_id = indexing_db.create_job(conn, repo_id, "structural")
     indexing_db.start_job(conn, job_id)
     indexing_db.finish_job(conn, job_id, "success", exit_code=0, entity_count_after=42)
     row = indexing_db.get_job(conn, job_id)

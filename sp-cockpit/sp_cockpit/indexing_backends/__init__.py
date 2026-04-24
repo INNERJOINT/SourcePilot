@@ -1,10 +1,10 @@
-"""Indexing backend integrators — dispatch dict for zoekt/dense/graph."""
-from . import zoekt, dense, graph
+"""Indexing backend integrators — dispatch dict for zoekt/dense/structural."""
+from . import zoekt, dense, structural
 
 BACKENDS = {
     "zoekt": zoekt,
     "dense": dense,
-    "graph": graph,
+    "structural": structural,
 }
 
-__all__ = ["BACKENDS", "zoekt", "dense", "graph"]
+__all__ = ["BACKENDS", "zoekt", "dense", "structural"]

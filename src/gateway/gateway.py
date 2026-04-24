@@ -12,7 +12,7 @@ import logging
 import config
 from adapters.zoekt import ZoektAdapter
 from config import get_default_project, get_project
-from gateway.converters import dense_result_to_dict, feishu_result_to_dict, graph_result_to_dict
+from gateway.converters import dense_result_to_dict, feishu_result_to_dict, structural_result_to_dict
 from gateway.fusion import rrf_merge
 from gateway.nl.classifier import classify_query
 from gateway.nl.rewriter import rewrite_query
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Per-project adapter cache
 _adapters: dict[str, ZoektAdapter] = {}
 _dense_adapter: dict[tuple[str, str], object] | None = None
-_graph_adapter = None
+_structural_adapter = None
 
 
 def _is_zoekt_project(project: str | None = None) -> bool:
@@ -89,17 +89,17 @@ def _get_dense_adapter(project: str | None = None):
     return _dense_adapter[key]
 
 
-def _get_graph_adapter():
-    """Lazy-init graph adapter when GRAPH_ENABLED=true。"""
-    global _graph_adapter
-    if not config.GRAPH_ENABLED:
+def _get_structural_adapter():
+    """Lazy-init structural adapter when STRUCTURAL_ENABLED=true。"""
+    global _structural_adapter
+    if not config.STRUCTURAL_ENABLED:
         return None
-    if _graph_adapter is None:
-        from adapters.graph import GraphAdapter
+    if _structural_adapter is None:
+        from adapters.structural import StructuralAdapter
 
-        _graph_adapter = GraphAdapter()
-        logger.info("Graph adapter initialized")
-    return _graph_adapter
+        _structural_adapter = StructuralAdapter()
+        logger.info("Structural adapter initialized")
+    return _structural_adapter
 
 
 # ─── Internal helpers ────────────────────────────────────
@@ -273,14 +273,14 @@ async def _nl_search(
     if has_dense:
         tasks.append(_dense_search_with_audit(query, repos=repos, project=project))
 
-    # 2c. Graph 通道：原始 NL query → 图谱关系搜索
-    graph = _get_graph_adapter()
-    has_graph = graph is not None
-    if has_graph:
-        tasks.append(_graph_search_with_audit(query, repos=repos, project=project))
+    # 2c. Structural 通道：原始 NL query → 结构化关系搜索
+    structural = _get_structural_adapter()
+    has_structural = structural is not None
+    if has_structural:
+        tasks.append(_structural_search_with_audit(query, repos=repos, project=project))
 
     zoekt_route_count = len(rewrite_results)
-    lane_idx = _assemble_lane_indices(zoekt_route_count, has_dense, has_graph)
+    lane_idx = _assemble_lane_indices(zoekt_route_count, has_dense, has_structural)
 
     # 3. 并行执行所有任务
     async with audit_stage(
@@ -289,13 +289,13 @@ async def _nl_search(
             "query": query,
             "zoekt_route_count": zoekt_route_count,
             "dense_enabled": has_dense,
-            "graph_enabled": has_graph,
+            "structural_enabled": has_structural,
             "queries": [r["query"] for r in rewrite_results],
         },
     ) as stg:
         all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 4. 分离 Zoekt、Dense 和 Graph 结果
+        # 4. 分离 Zoekt、Dense 和 Structural 结果
         zoekt_results_raw = all_results[:zoekt_route_count]
         valid_zoekt = [r for r in zoekt_results_raw if isinstance(r, list)]
         failed_zoekt = [r for r in zoekt_results_raw if isinstance(r, Exception)]
@@ -306,32 +306,32 @@ async def _nl_search(
             if isinstance(raw_dense, list):
                 dense_results = [dense_result_to_dict(h) for h in raw_dense]
 
-        graph_results = []
-        if lane_idx["graph"] is not None:
-            raw_graph = all_results[lane_idx["graph"]]
-            if isinstance(raw_graph, list):
-                graph_results = [graph_result_to_dict(h) for h in raw_graph]
+        structural_results = []
+        if lane_idx["structural"] is not None:
+            raw_structural = all_results[lane_idx["structural"]]
+            if isinstance(raw_structural, list):
+                structural_results = [structural_result_to_dict(h) for h in raw_structural]
 
         stg.set_result(
             {
                 "zoekt_routes_succeeded": len(valid_zoekt),
                 "zoekt_routes_failed": len(failed_zoekt),
                 "dense_results": len(dense_results),
-                "graph_results": len(graph_results),
+                "structural_results": len(structural_results),
                 "per_route_counts": [len(r) for r in valid_zoekt],
                 "errors": [str(e) for e in failed_zoekt][:3],
             }
         )
 
     logger.info(
-        "NL multi-query: %d/%d zoekt routes succeeded, %d dense results, %d graph results",
+        "NL multi-query: %d/%d zoekt routes succeeded, %d dense results, %d structural results",
         len(valid_zoekt),
         len(zoekt_results_raw),
         len(dense_results),
-        len(graph_results),
+        len(structural_results),
     )
 
-    if not valid_zoekt and not dense_results and not graph_results:
+    if not valid_zoekt and not dense_results and not structural_results:
         # 所有路都失败时，降级
         async with audit_stage(
             "fallback_search", {"query": query, "reason": "all_routes_failed"}
@@ -348,11 +348,11 @@ async def _nl_search(
             stg.set_result_count(len(records))
         return records
 
-    # 5. RRF 融合（Zoekt 多路 + Dense 一路 + Graph 一路）
+    # 5. RRF 融合（Zoekt 多路 + Dense 一路 + Structural 一路）
     all_lists = (
         valid_zoekt
         + ([dense_results] if dense_results else [])
-        + ([graph_results] if graph_results else [])
+        + ([structural_results] if structural_results else [])
     )
     async with audit_stage(
         "rrf_merge",
@@ -419,44 +419,44 @@ async def _dense_search_with_audit(
             return []
 
 
-async def _graph_search_with_audit(
+async def _structural_search_with_audit(
     query: str,
     repos: str | None = None,
     project: str | None = None,
 ) -> list[dict]:
-    """Graph 通道搜索，带 audit 和降级。"""
-    async with audit_stage("graph_search", {"query": query}) as stg:
+    """Structural 通道搜索，带 audit 和降级。"""
+    async with audit_stage("structural_search", {"query": query}) as stg:
         try:
-            graph = _get_graph_adapter()
+            structural = _get_structural_adapter()
             results = await asyncio.wait_for(
-                graph.search_by_graph(
+                structural.search_by_structural(
                     query, top_k=config.DENSE_TOP_K, repos=repos, project=project
                 ),
-                timeout=config.GRAPH_LANE_TIMEOUT_MS / 1000.0,
+                timeout=config.STRUCTURAL_LANE_TIMEOUT_MS / 1000.0,
             )
             stg.set_result({"records_count": len(results), "records": results})
             stg.set_result_count(len(results))
             return results
         except Exception as e:
-            logger.warning("Graph search failed, degrading: %s", e)
+            logger.warning("Structural search failed, degrading: %s", e)
             stg.set_result({"error": str(e), "degraded": True})
             return []
 
 
 def _assemble_lane_indices(
-    zoekt_route_count: int, has_dense: bool, has_graph: bool
+    zoekt_route_count: int, has_dense: bool, has_structural: bool
 ) -> dict[str, int | None]:
     """计算各 lane 在 asyncio.gather 结果列表中的索引。"""
     idx = zoekt_route_count
     dense_idx = None
-    graph_idx = None
+    structural_idx = None
     if has_dense:
         dense_idx = idx
         idx += 1
-    if has_graph:
-        graph_idx = idx
+    if has_structural:
+        structural_idx = idx
         idx += 1
-    return {"dense": dense_idx, "graph": graph_idx}
+    return {"dense": dense_idx, "structural": structural_idx}
 
 
 async def search_symbol(

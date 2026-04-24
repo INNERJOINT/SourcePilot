@@ -1,5 +1,5 @@
 """
-project_config.py — canonical sparse/dense/graph project parser for indexing.
+project_config.py — canonical sparse/dense/structural project parser for indexing.
 
 Config precedence:
   1. --config
@@ -172,8 +172,8 @@ def _normalize_project(raw: Any) -> dict[str, Any]:
         "dense_index": _parse_backend_section(
             raw.get("dense_index"), project=name, backend="dense"
         ),
-        "graph_index": _parse_backend_section(
-            raw.get("graph_index"), project=name, backend="graph"
+        "structural_index": _parse_backend_section(
+            raw.get("structural_index"), project=name, backend="structural"
         ),
     }
 
@@ -355,7 +355,7 @@ def build_backend_config(
     project: str | None = None,
     config_path: str | None = None,
 ) -> dict[str, Any]:
-    if backend not in {"dense", "graph", "sparse"}:
+    if backend not in {"dense", "structural", "sparse"}:
         _raise(f"Unsupported backend {backend!r}")
 
     projects, resolved = _load_projects_with_source(config_path)
@@ -390,14 +390,14 @@ def build_backend_config(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render sparse/dense/graph project config JSON",
+        description="Render sparse/dense/structural project config JSON",
         epilog=(
             "Config precedence: --config > PROJECTS_CONFIG_PATH > config/projects.yaml > "
             "AOSP_SOURCE_ROOT fallback"
         ),
     )
     parser.add_argument("--format", choices=["json"], default="json")
-    parser.add_argument("--backend", choices=["dense", "graph", "sparse"], required=True)
+    parser.add_argument("--backend", choices=["dense", "structural", "sparse"], required=True)
     parser.add_argument("--project", help="Only emit one project from the resolved config")
     parser.add_argument("--config", help="Path to projects.yaml (highest precedence)")
     return parser.parse_args()

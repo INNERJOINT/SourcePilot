@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# verify.sh — unified verification for graphrag audit and indexer containers
+# verify.sh — unified verification for structural audit and indexer containers
 #
 # Usage:
-#   scripts/verify.sh graphrag-audit
+#   scripts/verify.sh structural-audit
 #   scripts/verify.sh indexer-containers
 #
 # Subcommands:
-#   graphrag-audit       — GraphRAG 审计事件端到端验证
-#   indexer-containers   — 验证 dense/graph indexer 在 docker-compose.yml 中定义正确
+#   structural-audit     — Structural 审计事件端到端验证
+#   indexer-containers   — 验证 dense/structural indexer 在 docker-compose.yml 中定义正确
 set -euo pipefail
 source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
 
-# ─── graphrag-audit ──────────────────────────────────────────────────────────
+# ─── structural-audit ──────────────────────────────────────────────────────────
 
-_run_graphrag_audit() {
+_run_structural_audit() {
     local SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
     local SP_COCKPIT_URL="${SP_COCKPIT_URL:-http://localhost:9100}"
     local AUDIT_DB="${AUDIT_DB:-/mnt/code/T2/Dify/sp-cockpit/data/audit.db}"
@@ -37,10 +37,10 @@ _run_graphrag_audit() {
     fi
     info "SourcePilot 响应正常"
 
-    info "检查 GRAPH_ENABLED 环境变量..."
-    local GRAPH_ENABLED_STATUS
-    GRAPH_ENABLED_STATUS=$(curl -sf "${SOURCEPILOT_URL}/health" | grep -o '"graph":[^,}]*' || echo "unknown")
-    info "graph 状态: ${GRAPH_ENABLED_STATUS}"
+    info "检查 STRUCTURAL_ENABLED 环境变量..."
+    local STRUCTURAL_ENABLED_STATUS
+    STRUCTURAL_ENABLED_STATUS=$(curl -sf "${SOURCEPILOT_URL}/health" | grep -o '"structural":[^,}]*' || echo "unknown")
+    info "structural 状态: ${STRUCTURAL_ENABLED_STATUS}"
 
     info "检查 audit.db..."
     if [ ! -f "${AUDIT_DB}" ]; then
@@ -54,7 +54,7 @@ _run_graphrag_audit() {
 
     info "发送 3 条测试查询..."
 
-    local TRACE_PREFIX="trace-graphrag-verify-$$"
+    local TRACE_PREFIX="trace-structural-verify-$$"
     local i TRACE_ID QUERY HTTP_STATUS
 
     for i in 1 2 3; do
@@ -84,26 +84,26 @@ _run_graphrag_audit() {
     info "等待 sp-cockpit 摄取日志 (3s)..."
     sleep 3
 
-    # ─── 验证 graph_search 事件 ──────────────────────────────────────────────
+    # ─── 验证 structural_search 事件 ──────────────────────────────────────────────
 
-    info "查询 audit.db 中的 graph_search 事件..."
+    info "查询 audit.db 中的 structural_search 事件..."
 
-    local GRAPH_COUNT
-    GRAPH_COUNT=$(sqlite3 "${AUDIT_DB}" \
-        "SELECT count(*) FROM events WHERE json_extract(data, '\$.stage') = 'graph_search'" \
+    local STRUCTURAL_COUNT
+    STRUCTURAL_COUNT=$(sqlite3 "${AUDIT_DB}" \
+        "SELECT count(*) FROM events WHERE json_extract(data, '\$.stage') = 'structural_search'" \
         2>/dev/null || echo "0")
 
-    echo "graph_search 事件数: ${GRAPH_COUNT}"
+    echo "structural_search 事件数: ${STRUCTURAL_COUNT}"
 
-    if [ "${GRAPH_COUNT}" -gt 0 ]; then
-        info "graph_search 事件已记录 (共 ${GRAPH_COUNT} 条)"
+    if [ "${STRUCTURAL_COUNT}" -gt 0 ]; then
+        info "structural_search 事件已记录 (共 ${STRUCTURAL_COUNT} 条)"
     else
-        log ERROR "未找到 graph_search 事件 (GRAPH_ENABLED 是否为 true?)"
+        log ERROR "未找到 structural_search 事件 (STRUCTURAL_ENABLED 是否为 true?)"
         echo ""
         echo "调试步骤:"
-        echo "  1. 确认 GRAPH_ENABLED=true 已设置"
-        echo "  2. 确认 Neo4j 可访问且图谱已建索引"
-        echo "  3. 查看 audit.log: tail -50 /mnt/code/T2/Dify/audit.log | grep graph_search"
+        echo "  1. 确认 STRUCTURAL_ENABLED=true 已设置"
+        echo "  2. 确认 Neo4j 可访问且结构化索引已建索引"
+        echo "  3. 查看 audit.log: tail -50 /mnt/code/T2/Dify/audit.log | grep structural_search"
     fi
 
     # ─── 延迟对比报告 ────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ _run_graphrag_audit() {
         "SELECT json_extract(data, '\$.stage') AS stage,
                 printf('%.1f', json_extract(data, '\$.duration_ms')) AS ms
          FROM events
-         WHERE json_extract(data, '\$.stage') IN ('zoekt_search','dense_search','graph_search')
+         WHERE json_extract(data, '\$.stage') IN ('zoekt_search','dense_search','structural_search')
          ORDER BY CAST(json_extract(data, '\$.duration_ms') AS REAL) DESC
          LIMIT 30" \
         2>/dev/null | column -t -s '|' || echo "(无数据)"
@@ -124,11 +124,11 @@ _run_graphrag_audit() {
     # ─── 汇总 ────────────────────────────────────────────────────────────────
 
     echo ""
-    if [ "${GRAPH_COUNT}" -gt 0 ]; then
-        info "GraphRAG 审计验证通过：graph_search 事件端到端正常"
+    if [ "${STRUCTURAL_COUNT}" -gt 0 ]; then
+        info "Structural 审计验证通过：structural_search 事件端到端正常"
         return 0
     else
-        log ERROR "GraphRAG 审计验证失败：未找到 graph_search 事件"
+        log ERROR "Structural 审计验证失败：未找到 structural_search 事件"
         return 1
     fi
 }
@@ -162,8 +162,8 @@ _run_indexer_containers() {
 
     _check "deploy compose config (profile=indexer)" \
         docker compose -f "$COMPOSE" --profile indexer config -q
-    _check "deploy compose config (default profile — 不应含 dense-indexer/graph-indexer)" \
-        bash -c "svc=\$(docker compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^graph-indexer\$'"
+    _check "deploy compose config (default profile — 不应含 dense-indexer/structural-indexer)" \
+        bash -c "svc=\$(docker compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^structural-indexer\$'"
     _check "deploy compose project name = dify" \
         bash -c "docker compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'dify'"
     _check "root shim resolves to deploy compose" \
@@ -172,8 +172,8 @@ _run_indexer_containers() {
     if [[ "${INDEXER_RUN_HELP:-0}" = "1" ]]; then
         _check "dense-indexer --help" \
             docker compose -f "$COMPOSE" --profile indexer run --rm dense-indexer --help
-        _check "graph-indexer --help" \
-            docker compose -f "$COMPOSE" --profile indexer run --rm graph-indexer --help
+        _check "structural-indexer --help" \
+            docker compose -f "$COMPOSE" --profile indexer run --rm structural-indexer --help
     fi
 
     return "$fail"
@@ -182,7 +182,7 @@ _run_indexer_containers() {
 # ─── dispatch ────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
-    graphrag-audit)      shift; _run_graphrag_audit "$@" ;;
+    structural-audit)    shift; _run_structural_audit "$@" ;;
     indexer-containers)  shift; _run_indexer_containers "$@" ;;
-    *)                   die "Usage: verify.sh <graphrag-audit|indexer-containers>" ;;
+    *)                   die "Usage: verify.sh <structural-audit|indexer-containers>" ;;
 esac

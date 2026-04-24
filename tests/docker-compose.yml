@@ -46,7 +46,7 @@ services:
       ZOEKT_URL: http://zoekt-webserver:6070
       NL_ENABLED: "false"
       DENSE_ENABLED: "false"
-      GRAPH_ENABLED: "false"
+      STRUCTURAL_ENABLED: "false"
       AUDIT_ENABLED: "false"
     ports:
       - "9000:9000"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Delete all graph nodes for a given repo. Runs inside graph-indexer container."""
+"""Delete all structural index nodes for a given repo. Runs inside structural-indexer container."""
 import json
 import os
 import sys
@@ -9,13 +9,13 @@ from neo4j import GraphDatabase
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: graph_drop.py <repo_path>", file=sys.stderr)
+        print("Usage: structural_drop.py <repo_path>", file=sys.stderr)
         sys.exit(1)
 
     repo_path = sys.argv[1]
-    uri = os.getenv("GRAPH_NEO4J_URI", "bolt://neo4j:7687")
-    user = os.getenv("GRAPH_NEO4J_USER", "neo4j")
-    password = os.getenv("GRAPH_NEO4J_PASSWORD", "sourcepilot")
+    uri = os.getenv("STRUCTURAL_NEO4J_URI", "bolt://neo4j:7687")
+    user = os.getenv("STRUCTURAL_NEO4J_USER", "neo4j")
+    password = os.getenv("STRUCTURAL_NEO4J_PASSWORD", "sourcepilot")
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
     with driver.session() as session:

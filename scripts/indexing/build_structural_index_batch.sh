@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Batch graph index builder — iterate projects from canonical project_config.py output
+# Batch structural index builder — iterate projects from canonical project_config.py output
 #
 # Usage:
-#   ./scripts/indexing/build_graph_index_batch.sh [extra args passed to build_graph_index.sh]
+#   ./scripts/indexing/build_structural_index_batch.sh [extra args passed to build_structural_index.sh]
 #
 # NOTE: -e intentionally omitted — batch-continue contract: single project failure
 # must not abort remaining projects.
@@ -14,9 +14,9 @@ source "$(dirname "$0")/_indexing_lib.sh"
 source "$(dirname "$0")/../share/_common.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_SCRIPT="$SCRIPT_DIR/build_graph_index.sh"
+BUILD_SCRIPT="$SCRIPT_DIR/build_structural_index.sh"
 
-_emit_graph_project_lines() {
+_emit_structural_project_lines() {
     python3 - "$SCRIPT_DIR/project_config.py" <<'PYEOF'
 import json
 import subprocess
@@ -25,7 +25,7 @@ import sys
 config_script = sys.argv[1]
 payload = json.loads(
     subprocess.check_output(
-        [sys.executable, config_script, "--backend", "graph", "--format", "json"],
+        [sys.executable, config_script, "--backend", "structural", "--format", "json"],
         text=True,
     )
 )
@@ -58,11 +58,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --source-root|--project-name|--repo-name)
-            echo "ERROR: $1 is managed by build_graph_index_batch.sh" >&2
+            echo "ERROR: $1 is managed by build_structural_index_batch.sh" >&2
             exit 2
             ;;
         --source-root=*|--project-name=*|--repo-name=*)
-            echo "ERROR: ${1%%=*} is managed by build_graph_index_batch.sh" >&2
+            echo "ERROR: ${1%%=*} is managed by build_structural_index_batch.sh" >&2
             exit 2
             ;;
         *)
@@ -77,8 +77,8 @@ FAILED=0
 SKIPPED=0
 
 CONFIG_LINES=()
-if ! mapfile -t CONFIG_LINES < <(_emit_graph_project_lines); then
-    echo "ERROR: failed to load graph backend project config" >&2
+if ! mapfile -t CONFIG_LINES < <(_emit_structural_project_lines); then
+    echo "ERROR: failed to load structural backend project config" >&2
     exit 1
 fi
 
@@ -109,12 +109,12 @@ while (( line_index < ${#CONFIG_LINES[@]} )); do
         PROJECT_INCLUDES+=("$col1|$col2")
     done
 
-    echo "===== GRAPH INDEX: project=$proj_name root=$proj_root mode=$proj_mode ====="
+    echo "===== STRUCTURAL INDEX: project=$proj_name root=$proj_root mode=$proj_mode ====="
     export AOSP_SOURCE_ROOT="$proj_root"
 
     case "$proj_mode" in
         disabled)
-            echo "SKIP PROJECT  $proj_name (graph mode=disabled)"
+            echo "SKIP PROJECT  $proj_name (structural mode=disabled)"
             echo ""
             SKIPPED=$((SKIPPED + 1))
             continue
@@ -146,7 +146,7 @@ while (( line_index < ${#CONFIG_LINES[@]} )); do
             ;;
         legacy|explicit)
             if [[ ${#PROJECT_INCLUDES[@]} -eq 0 ]]; then
-                echo "SKIP PROJECT  $proj_name (no graph includes resolved)"
+                echo "SKIP PROJECT  $proj_name (no structural includes resolved)"
                 echo ""
                 SKIPPED=$((SKIPPED + 1))
                 continue
@@ -198,11 +198,11 @@ while (( line_index < ${#CONFIG_LINES[@]} )); do
             echo ""
             ;;
         *)
-            echo "ERROR: unknown graph mode '$proj_mode' for project '$proj_name'" >&2
+            echo "ERROR: unknown structural mode '$proj_mode' for project '$proj_name'" >&2
             exit 1
             ;;
     esac
 done
 
 echo "==============================="
-echo "Graph batch complete: Succeeded=$SUCCEEDED  Failed=$FAILED  Skipped=$SKIPPED"
+echo "Structural batch complete: Succeeded=$SUCCEEDED  Failed=$FAILED  Skipped=$SKIPPED"

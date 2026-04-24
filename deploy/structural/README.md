@@ -1,11 +1,11 @@
-# Graph Deploy — Neo4j 图数据库
+# Structural Deploy — Neo4j 结構化数据库
 
-Docker 单节点部署，为 SourcePilot 的图谱检索功能（GraphRAG Lane）提供 Neo4j 后端。
+Docker 单节点部署，为 SourcePilot 的结構化检索功能（Structural Lane）提供 Neo4j 后端。
 
 ## 快速启动
 
 ```bash
-cd deploy/graph
+cd deploy/structural
 
 # 1. 启动 Neo4j（首次拉取镜像需要一点时间）
 docker compose up -d
@@ -43,18 +43,18 @@ NEO4J_PASSWORD=sourcepilot
 - Heap 初始: 512M，最大: 2G
 - Page Cache: 512M
 - **建议宿主机 4GB+ 系统内存**
-- 索引 `frameworks/base` 子集（`build_graph_index.py`）约消耗 1–2GB Neo4j heap
+- 索引 `frameworks/base` 子集（`build_structural_index.py`）约消耗 1–2GB Neo4j heap
 
 如需调整，修改 `docker-compose.yml` 中的 `NEO4J_server_memory_*` 变量后重启服务。
 
 ## 构建图谱索引
 
-自 2026-04 起，索引构建通过容器化的 `graph-indexer` service（同 compose 的 `indexer` profile）完成：
+自 2026-04 起，索引构建通过容器化的 `structural-indexer` service（同 compose 的 `indexer` profile）完成：
 
 ```bash
 # 前置：neo4j 健康；AOSP 源码通过 $AOSP_SOURCE_ROOT 挂入容器 /src
 cd /mnt/code/T2/Dify
-AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_graph_index.sh \
+AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_structural_index.sh \
     --source-root /mnt/code/ACE/frameworks/base \
     --languages java,cpp,python \
     --max-files 500
@@ -64,7 +64,7 @@ wrapper 会把宿主机路径翻译为 `/src/<subpath>` 后调用：
 
 ```bash
 docker compose -f deploy/docker-compose.yml --profile indexer \
-    run --rm graph-indexer \
+    run --rm structural-indexer \
     --source-root /src/frameworks/base \
     --languages java
 ```
@@ -90,7 +90,7 @@ docker compose up -d
 
 # 3. 等待健康检查通过后重新索引
 cd /mnt/code/T2/Dify
-AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_graph_index.sh \
+AOSP_SOURCE_ROOT=/mnt/code/ACE ./scripts/build_structural_index.sh \
     --source-root /mnt/code/ACE/frameworks/base --languages java,cpp,python
 ```
 

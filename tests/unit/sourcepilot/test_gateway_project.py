@@ -150,29 +150,29 @@ class TestDenseSearchProjectIsolation:
         assert not alpha_mock.search_by_embedding.called
 
 
-class TestGraphSearchProjectIsolation:
+class TestStructuralSearchProjectIsolation:
     @pytest.mark.anyio
-    async def test_graph_search_passes_project(self, monkeypatch):
-        """_graph_search_with_audit passes project= to search_by_graph."""
+    async def test_structural_search_passes_project(self, monkeypatch):
+        """_structural_search_with_audit passes project= to search_by_structural."""
         _patch_projects(monkeypatch)
         import gateway.gateway as gw
 
-        monkeypatch.setattr("config.GRAPH_ENABLED", True)
+        monkeypatch.setattr("config.STRUCTURAL_ENABLED", True)
         monkeypatch.setattr("config.AUDIT_ENABLED", False)
 
-        graph_mock = MagicMock()
+        structural_mock = MagicMock()
 
-        async def fake_search_by_graph(query, top_k, repos, project):
+        async def fake_search_by_structural(query, top_k, repos, project):
             return []
 
-        graph_mock.search_by_graph = MagicMock(side_effect=fake_search_by_graph)
+        structural_mock.search_by_structural = MagicMock(side_effect=fake_search_by_structural)
 
-        monkeypatch.setattr(gw, "_get_graph_adapter", lambda: graph_mock)
+        monkeypatch.setattr(gw, "_get_structural_adapter", lambda: structural_mock)
 
-        await gw._graph_search_with_audit(query="Foo", repos=None, project="alpha")
+        await gw._structural_search_with_audit(query="Foo", repos=None, project="alpha")
 
-        graph_mock.search_by_graph.assert_called_once()
-        call_kwargs = graph_mock.search_by_graph.call_args
+        structural_mock.search_by_structural.assert_called_once()
+        call_kwargs = structural_mock.search_by_structural.call_args
         assert call_kwargs.kwargs.get("project") == "alpha" or (
             len(call_kwargs.args) > 3 and call_kwargs.args[3] == "alpha"
         )

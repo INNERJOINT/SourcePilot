@@ -5,14 +5,14 @@
 #  启动顺序：
 #    1. zoekt-webserver（索引服务）
 #    2. Dense 检索栈（etcd/minio/milvus/embedding-server，DENSE_ENABLED=true 时）
-#    3. Neo4j 图谱（GRAPH_ENABLED=true 时）
+#    3. Neo4j 结构化检索（STRUCTURAL_ENABLED=true 时）
 #    4. SourcePilot（搜索引擎 API，Docker，端口 9000）
 #    5. sp-cockpit（审计面板，Docker，端口 9100）
 #
 #  用法：
 #    ./run_sourcepilot.sh                       # 启动 zoekt + SourcePilot + sp-cockpit
 #    DENSE_ENABLED=true ./run_sourcepilot.sh    # 包含 Dense 检索栈
-#    GRAPH_ENABLED=true ./run_sourcepilot.sh    # 包含 Neo4j 图谱
+#    STRUCTURAL_ENABLED=true ./run_sourcepilot.sh    # 包含 Neo4j 结构化检索
 #    ./run_sourcepilot.sh --bare                # 仅启动 SourcePilot 进程（等同旧行为）
 # ──────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ infra_start_zoekt
 infra_start_dense
 
 # ── 3. 启动 Neo4j ────────────────────────────────────
-infra_start_graph
+infra_start_structural
 
 # ── 4. 启动 SourcePilot ──────────────────────────────
 infra_start_sourcepilot
@@ -91,7 +91,7 @@ fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
 echo "    Dense 检索栈     (Docker)       (Qdrant :6333)" >&2
 fi
-if [ "${GRAPH_ENABLED:-false}" = "true" ]; then
+if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
 echo "    Neo4j            (Docker)       (bolt://localhost:7687)" >&2
 fi
 echo "    SourcePilot      (Docker)       (http://localhost:9000)" >&2

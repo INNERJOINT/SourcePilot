@@ -17,7 +17,7 @@ projects:
       include:
         - frameworks/base
 
-    graph_index:
+    structural_index:
       include:
         - frameworks/base
 

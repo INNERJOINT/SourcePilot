@@ -6,7 +6,7 @@ import AddRepoModal from "../components/AddRepoModal";
 import DenseTriggerGuard from "../components/DenseTriggerGuard";
 import ConfirmDialog from "../components/ConfirmDialog";
 
-const BACKENDS = ["all", "zoekt", "dense", "graph"] as const;
+const BACKENDS = ["all", "zoekt", "dense", "structural"] as const;
 const STATUSES = ["all", "success", "fail", "running", "warn"] as const;
 
 type SortKey = "last_finished_at";
@@ -39,7 +39,7 @@ function backendChip(b: string) {
   const cls: Record<string, string> = {
     zoekt: "bg-purple-100 text-purple-800",
     dense: "bg-teal-100 text-teal-800",
-    graph: "bg-orange-100 text-orange-800",
+    structural: "bg-orange-100 text-orange-800",
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls[b] ?? "bg-slate-100 text-slate-700"}`}>

@@ -278,7 +278,7 @@ def test_internal_start_success(indexing_client, token_headers):
     """POST internal-start with valid token creates a running job."""
     resp = indexing_client.post(
         "/api/indexing/jobs/internal-start",
-        json={"repo_path": "/aosp/art", "backend": "graph"},
+        json={"repo_path": "/aosp/art", "backend": "structural"},
         headers=token_headers,
     )
     assert resp.status_code == 201

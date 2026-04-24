@@ -64,9 +64,9 @@ describe("AddRepoModal", () => {
       target: { value: "/test/repo2" },
     });
 
-    // Uncheck zoekt, check graph only
+    // Uncheck zoekt, check structural only
     fireEvent.click(screen.getByTestId("checkbox-zoekt"));
-    fireEvent.click(screen.getByTestId("checkbox-graph"));
+    fireEvent.click(screen.getByTestId("checkbox-structural"));
 
     fireEvent.click(screen.getByText("提交"));
 
@@ -77,7 +77,7 @@ describe("AddRepoModal", () => {
     );
     expect(postCalls.length).toBe(1);
     const body = JSON.parse((postCalls[0][1] as RequestInit).body as string);
-    expect(body.backend).toBe("graph");
+    expect(body.backend).toBe("structural");
 
     vi.unstubAllGlobals();
   });

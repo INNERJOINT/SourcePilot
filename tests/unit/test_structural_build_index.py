@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[2] / "scripts" / "indexing" / "build_graph_index.py"
-_SPEC = importlib.util.spec_from_file_location("build_graph_index_for_tests", _MODULE_PATH)
+_MODULE_PATH = (
+    Path(__file__).resolve().parents[2] / "scripts" / "indexing" / "build_structural_index.py"
+)
+_SPEC = importlib.util.spec_from_file_location("build_structural_index_for_tests", _MODULE_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 bgi = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(bgi)
@@ -153,18 +155,18 @@ def test_preflight_creates_composite_and_drops_legacy_path_constraint():
     assert any("DROP CONSTRAINT legacy_file_path_unique IF EXISTS" in q for q, _ in session.queries)
 
 
-def test_graph_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
+def test_structural_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     """Caller-provided env vars must override values loaded from .env files."""
 
     repo_root = Path(__file__).resolve().parents[2]
 
     # Create isolated project tree mirroring the script's expected layout:
-    #   <tmp>/scripts/indexing/build_graph_index.sh
+    #   <tmp>/scripts/indexing/build_structural_index.sh
     #   <tmp>/scripts/indexing/_indexing_lib.sh
     #   <tmp>/scripts/share/_common.sh
     #   <tmp>/scripts/share/_env.sh
     #   <tmp>/deploy/docker-compose.yml
-    #   <tmp>/deploy/graph/
+    #   <tmp>/deploy/structural/
     proj_root = tmp_path
 
     scripts_indexing = proj_root / "scripts" / "indexing"
@@ -172,13 +174,19 @@ def test_graph_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     scripts_share = proj_root / "scripts" / "share"
     scripts_share.mkdir(parents=True)
 
-    deploy_graph = proj_root / "deploy" / "graph"
-    deploy_graph.mkdir(parents=True)
+    deploy_structural = proj_root / "deploy" / "structural"
+    deploy_structural.mkdir(parents=True)
     (proj_root / "deploy" / "docker-compose.yml").write_text("services: {}\n")
 
     for src, dst in [
-        (repo_root / "scripts" / "indexing" / "build_graph_index.sh", scripts_indexing / "build_graph_index.sh"),
-        (repo_root / "scripts" / "indexing" / "_indexing_lib.sh", scripts_indexing / "_indexing_lib.sh"),
+        (
+            repo_root / "scripts" / "indexing" / "build_structural_index.sh",
+            scripts_indexing / "build_structural_index.sh",
+        ),
+        (
+            repo_root / "scripts" / "indexing" / "_indexing_lib.sh",
+            scripts_indexing / "_indexing_lib.sh",
+        ),
         (repo_root / "scripts" / "share" / "_common.sh", scripts_share / "_common.sh"),
         (repo_root / "scripts" / "share" / "_env.sh", scripts_share / "_env.sh"),
     ]:
@@ -188,11 +196,11 @@ def test_graph_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     # Conflicting values in .env files — must NOT win over caller env.
     (proj_root / ".env").write_text(
         "AOSP_SOURCE_ROOT=/from_root_env\n"
-        "GRAPH_NEO4J_URI=bolt://root-env:7687\n"
+        "STRUCTURAL_NEO4J_URI=bolt://root-env:7687\n"
     )
-    (deploy_graph / ".env").write_text(
-        "AOSP_SOURCE_ROOT=/from_graph_env\n"
-        "GRAPH_NEO4J_URI=bolt://graph-env:7687\n"
+    (deploy_structural / ".env").write_text(
+        "AOSP_SOURCE_ROOT=/from_structural_env\n"
+        "STRUCTURAL_NEO4J_URI=bolt://structural-env:7687\n"
     )
 
     # Fake docker that prints received env vars and passed args then exits 0.
@@ -203,7 +211,7 @@ def test_graph_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'echo "DOCKER_ENV:AOSP_SOURCE_ROOT=${AOSP_SOURCE_ROOT:-}"\n'
-        'echo "DOCKER_ENV:GRAPH_NEO4J_URI=${GRAPH_NEO4J_URI:-}"\n'
+        'echo "DOCKER_ENV:STRUCTURAL_NEO4J_URI=${STRUCTURAL_NEO4J_URI:-}"\n'
         'for arg in "$@"; do echo "DOCKER_ARG:$arg"; done\n'
     )
     fake_docker.chmod(fake_docker.stat().st_mode | stat.S_IXUSR)
@@ -215,12 +223,12 @@ def test_graph_wrapper_preserves_caller_env_vars(tmp_path: Path) -> None:
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
     env["AOSP_SOURCE_ROOT"] = str(caller_root)
-    env["GRAPH_NEO4J_URI"] = "bolt://caller:7687"
+    env["STRUCTURAL_NEO4J_URI"] = "bolt://caller:7687"
 
     proc = subprocess.run(
         [
             "bash",
-            str(scripts_indexing / "build_graph_index.sh"),
+            str(scripts_indexing / "build_structural_index.sh"),
             "--source-root",
             str(source_dir),
             "--repo-name",

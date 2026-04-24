@@ -1,5 +1,5 @@
 # Repo-root .dockerignore — keep indexer build contexts slim
-# The build context for dense/graph indexers is the repo root (..).
+# The build context for dense/structural indexers is the repo root (..).
 # Exclude everything that is not scripts/ or src/ to avoid bloating images
 # or accidentally pulling AOSP source symlinks placed at the repo root.
 
@@ -35,7 +35,7 @@ tests/
 
 # Deploy stack working data (compose volumes)
 deploy/dense/data/
-deploy/graph/data/
+deploy/structural/data/
 
 # Docs that waste context
 *.md

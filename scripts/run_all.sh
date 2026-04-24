@@ -5,7 +5,7 @@
 #  启动顺序：
 #    1. zoekt-webserver（索引服务）
 #    2. Dense 检索栈（DENSE_ENABLED=true 时）
-#    3. Neo4j 图谱（GRAPH_ENABLED=true 时）
+#    3. Neo4j 结构化索引（STRUCTURAL_ENABLED=true 时）
 #    4. SourcePilot（搜索引擎 API，Docker）
 #    5. MCP Server（协议代理，Docker）
 #    6. sp-cockpit（审计面板，Docker）
@@ -68,7 +68,7 @@ infra_start_zoekt
 infra_start_dense
 
 # ── 3. 启动 Neo4j ────────────────────────────────────
-infra_start_graph
+infra_start_structural
 
 # ── 4. 启动 SourcePilot ──────────────────────────────
 infra_start_sourcepilot
@@ -92,7 +92,7 @@ fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
 echo "    Dense 检索栈     (Docker)       (Milvus :19530)" >&2
 fi
-if [ "${GRAPH_ENABLED:-false}" = "true" ]; then
+if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
 echo "    Neo4j            (Docker)       (bolt://localhost:7687)" >&2
 fi
 echo "    SourcePilot      (Docker)       (http://localhost:9000)" >&2

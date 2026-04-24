@@ -13,7 +13,7 @@
 #    ./restart.sh --only av            # 只重启 sp-cockpit
 #    ./restart.sh --only sourcepilot   # 重启 SourcePilot 全栈（不含 MCP）
 #    ./restart.sh --only dense         # 重启 Dense 检索栈（docker compose）
-#    ./restart.sh --only graph         # 重启 Neo4j（docker compose）
+#    ./restart.sh --only structural    # 重启 Neo4j（docker compose）
 #    ./restart.sh --stop               # 只停服务，不重启
 # ──────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ case "$ONLY" in
         info "Dense 检索栈已重启"
         exit 0
         ;;
-    graph)
+    structural)
         info "重启 Neo4j..."
         docker compose -f "$COMPOSE_FILE" restart neo4j
         info "Neo4j 已重启"
@@ -125,7 +125,7 @@ case "$ONLY" in
         fi
         ;;
     *)
-        die "--only 只支持: sp | mcp | av | sourcepilot | dense | graph"
+        die "--only 只支持: sp | mcp | av | sourcepilot | dense | structural"
         ;;
 esac
 

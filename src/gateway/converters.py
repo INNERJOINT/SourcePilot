@@ -1,8 +1,8 @@
 """Result format converters for cross-backend compatibility."""
 
 
-def graph_result_to_dict(hit: dict) -> dict:
-    """Graph 检索 hit 转换为 RRF dict 格式。
+def structural_result_to_dict(hit: dict) -> dict:
+    """Structural 检索 hit 转换为 RRF dict 格式。
 
     使用子文件粒度 (repo/path:start-end) 避免与 Zoekt/Dense 同文件 chunk dedup 折叠。
     """
@@ -20,7 +20,7 @@ def graph_result_to_dict(hit: dict) -> dict:
             "path": path,
             "start_line": start,
             "end_line": end,
-            "source": "graph",
+            "source": "structural",
         },
     }
 

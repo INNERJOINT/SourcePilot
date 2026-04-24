@@ -1,5 +1,5 @@
 """
-GraphAdapter — Neo4j 图谱检索适配器（完整实现）
+StructuralAdapter — Neo4j 结构化检索适配器（完整实现）
 
 封装 Neo4j 异步驱动，实现 SearchAdapter 接口。
 neo4j 驱动采用懒加载，仅在实际调用时导入，避免未安装时启动失败。
@@ -15,32 +15,32 @@ from adapters.base import (
     SearchAdapter,
     SearchItem,
 )
-from adapters.graph_traversal import (
-    compute_graph_score,
+from adapters.structural_traversal import (
+    compute_structural_score,
     expand_neighbors,
     extract_query_entities,
     format_hit,
     fulltext_search_nodes,
 )
 from config import (
-    GRAPH_LANE_TIMEOUT_MS,
-    GRAPH_NEO4J_PASSWORD,
-    GRAPH_NEO4J_URI,
-    GRAPH_NEO4J_USER,
+    STRUCTURAL_LANE_TIMEOUT_MS,
+    STRUCTURAL_NEO4J_PASSWORD,
+    STRUCTURAL_NEO4J_URI,
+    STRUCTURAL_NEO4J_USER,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class GraphAdapter(SearchAdapter):
-    """Neo4j 图谱检索适配器"""
+class StructuralAdapter(SearchAdapter):
+    """Neo4j 结构化检索适配器"""
 
     def __init__(
         self,
-        neo4j_uri: str = GRAPH_NEO4J_URI,
-        neo4j_user: str = GRAPH_NEO4J_USER,
-        neo4j_password: str = GRAPH_NEO4J_PASSWORD,
-        lane_timeout_ms: int = GRAPH_LANE_TIMEOUT_MS,
+        neo4j_uri: str = STRUCTURAL_NEO4J_URI,
+        neo4j_user: str = STRUCTURAL_NEO4J_USER,
+        neo4j_password: str = STRUCTURAL_NEO4J_PASSWORD,
+        lane_timeout_ms: int = STRUCTURAL_LANE_TIMEOUT_MS,
     ):
         self._neo4j_uri = neo4j_uri
         self._neo4j_user = neo4j_user
@@ -65,19 +65,19 @@ class GraphAdapter(SearchAdapter):
 
     @property
     def backend_name(self) -> str:
-        return "graph"
+        return "structural"
 
     @property
     def supported_content_types(self) -> list[ContentType]:
         return [ContentType.CODE]
 
     async def search(self, query: BackendQuery) -> BackendResponse:
-        """执行图谱检索，委托给 search_by_graph()，统一封装计时和错误处理。"""
+        """执行结构化检索，委托给 search_by_structural()，统一封装计时和错误处理。"""
         start = time.perf_counter()
         try:
             top_k = query.options.max_results
             repos: list[str] | None = query.backend_specific.get("repos")
-            hits = await self.search_by_graph(
+            hits = await self.search_by_structural(
                 query=query.raw_query,
                 top_k=top_k,
                 repos=repos,
@@ -86,8 +86,8 @@ class GraphAdapter(SearchAdapter):
             latency_ms = (time.perf_counter() - start) * 1000
             items = [
                 SearchItem(
-                    id=f"graph:{hit['repo']}/{hit['path']}:{hit.get('start_line', 0)}",
-                    source="graph",
+                    id=f"structural:{hit['repo']}/{hit['path']}:{hit.get('start_line', 0)}",
+                    source="structural",
                     content_type=ContentType.CODE,
                     title=f"{hit['repo']}/{hit['path']}",
                     summary=hit.get("content", "")[:200],
@@ -104,7 +104,7 @@ class GraphAdapter(SearchAdapter):
                 for hit in hits
             ]
             return BackendResponse(
-                backend="graph",
+                backend="structural",
                 status="ok",
                 latency_ms=latency_ms,
                 total_hits=len(items),
@@ -112,9 +112,9 @@ class GraphAdapter(SearchAdapter):
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start) * 1000
-            logger.warning("graph search 失败: %s", exc)
+            logger.warning("structural search 失败: %s", exc)
             return BackendResponse(
-                backend="graph",
+                backend="structural",
                 status="error",
                 latency_ms=latency_ms,
                 total_hits=0,
@@ -122,20 +122,20 @@ class GraphAdapter(SearchAdapter):
                 error_detail=str(exc),
             )
 
-    async def search_by_graph(
+    async def search_by_structural(
         self,
         query: str,
         top_k: int = 10,
         repos: list[str] | None = None,
         project: str | None = None,
     ) -> list[dict]:
-        """基于图谱的关系检索。
+        """基于结构化索引的关系检索。
 
         流程：
         1. 从查询字符串提取实体词元
         2. 全文检索匹配节点
         3. 从匹配节点扩展邻居 File 节点
-        4. 计算图谱得分，返回 top_k 结果
+        4. 计算结构化得分，返回 top_k 结果
         """
         terms = extract_query_entities(query)
         if not terms:
@@ -173,8 +173,8 @@ class GraphAdapter(SearchAdapter):
                 if file_repo not in repos:
                     continue
 
-            # 计算图谱得分
-            score = compute_graph_score(
+            # 计算结构化得分
+            score = compute_structural_score(
                 path_length=path_length,
                 match_count=len(anchor_nids),
                 max_match_count=max_match_count,
@@ -191,7 +191,7 @@ class GraphAdapter(SearchAdapter):
     async def get_content(self, item_id: str) -> dict:
         """不支持：内容获取由 gateway.get_file_content() + ZoektAdapter 统一处理。"""
         raise NotImplementedError(
-            "GraphAdapter 不支持 get_content()，"
+            "StructuralAdapter 不支持 get_content()，"
             "请通过 gateway.get_file_content() 获取文件内容（委托给 ZoektAdapter）"
         )
 
@@ -208,5 +208,5 @@ class GraphAdapter(SearchAdapter):
                 has_indexes = "symbol_name_idx" in index_names or "doc_entity_idx" in index_names
                 return has_indexes
         except Exception as exc:
-            logger.debug("graph health_check 失败: %s", exc)
+            logger.debug("structural health_check 失败: %s", exc)
             return False

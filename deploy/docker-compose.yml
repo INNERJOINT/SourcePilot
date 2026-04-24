@@ -1,4 +1,4 @@
-# Merged deploy compose — replaces dense-deploy/, graph-deploy/, zoekt-deploy/.
+# Merged deploy compose — replaces dense-deploy/, structural-deploy/, zoekt-deploy/.
 # Invocation:
 #   docker compose -f deploy/docker-compose.yml up -d           # all non-indexer services
 #   docker compose -f deploy/docker-compose.yml --profile indexer run --rm dense-indexer ...
@@ -75,10 +75,10 @@ services:
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
       DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
-      GRAPH_ENABLED: ${GRAPH_ENABLED:-false}
-      GRAPH_NEO4J_URI: bolt://neo4j:7687
-      GRAPH_NEO4J_USER: ${GRAPH_NEO4J_USER:-neo4j}
-      GRAPH_NEO4J_PASSWORD: ${GRAPH_NEO4J_PASSWORD:-sourcepilot}
+      STRUCTURAL_ENABLED: ${STRUCTURAL_ENABLED:-false}
+      STRUCTURAL_NEO4J_URI: bolt://neo4j:7687
+      STRUCTURAL_NEO4J_USER: ${STRUCTURAL_NEO4J_USER:-neo4j}
+      STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
     volumes:
       - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log
     ports:
@@ -220,9 +220,9 @@ services:
     networks:
       - sourcepilot-net
 
-  # ── Neo4j (graph lane) ───────────────────────────────────────────────
+  # ── Neo4j (structural lane) ───────────────────────────────────────────────
   # Now joins sourcepilot-net (was previously on its own default bridge in
-  # graph-deploy/docker-compose.yml). See deploy/README.md ADR #4.
+  # structural-deploy/docker-compose.yml). See deploy/README.md ADR #4.
   neo4j:
     image: neo4j:5-community
     container_name: sourcepilot-neo4j
@@ -250,19 +250,19 @@ services:
     networks:
       - sourcepilot-net
 
-  graph-indexer:
+  structural-indexer:
     build:
       context: ..
-      dockerfile: deploy/graph/indexer/Dockerfile
+      dockerfile: deploy/structural/indexer/Dockerfile
     profiles: ["indexer"]
     restart: "no"
     depends_on:
       neo4j:
         condition: service_healthy
     environment:
-      GRAPH_NEO4J_URI: bolt://neo4j:7687
-      GRAPH_NEO4J_USER: ${GRAPH_NEO4J_USER:-neo4j}
-      GRAPH_NEO4J_PASSWORD: ${GRAPH_NEO4J_PASSWORD:-sourcepilot}
+      STRUCTURAL_NEO4J_URI: bolt://neo4j:7687
+      STRUCTURAL_NEO4J_USER: ${STRUCTURAL_NEO4J_USER:-neo4j}
+      STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
     volumes:
       - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
       - ../../config:/config:ro
