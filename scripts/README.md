@@ -65,6 +65,56 @@ scripts/
 | `verify.sh` | Unified verification (`structural-audit` / `indexer-containers`) |
 | `eval_hybrid.py` | Hybrid search evaluation (Python) |
 
+## Sparse Index (Zoekt via Docker)
+
+For AOSP projects managed by the `repo` tool, `reindex_docker.sh` builds Zoekt shards by iterating every sub-project in `.repo/project.list` and running `zoekt-git-index` inside a Docker container.
+
+### Usage
+
+```bash
+# Index a single AOSP project (defined in config/projects.yaml)
+scripts/indexing/sparse/reindex_docker.sh --project t2
+
+# Index all configured projects
+scripts/indexing/sparse/reindex_docker.sh --all
+
+# Increase parallelism (default 4 concurrent containers)
+scripts/indexing/sparse/reindex_docker.sh --project t2 --parallelism 8
+
+# Dry run — print docker commands without executing
+INDEXING_DRY_RUN=1 scripts/indexing/sparse/reindex_docker.sh --project t2
+```
+
+### How it works
+
+1. Reads project config (source root, index dir) from `config/projects.yaml` via `_project_config.py`
+2. Reads `.repo/project.list` — one sub-project path per line (e.g. `alps/frameworks/base`)
+3. For each sub-project, runs a Docker container:
+   ```bash
+   docker run --rm \
+     -v <source_root>:/src:ro \
+     -v <index_dir>:/idx \
+     dify-sparse-index-zoekt:latest \
+     zoekt-git-index -index /idx /src/<sub_path>
+   ```
+4. Skips entries without a valid `.git` directory
+5. Runs up to `--parallelism N` containers concurrently (default 4)
+6. Reports summary: total indexed, failed count, elapsed time
+
+### Environment
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ZOEKT_DOCKER_IMAGE` | `dify-sparse-index-zoekt:latest` | Docker image containing `zoekt-git-index` |
+| `INDEXING_DRY_RUN` | `0` | Set to `1` to print commands without executing |
+| `PROJECTS_CONFIG_PATH` | `config/projects.yaml` | Override project config path |
+
+### Notes
+
+- Re-running overwrites existing shards (full rebuild, no incremental mode)
+- The Docker image is built from `deploy/sparse/zoekt/`
+- Each sub-project produces one or more `.zoekt` shard files in the index directory
+
 ## CI
 
 The `shell-lint` job in `.github/workflows/test.yml` runs `shellcheck -x -S error` and `bash -n` on all scripts.

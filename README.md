@@ -105,7 +105,8 @@ scripts/run_sp_cockpit.sh                                  # sp-cockpit alone
 | | `run_mcp.sh` | Start MCP Server (stdio or Streamable HTTP) |
 | | `run_sp_cockpit.sh` | Start sp-cockpit FastAPI + React SPA (port 9100) |
 | | `_env.sh` | Shared `.env` loader, sourced by all `run_*.sh` scripts |
-| **Indexing** | `reindex.sh` | Trigger Zoekt index rebuild via Docker |
+| **Indexing** | `reindex.sh` | Zoekt index rebuild (single-repo shortcut) |
+| | `sparse/reindex_docker.sh` | Docker-based Zoekt indexing for repo-managed AOSP projects |
 | | `build_dense_index.py` | Build Milvus vector index from local source files |
 | **Testing & Evaluation** | `smoke_queries.sh` | End-to-end smoke test with audit verification |
 | | `test_dense.sh` | Verify dense search pipeline is triggered |
@@ -176,6 +177,36 @@ For full testing documentation, see [docs/testing/README.md](docs/testing/README
 | `SP_COCKPIT_AUDIT_LOG_PATH` | `$PROJ_ROOT/audit.log` | sp-cockpit tails this |
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`.
+
+## Zoekt Indexing (Docker)
+
+For AOSP projects managed by the `repo` tool, use `reindex_docker.sh` to build Zoekt shards via Docker. The script iterates every sub-project listed in `.repo/project.list` and runs `zoekt-git-index` inside a container.
+
+```bash
+# Index all sub-projects for a specific AOSP project (defined in config/projects.yaml)
+scripts/indexing/sparse/reindex_docker.sh --project t2
+
+# Index all configured projects
+scripts/indexing/sparse/reindex_docker.sh --all
+
+# Increase parallelism (default 4 concurrent containers)
+scripts/indexing/sparse/reindex_docker.sh --project t2 --parallelism 8
+
+# Dry run — print docker commands without executing
+INDEXING_DRY_RUN=1 scripts/indexing/sparse/reindex_docker.sh --project t2
+```
+
+Each sub-project is indexed by running:
+
+```bash
+docker run --rm \
+  -v <source_root>:/src:ro \
+  -v <index_dir>:/idx \
+  dify-sparse-index-zoekt:latest \
+  zoekt-git-index -index /idx /src/<sub_project_path>
+```
+
+The source root and index directory are read from `config/projects.yaml` (under `sparse_index`). Override the Docker image with `ZOEKT_DOCKER_IMAGE`.
 
 ## Design notes
 
