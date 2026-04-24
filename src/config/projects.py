@@ -110,6 +110,14 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         zoekt_url = entry.get("zoekt_url", "")
         project_type = entry.get("project_type", "aosp")
 
+        # sparse_index overrides top-level index_dir / zoekt_url
+        sparse_index = entry.get("sparse_index")
+        if isinstance(sparse_index, dict):
+            if sparse_index.get("index_dir"):
+                index_dir = sparse_index["index_dir"]
+            if sparse_index.get("zoekt_url"):
+                zoekt_url = sparse_index["zoekt_url"]
+
         if not zoekt_url and project_type == "aosp":
             raise ValueError(f"Project '{name}' missing 'zoekt_url' in {path}")
 

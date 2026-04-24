@@ -1,5 +1,5 @@
 """
-project_config.py — canonical dense/graph project parser for indexing.
+project_config.py — canonical sparse/dense/graph project parser for indexing.
 
 Config precedence:
   1. --config
@@ -98,6 +98,15 @@ def _parse_backend_section(raw: Any, *, project: str, backend: str) -> dict[str,
             _raise(f"Project {project!r}: {field}.collection_name must be a non-empty string")
         normalized["collection_name"] = collection.strip()
 
+    # Sparse-specific keys
+    if backend == "sparse":
+        for key in ("index_dir", "zoekt_url"):
+            if key in raw:
+                val = raw[key]
+                if not isinstance(val, str):
+                    _raise(f"Project {project!r}: {field}.{key} must be a string")
+                normalized[key] = val
+
     return normalized
 
 
@@ -136,6 +145,17 @@ def _normalize_project(raw: Any) -> dict[str, Any]:
     if not isinstance(top_collection, str) or not top_collection.strip():
         _raise(f"Project {name!r}: collection_name must be a non-empty string")
 
+    sparse_index = _parse_backend_section(
+        raw.get("sparse_index"), project=name, backend="sparse"
+    )
+
+    # sparse_index fields override top-level index_dir / zoekt_url
+    if sparse_index.get("index_dir"):
+        index_dir = sparse_index["index_dir"]
+        _require_abs_path("sparse_index.index_dir", index_dir, project=name)
+    if sparse_index.get("zoekt_url"):
+        zoekt_url = sparse_index["zoekt_url"]
+
     return {
         "name": name,
         "source_root": source_root,
@@ -148,6 +168,7 @@ def _normalize_project(raw: Any) -> dict[str, Any]:
             project=name,
             field="sub_project_globs",
         ),
+        "sparse_index": sparse_index,
         "dense_index": _parse_backend_section(
             raw.get("dense_index"), project=name, backend="dense"
         ),
@@ -334,7 +355,7 @@ def build_backend_config(
     project: str | None = None,
     config_path: str | None = None,
 ) -> dict[str, Any]:
-    if backend not in {"dense", "graph"}:
+    if backend not in {"dense", "graph", "sparse"}:
         _raise(f"Unsupported backend {backend!r}")
 
     projects, resolved = _load_projects_with_source(config_path)
@@ -369,14 +390,14 @@ def build_backend_config(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render dense/graph project config JSON",
+        description="Render sparse/dense/graph project config JSON",
         epilog=(
             "Config precedence: --config > PROJECTS_CONFIG_PATH > config/projects.yaml > "
             "AOSP_SOURCE_ROOT fallback"
         ),
     )
     parser.add_argument("--format", choices=["json"], default="json")
-    parser.add_argument("--backend", choices=["dense", "graph"], required=True)
+    parser.add_argument("--backend", choices=["dense", "graph", "sparse"], required=True)
     parser.add_argument("--project", help="Only emit one project from the resolved config")
     parser.add_argument("--config", help="Path to projects.yaml (highest precedence)")
     return parser.parse_args()

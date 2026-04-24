@@ -80,6 +80,15 @@ def _print_project(entry: dict) -> None:
     repo_path = entry.get("repo_path", "")
     index_dir = entry.get("index_dir", "")
     zoekt_url = entry.get("zoekt_url", "")
+
+    # sparse_index overrides top-level fields
+    sparse_index = entry.get("sparse_index")
+    if isinstance(sparse_index, dict):
+        if sparse_index.get("index_dir"):
+            index_dir = sparse_index["index_dir"]
+        if sparse_index.get("zoekt_url"):
+            zoekt_url = sparse_index["zoekt_url"]
+
     print(f"NAME={_shell_quote(name)}")
     print(f"REPO_PATH={_shell_quote(repo_path)}")
     print(f"INDEX_DIR={_shell_quote(index_dir)}")

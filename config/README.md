@@ -4,9 +4,10 @@ This directory contains the declarative project registry for multi-AOSP indexing
 
 ## Canonical parser
 
-Use `scripts/indexing/project_config.py` for dense and graph scope resolution:
+Use `scripts/indexing/project_config.py` for sparse, dense, and graph scope resolution:
 
 ```bash
+python3 scripts/indexing/project_config.py --format json --backend sparse [--project ace] [--config /path/projects.yaml]
 python3 scripts/indexing/project_config.py --format json --backend dense [--project ace] [--config /path/projects.yaml]
 python3 scripts/indexing/project_config.py --format json --backend graph [--project ace] [--config /path/projects.yaml]
 ```
@@ -29,22 +30,35 @@ Copy `config/projects.yaml.example` to `config/projects.yaml` and edit each proj
 | `name` | Yes | — | Project identifier. Must match `[a-z0-9_]+`. Used as the project key and dense collection suffix. |
 | `source_root` | Yes | — | Absolute path to the AOSP checkout directory. |
 | `repo_path` | No | `source_root/.repo` | Path to the repo metadata directory. |
-| `index_dir` | No | `source_root/.repo/.zoekt` | Path to the Zoekt index directory. |
-| `zoekt_url` | No | `http://localhost:6070` | Zoekt webserver URL. |
+| `index_dir` | No | `source_root/.repo/.zoekt` | Path to the Zoekt index directory. Prefer `sparse_index.index_dir`. |
+| `zoekt_url` | No | `http://localhost:6070` | Zoekt webserver URL. Prefer `sparse_index.zoekt_url`. |
 | `collection_name` | No | `aosp_code_{name}` | Dense fallback collection name. |
 | `sub_project_globs` | No | `[]` | Legacy shared scope. Do not combine with backend-specific non-empty `include` lists. |
+| `sparse_index` | No | `{}` | Sparse (Zoekt) backend override block. |
 | `dense_index` | No | `{}` | Dense backend override block. |
 | `graph_index` | No | `{}` | Graph backend override block. |
 
 ### Backend section schema
 
-Both `dense_index` and `graph_index` accept the same keys:
+All three backend sections (`sparse_index`, `dense_index`, `graph_index`) accept:
 
 | Key | Meaning |
 |-----|---------|
 | `enabled` | Optional boolean. Omitted means `true`. `false` disables that backend for the project. |
 | `include` | Optional list of relative glob patterns under `source_root`. `include: []` disables that backend explicitly. |
-| `collection_name` | Dense only. Overrides the top-level `collection_name` for dense indexing. |
+
+Additionally, `sparse_index` accepts:
+
+| Key | Meaning |
+|-----|---------|
+| `index_dir` | Overrides top-level `index_dir`. Path to Zoekt index directory. |
+| `zoekt_url` | Overrides top-level `zoekt_url`. Zoekt webserver URL. |
+
+And `dense_index` accepts:
+
+| Key | Meaning |
+|-----|---------|
+| `collection_name` | Overrides the top-level `collection_name` for dense indexing. |
 
 Include patterns are validated as relative paths under `source_root`:
 
@@ -81,6 +95,7 @@ Graph indexing stores source identity as `(project, repo, path)`.
 
 ```bash
 # Render backend config JSON
+python3 scripts/indexing/project_config.py --format json --backend sparse
 python3 scripts/indexing/project_config.py --format json --backend dense
 python3 scripts/indexing/project_config.py --format json --backend graph --project ace
 

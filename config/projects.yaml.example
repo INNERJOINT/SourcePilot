@@ -1,13 +1,20 @@
 # AOSP Project Registry
 # Copy this file to config/projects.yaml and edit paths.
-# Dense/graph scope is parsed by scripts/indexing/project_config.py.
+# Backend scope is parsed by scripts/indexing/project_config.py.
 projects:
   - name: ace
     source_root: /mnt/code/ACE
     repo_path: /mnt/code/ACE/.repo
-    index_dir: /mnt/code/ACE/.repo/.zoekt
-    zoekt_url: http://localhost:6070
     collection_name: aosp_code_ace
+
+    # Sparse (Zoekt) backend configuration.
+    # Precedence: sparse_index.index_dir > top-level index_dir > default
+    # Precedence: sparse_index.zoekt_url > top-level zoekt_url > default
+    sparse_index:
+      index_dir: /mnt/code/ACE/.repo/.zoekt
+      zoekt_url: http://localhost:6070
+      include:
+        - frameworks/base
 
     # Dense collection precedence:
     #   1. dense_index.collection_name
@@ -27,7 +34,7 @@ projects:
       include:
         - frameworks/base
 
-    # Legacy shared scope example (do not combine with dense_index.include/graph_index.include):
+    # Legacy shared scope example (do not combine with backend-specific include):
     # sub_project_globs:
     #   - frameworks/base
 
