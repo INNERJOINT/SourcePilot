@@ -31,27 +31,67 @@ def connect(db_path: "Path | str | None" = None) -> sqlite3.Connection:
     return conn
 
 
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone()
+    return row is not None
+
+
 def bootstrap(conn: sqlite3.Connection) -> None:
     """Create schema idempotently, run migrations, and stamp schema_version."""
+    # Recover from a previously-interrupted v1→v2 migration. Two failure modes:
+    #   A) crashed after CREATE index_repos_new but before DROP index_repos:
+    #      both tables exist → drop the stale staging table and retry.
+    #   B) crashed after DROP index_repos but before RENAME:
+    #      only index_repos_new exists → promote it via RENAME, then continue.
+    if _table_exists(conn, "index_repos_new"):
+        if _table_exists(conn, "index_repos"):
+            conn.execute("DROP TABLE index_repos_new")
+        else:
+            conn.execute("ALTER TABLE index_repos_new RENAME TO index_repos")
+        conn.commit()
+
     sql = SCHEMA_FILE.read_text(encoding="utf-8")
     conn.executescript(sql)
-    # Migration v1 → v2: add project column and update UNIQUE constraint
+    # Migration v1 → v2: add project column and update UNIQUE constraint.
+    # Wrap in a transaction so partial failures don't leave staging tables behind.
     cols = [row[1] for row in conn.execute("PRAGMA table_info(index_repos)").fetchall()]
     if "project" not in cols:
-        conn.executescript("""
-            CREATE TABLE index_repos_new (
-              id          INTEGER PRIMARY KEY AUTOINCREMENT,
-              repo_path   TEXT    NOT NULL,
-              project     TEXT,
-              created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
-              archived_at INTEGER,
-              UNIQUE(repo_path, project)
-            );
-            INSERT INTO index_repos_new(id, repo_path, created_at, archived_at)
-                SELECT id, repo_path, created_at, archived_at FROM index_repos;
-            DROP TABLE index_repos;
-            ALTER TABLE index_repos_new RENAME TO index_repos;
-        """)
+        # SQLite "12-step" parent-table rebuild: index_jobs.repo_id REFERENCES
+        # index_repos(id), so DROP-ing the old parent fires FK constraint
+        # checks on the children. Disable FKs around the swap.
+        # NOTE: PRAGMA foreign_keys is a no-op inside a transaction, so it
+        # must be issued before BEGIN. We are not inside one here (callers
+        # use connect() which leaves autocommit on for PRAGMAs).
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            conn.execute("BEGIN")
+            conn.executescript("""
+                CREATE TABLE index_repos_new (
+                  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                  repo_path   TEXT    NOT NULL,
+                  project     TEXT,
+                  created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+                  archived_at INTEGER,
+                  UNIQUE(repo_path, project)
+                );
+                INSERT INTO index_repos_new(id, repo_path, created_at, archived_at)
+                    SELECT id, repo_path, created_at, archived_at FROM index_repos;
+                DROP TABLE index_repos;
+                ALTER TABLE index_repos_new RENAME TO index_repos;
+            """)
+            # Verify FK integrity before committing — surfaces dangling refs
+            # rather than silently re-enabling FKs over corrupted data.
+            bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if bad:
+                raise sqlite3.IntegrityError(f"foreign_key_check failed: {bad}")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            conn.execute("PRAGMA foreign_keys=ON")
+            raise
+        conn.execute("PRAGMA foreign_keys=ON")
     set_meta(conn, "schema_version", CURRENT_SCHEMA_VERSION)
     conn.commit()
 
