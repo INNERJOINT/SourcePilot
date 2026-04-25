@@ -123,12 +123,13 @@ class TestFormatResults:
 # ─── list_tools 测试 ────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_list_tools_returns_six():
-    """list_tools 应返回 6 个工具"""
+async def test_list_tools_returns_seven():
+    """list_tools 应返回 7 个工具（6 个搜索 + list_projects）"""
     tools = await list_tools()
-    assert len(tools) == 6
+    assert len(tools) == 7
     names = {t.name for t in tools}
     assert names == {
+        "list_projects",
         "search_code",
         "search_symbol",
         "search_file",

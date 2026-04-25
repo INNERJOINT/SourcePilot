@@ -79,6 +79,7 @@ shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
 - **Non-blocking audit**: `QueueHandler` / `QueueListener`, started in the Starlette lifespan. Writes JSONL to `audit.log`.
 - **`X-Trace-Id`** header propagates across services.
 - **NL cache**: LRU + `concept_map` in `src/gateway/nl/cache.py`.
+- **Project routing**: `config/projects.yaml` defines one or more AOSP checkouts (each with its own Zoekt index and dense collection). All gateway/HTTP/MCP entry points accept a `project` field; in multi-project deployments it is **required** (server returns 400 with `{"error": "project required in multi-project deployment", "available": [...]}`), in single-project deployments it is optional. The MCP layer exposes a `list_projects` tool for client-side discovery.
 
 ## Scripts Layout
 

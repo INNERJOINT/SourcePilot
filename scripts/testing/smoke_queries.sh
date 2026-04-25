@@ -23,6 +23,9 @@ _common_parse_help "$@"
 SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
 TIMEOUT="${TIMEOUT:-15}"
 AUDIT_DB="${AUDIT_DB:-sp-cockpit/data/audit.db}"
+# Multi-project deployments require explicit project on every call. Single-project
+# deployments accept the field with no effect, so it's safe to always send it.
+AOSP_PROJECT="${AOSP_PROJECT:-ace}"
 RESP_FILE="$(mktemp -t smoke_resp.XXXXXX.json)"
 trap 'rm -f "$RESP_FILE"' EXIT
 
@@ -141,14 +144,14 @@ run_case() {
 # ─── 用例清单 ───────────────────────────────────────
 echo "=== SourcePilot smoke @ $SOURCEPILOT_URL ==="
 
-run_case zoekt_keyword    /api/search           '{"query":"binder_open","top_k":5}'                                                                   no  list
-run_case nl_inscope_dense /api/search           '{"query":"binder 驱动的权限校验机制","top_k":5}'                                                      no  list
-run_case nl_outscope_dense /api/search          '{"query":"Launcher3 桌面布局加载流程","top_k":5}'                                                     no  list
-run_case symbol           /api/search_symbol    '{"symbol":"startBootstrapServices","top_k":3}'                                                        no  list
-run_case file             /api/search_file      '{"path":"AndroidManifest.xml","top_k":3}'                                                             no  list
-run_case regex            /api/search_regex     '{"pattern":"binder_[a-z_]+","top_k":3}'                                                               no  list
-run_case list_repos       /api/list_repos       '{"query":"","top_k":5}'                                                                               no  list
-run_case get_file         /api/get_file_content '{"repo":"frameworks/base","filepath":"core/java/android/os/Binder.java","start_line":1,"end_line":40}' yes dict
+run_case zoekt_keyword    /api/search           "{\"query\":\"binder_open\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}"                                                                   no  list
+run_case nl_inscope_dense /api/search           "{\"query\":\"binder 驱动的权限校验机制\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}"                                                      no  list
+run_case nl_outscope_dense /api/search          "{\"query\":\"Launcher3 桌面布局加载流程\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}"                                                     no  list
+run_case symbol           /api/search_symbol    "{\"symbol\":\"startBootstrapServices\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}"                                                        no  list
+run_case file             /api/search_file      "{\"path\":\"AndroidManifest.xml\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}"                                                             no  list
+run_case regex            /api/search_regex     "{\"pattern\":\"binder_[a-z_]+\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}"                                                               no  list
+run_case list_repos       /api/list_repos       "{\"query\":\"\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}"                                                                               no  list
+run_case get_file         /api/get_file_content "{\"repo\":\"frameworks/base\",\"filepath\":\"core/java/android/os/Binder.java\",\"start_line\":1,\"end_line\":40,\"project\":\"$AOSP_PROJECT\"}" yes dict
 
 # ─── 汇总 ─────────────────────────────────────────
 echo "---"

@@ -14,7 +14,14 @@ import uuid
 
 import httpx
 from mcp.server import Server
-from mcp.types import Tool, TextContent, Resource, ResourceTemplate, ReadResourceResult, TextResourceContents
+from mcp.types import (
+    ReadResourceResult,
+    Resource,
+    ResourceTemplate,
+    TextContent,
+    TextResourceContents,
+    Tool,
+)
 from pydantic import AnyUrl
 
 # 日志配置（MCP stdio 模式下日志必须输出到 stderr）
@@ -30,9 +37,50 @@ SOURCEPILOT_URL = os.getenv("SOURCEPILOT_URL", "http://localhost:9000")
 # module-level httpx.AsyncClient singleton
 _http_client = httpx.AsyncClient(timeout=30.0)
 
+# ─── 多项目探测状态 ────────────────────────────────────
+_multi_project: bool | None = None
+_project_names: list[str] = []
+
+# ─── 公共属性定义 ──────────────────────────────────────
+_PROJECT_PROP = {
+    "type": "string",
+    "description": "可选，项目名称（如 aosp-14, aosp-15）。不指定则使用默认项目。",
+}
+
 # ─── 创建 MCP Server ──────────────────────────────────
 
 server = Server("aosp-code-search")
+
+
+async def _probe_projects() -> None:
+    """探测 SourcePilot /api/projects，更新多项目状态。失败时降级，不抛出。"""
+    global _multi_project, _project_names
+    for attempt in range(2):
+        try:
+            resp = await _http_client.get(
+                f"{SOURCEPILOT_URL}/api/projects",
+                headers={"X-Trace-Id": str(uuid.uuid4())},
+                timeout=2.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # data 预期为 list[dict] 或 dict with "projects" key
+            if isinstance(data, list):
+                projects = data
+            else:
+                projects = data.get("projects", [])
+            _project_names = [p.get("name", "") for p in projects if p.get("name")]
+            _multi_project = len(_project_names) > 1
+            logger.info(
+                "_probe_projects: found %d projects, multi=%s", len(_project_names), _multi_project
+            )
+            return
+        except Exception as exc:
+            if attempt == 0:
+                logger.warning("_probe_projects attempt 1 failed: %s, retrying…", exc)
+            else:
+                logger.warning("_probe_projects failed after 2 attempts: %s", exc)
+    # 保持 _multi_project = None（未探测到）
 
 
 @server.list_resources()
@@ -74,12 +122,12 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
         )
         resp.raise_for_status()
         result = resp.json()
-    except httpx.TimeoutException:
-        raise ValueError(f"SourcePilot unreachable at {SOURCEPILOT_URL}")
-    except httpx.ConnectError:
-        raise ValueError(f"SourcePilot unreachable at {SOURCEPILOT_URL}")
+    except httpx.TimeoutException as exc:
+        raise ValueError(f"SourcePilot unreachable at {SOURCEPILOT_URL}") from exc
+    except httpx.ConnectError as exc:
+        raise ValueError(f"SourcePilot unreachable at {SOURCEPILOT_URL}") from exc
     except httpx.HTTPStatusError as e:
-        raise ValueError(f"SourcePilot error: {e.response.status_code}")
+        raise ValueError(f"SourcePilot error: {e.response.status_code}") from e
 
     content = f"# {repo}/{filepath}  (共 {result['total_lines']} 行)\n\n{result['content']}"
 
@@ -116,6 +164,59 @@ async def list_resource_templates() -> list[ResourceTemplate]:
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """声明可用的工具列表。"""
+    global _multi_project
+    if _multi_project is None:
+        await _probe_projects()
+    if _multi_project is None:
+        logger.warning("list_tools: project probe未完成，使用 optional project 行为")
+
+    # 构造 project 属性描述（多项目时附带可选值列表）
+    if _multi_project and _project_names:
+        names_str = ", ".join(_project_names)
+        project_prop_required = {
+            "type": "string",
+            "description": f"必填，可选值: {names_str}",
+        }
+        project_prop_optional = {
+            "type": "string",
+            "description": f"可选，项目名称。可选值: {names_str}",
+        }
+    elif not _multi_project and _project_names:
+        default_name = _project_names[0]
+        project_prop_required = _PROJECT_PROP
+        project_prop_optional = {
+            "type": "string",
+            "description": f"可选，项目名称（如 aosp-14, aosp-15）。默认: {default_name}",
+        }
+    else:
+        project_prop_required = _PROJECT_PROP
+        project_prop_optional = _PROJECT_PROP
+
+    # 多项目时，搜索类工具 project 字段加入 required
+    search_required_base = ["query"]
+    symbol_required_base = ["symbol"]
+    file_required_base = ["path"]
+    regex_required_base = ["pattern"]
+    list_repos_required_base: list[str] = []
+    get_file_required_base = ["repo", "filepath"]
+
+    if _multi_project:
+        search_required = search_required_base + ["project"]
+        symbol_required = symbol_required_base + ["project"]
+        file_required = file_required_base + ["project"]
+        regex_required = regex_required_base + ["project"]
+        list_repos_required = list_repos_required_base + ["project"]
+        get_file_required = get_file_required_base + ["project"]
+        project_prop = project_prop_required
+    else:
+        search_required = search_required_base
+        symbol_required = symbol_required_base
+        file_required = file_required_base
+        regex_required = regex_required_base
+        list_repos_required = list_repos_required_base
+        get_file_required = get_file_required_base
+        project_prop = project_prop_optional
+
     common_filter_props = {
         "lang": {
             "type": "string",
@@ -131,13 +232,21 @@ async def list_tools() -> list[Tool]:
             "description": "大小写敏感模式：auto（默认，含大写则敏感）、yes、no",
             "default": "auto",
         },
-        "project": {
-            "type": "string",
-            "description": "可选，项目名称（如 aosp-14, aosp-15）。不指定则使用默认项目。",
-        },
+        "project": project_prop,
     }
 
     return [
+        Tool(
+            name="list_projects",
+            description=(
+                "列出所有可用 AOSP 项目。"
+                "多项目部署时其他工具必须先调用此工具获取 project 名称。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
         Tool(
             name="search_code",
             description=(
@@ -165,7 +274,7 @@ async def list_tools() -> list[Tool]:
                     },
                     **common_filter_props,
                 },
-                "required": ["query"],
+                "required": search_required,
             },
         ),
         Tool(
@@ -195,7 +304,7 @@ async def list_tools() -> list[Tool]:
                     },
                     **common_filter_props,
                 },
-                "required": ["symbol"],
+                "required": symbol_required,
             },
         ),
         Tool(
@@ -211,7 +320,9 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "文件名或路径模式（如 SystemServer.java 或 frameworks/base/）",
+                        "description": (
+                            "文件名或路径模式（如 SystemServer.java 或 frameworks/base/）"
+                        ),
                     },
                     "query": {
                         "type": "string",
@@ -225,7 +336,7 @@ async def list_tools() -> list[Tool]:
                     },
                     **common_filter_props,
                 },
-                "required": ["path"],
+                "required": file_required,
             },
         ),
         Tool(
@@ -253,8 +364,9 @@ async def list_tools() -> list[Tool]:
                         "default": 10,
                     },
                     "lang": common_filter_props["lang"],
+                    "project": project_prop,
                 },
-                "required": ["pattern"],
+                "required": regex_required,
             },
         ),
         Tool(
@@ -277,7 +389,9 @@ async def list_tools() -> list[Tool]:
                         "description": "返回数量上限，默认 50",
                         "default": 50,
                     },
+                    "project": project_prop,
                 },
+                "required": list_repos_required,
             },
         ),
         Tool(
@@ -285,8 +399,11 @@ async def list_tools() -> list[Tool]:
             description=(
                 "读取 AOSP 代码文件的完整内容（或指定行范围）。"
                 "先用 search_file 找到文件的 repo 和 filepath，再用此工具读取完整内容。"
-                "示例: get_file_content(repo='layoutlib', filepath='bridge/src/android/app/Foo.java')"
-                "示例（读取指定行）: get_file_content(repo='frameworks/base', filepath='core/java/android/os/Process.java', start_line=100, end_line=200)"
+                "示例: get_file_content(repo='layoutlib',"
+                " filepath='bridge/src/android/app/Foo.java')"
+                "示例（读取指定行）: get_file_content(repo='frameworks/base',"
+                " filepath='core/java/android/os/Process.java',"
+                " start_line=100, end_line=200)"
             ),
             inputSchema={
                 "type": "object",
@@ -308,8 +425,9 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "结束行号（默认读取到文件末尾）",
                     },
+                    "project": project_prop,
                 },
-                "required": ["repo", "filepath"],
+                "required": get_file_required,
             },
         ),
     ]
@@ -318,11 +436,17 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """处理工具调用。"""
+    global _multi_project
+    if _multi_project is None:
+        await _probe_projects()
+
     logger.info("Tool call: %s(%s)", name, json.dumps(arguments, ensure_ascii=False))
 
     trace_id = str(uuid.uuid4())
     try:
-        if name == "search_code":
+        if name == "list_projects":
+            result = await _handle_list_projects(arguments, trace_id)
+        elif name == "search_code":
             result = await _handle_search_code(arguments, trace_id)
         elif name == "search_symbol":
             result = await _handle_search_symbol(arguments, trace_id)
@@ -355,15 +479,34 @@ async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
         )
         resp.raise_for_status()
         return resp.json()
-    except (httpx.TimeoutException, httpx.ConnectError):
-        raise RuntimeError(f"SourcePilot unreachable at {SOURCEPILOT_URL}")
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise RuntimeError(f"SourcePilot unreachable at {SOURCEPILOT_URL}") from exc
     except httpx.HTTPStatusError as e:
         # Try to extract error message from SourcePilot JSON response
         try:
             detail = e.response.json().get("error", str(e.response.status_code))
         except Exception:
             detail = str(e.response.status_code)
-        raise RuntimeError(f"SourcePilot error ({e.response.status_code}): {detail}")
+        raise RuntimeError(f"SourcePilot error ({e.response.status_code}): {detail}") from e
+
+
+async def _get(endpoint: str, trace_id: str) -> dict | list:
+    """向 SourcePilot 发送 GET 请求，统一处理连接错误。"""
+    try:
+        resp = await _http_client.get(
+            f"{SOURCEPILOT_URL}{endpoint}",
+            headers={"X-Trace-Id": trace_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise RuntimeError(f"SourcePilot unreachable at {SOURCEPILOT_URL}") from exc
+    except httpx.HTTPStatusError as e:
+        try:
+            detail = e.response.json().get("error", str(e.response.status_code))
+        except Exception:
+            detail = str(e.response.status_code)
+        raise RuntimeError(f"SourcePilot error ({e.response.status_code}): {detail}") from e
 
 
 def _extract_filters(args: dict) -> dict:
@@ -377,6 +520,35 @@ def _extract_filters(args: dict) -> dict:
     if project:
         result["project"] = project
     return result
+
+
+async def _handle_list_projects(args: dict, trace_id: str) -> list[TextContent]:  # noqa: ARG001
+    try:
+        data = await _get("/api/projects", trace_id)
+    except RuntimeError as e:
+        return [TextContent(type="text", text=f"无法获取项目列表: {e}")]
+
+    if isinstance(data, list):
+        projects = data
+    else:
+        projects = data.get("projects", [])
+
+    if not projects:
+        return [TextContent(type="text", text="未找到任何项目。")]
+
+    lines = [f"找到 {len(projects)} 个可用项目：\n"]
+    lines.append(f"{'name':<20} {'source_root':<40} {'zoekt_url'}")
+    lines.append("-" * 80)
+    for p in projects:
+        name = p.get("name", "")
+        source_root = p.get("source_root", "")
+        zoekt_url = p.get("zoekt_url", "")
+        lines.append(f"{name:<20} {source_root:<40} {zoekt_url}")
+
+    if len(projects) > 1:
+        lines.append("\n注意：多项目部署时，其他工具必须传入 project 字段以指定目标项目。")
+
+    return [TextContent(type="text", text="\n".join(lines))]
 
 
 async def _handle_search_code(args: dict, trace_id: str) -> list[TextContent]:

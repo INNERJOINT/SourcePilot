@@ -18,7 +18,7 @@ AI tools (Claude Code / Cursor / ...)
 |                           auth                |
 +----------------------------------------------+
 |  entry/handlers.py                            |
-|  ├── MCP Server + 6 tool definitions          |
+|  ├── MCP Server + 7 tool definitions          |
 |  ├── aosp:// resource URI reads               |
 |  ├── result formatting (LLM-friendly text)    |
 |  └── httpx client → SourcePilot API           |
@@ -82,7 +82,15 @@ When `MCP_AUTH_TOKEN` is set, clients must include `Authorization: Bearer <token
 
 ## MCP Tools
 
-Six search tools are exposed:
+Seven tools are exposed (one for project discovery + six for search):
+
+### list_projects
+
+List configured AOSP projects (returns each project's `name`, `source_root`, `repo_path`, `index_dir`, `zoekt_url`). In multi-project deployments you must pass the chosen `project` name to every search tool below; in single-project deployments the field is optional.
+
+```
+list_projects()
+```
 
 ### search_code
 
@@ -147,3 +155,22 @@ aosp://frameworks/base/core/java/android/os/Process.java
 ```
 
 The URI template is advertised via `list_resource_templates`, so AI tools can discover it automatically.
+
+## Multi-Project Workflow
+
+Multiple AOSP checkouts can be configured side-by-side in `config/projects.yaml`. Each project has its own Zoekt index and (optionally) its own dense vector collection.
+
+- **Single-project deployment** — the `project` field is optional on every tool call; calls without it route to the only configured project.
+- **Multi-project deployment** — the `project` field is **required** on every search tool call. SourcePilot returns HTTP 400 with `{"error": "project required in multi-project deployment", "available": [...]}` when it is omitted.
+
+Recommended workflow for AI clients:
+
+1. Call `list_projects` once to discover the available project names.
+2. Pick the project the user is working on (e.g. `ace`, `t2`).
+3. Pass `project="<name>"` on every subsequent `search_code` / `search_symbol` / `search_file` / `search_regex` / `list_repos` / `get_file_content` call.
+
+```
+list_projects()
+search_code(query="binder_open", project="ace")
+get_file_content(repo="frameworks/base", filepath="core/java/android/os/Binder.java", project="ace")
+```

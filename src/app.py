@@ -6,7 +6,6 @@ Exposes gateway functions as REST endpoints over Starlette/uvicorn.
 
 import asyncio
 import contextlib
-import json
 import logging
 import sys
 
@@ -16,10 +15,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from config import list_project_names
 from gateway import gateway
 from observability.audit import (
-    audit_tool_call,
     audit_stats,
+    audit_tool_call,
     new_trace_id,
     setup_audit_logger,
     start_audit_listener,
@@ -44,6 +44,25 @@ def _err(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
 
+def _err_body(status: int, body: dict) -> JSONResponse:
+    return JSONResponse(body, status_code=status)
+
+
+def _resolve_project(body: dict) -> tuple[str | None, JSONResponse | None]:
+    project = body.get("project") or None
+    names = list_project_names()
+    if len(names) > 1:
+        if project is None:
+            return None, _err_body(
+                400, {"error": "project required in multi-project deployment", "available": names}
+            )
+        if project not in names:
+            return None, _err_body(
+                400, {"error": f"unknown project '{project}'", "available": names}
+            )
+    return project, None
+
+
 async def _parse_json(request: Request) -> tuple[dict | None, JSONResponse | None]:
     try:
         body = await request.json()
@@ -66,8 +85,8 @@ def _trace_from_request(request: Request) -> str:
 
 async def health(request: Request) -> JSONResponse:
     import config
-    from config import list_projects, get_project
     from adapters.zoekt import ZoektAdapter
+    from config import list_projects
 
     # Check each project's Zoekt instance
     projects_status = {}
@@ -102,13 +121,16 @@ async def api_search(request: Request) -> JSONResponse:
     if not query:
         return _err(400, "缺少必填参数 query")
 
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
+
     top_k = body.get("top_k", 10)
     score_threshold = body.get("score_threshold", 0.0)
     repos = body.get("repos") or None
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
-    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -154,12 +176,15 @@ async def api_search_symbol(request: Request) -> JSONResponse:
     if not symbol:
         return _err(400, "缺少必填参数 symbol")
 
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
+
     top_k = body.get("top_k", 5)
     repos = body.get("repos") or None
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
-    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -203,12 +228,15 @@ async def api_search_file(request: Request) -> JSONResponse:
     if not path:
         return _err(400, "缺少必填参数 path")
 
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
+
     extra_query = body.get("extra_query", "")
     top_k = body.get("top_k", 5)
     lang = body.get("lang") or None
     branch = body.get("branch") or None
     case_sensitive = body.get("case_sensitive", "auto")
-    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -252,10 +280,13 @@ async def api_search_regex(request: Request) -> JSONResponse:
     if not pattern:
         return _err(400, "缺少必填参数 pattern")
 
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
+
     top_k = body.get("top_k", 10)
     repos = body.get("repos") or None
     lang = body.get("lang") or None
-    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
@@ -293,7 +324,9 @@ async def api_list_repos(request: Request) -> JSONResponse:
 
     query = body.get("query", "")
     top_k = body.get("top_k", 50)
-    project = body.get("project") or None
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
 
     _trace_from_request(request)
     args = {"query": query, "top_k": top_k, "project": project}
@@ -322,9 +355,12 @@ async def api_get_file_content(request: Request) -> JSONResponse:
     if not repo or not filepath:
         return _err(400, "缺少必填参数 repo 或 filepath")
 
+    project, perr = _resolve_project(body)
+    if perr:
+        return perr
+
     start_line = body.get("start_line", 1)
     end_line = body.get("end_line") or None
-    project = body.get("project") or None
 
     _trace_from_request(request)
     args = {
