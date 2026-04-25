@@ -248,13 +248,22 @@ class ZoektAdapter(SearchAdapter):
         Returns:
             dict with keys: content, total_lines, repo, filepath, start_line, end_line
         """
-        params = {"r": repo, "f": filepath}
+        # Anchor repo regex to avoid matching multiple repos with a common prefix
+        # (e.g. "NetworkStack" otherwise also matches "NetworkStackNext"), which
+        # makes Zoekt return 418 "ambiguous result".
+        params = {"r": f"^{re.escape(repo)}$", "f": filepath}
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(f"{self._zoekt_url}/print", params=params)
 
                 if resp.status_code == 418:
+                    body = (resp.text or "").strip()
+                    if body.startswith("ambiguous result"):
+                        raise ValueError(
+                            f"Zoekt 返回歧义结果: repo={repo!r}, filepath={filepath!r}。"
+                            f"原始响应: {body[:200]}"
+                        )
                     raise FileNotFoundError(
                         f"文件未找到: repo={repo!r}, filepath={filepath!r}。"
                         "请用 search_file 工具确认正确的 repo 和文件路径。"
