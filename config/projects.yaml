@@ -1,6 +1,7 @@
 # AOSP Project Registry
 # Copy this file to config/projects.yaml and edit paths.
 # Backend scope is parsed by scripts/indexing/project_config.py.
+
 projects:
   - name: ace
     source_root: /mnt/code/ACE
@@ -28,3 +29,5 @@ projects:
     sparse_index:
       index_dir: /mnt/code/T2/.repo/.zoekt
       zoekt_url: http://localhost:6071
+      manifest_branch: default
+      manifest_file: mtk8788_seewo_t1.xml

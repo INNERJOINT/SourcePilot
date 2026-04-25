@@ -121,6 +121,14 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         if not zoekt_url and project_type == "aosp":
             raise ValueError(f"Project '{name}' missing 'zoekt_url' in {path}")
 
+        # Per-project env override: ZOEKT_URL_<NAME-UPPER> (e.g. ZOEKT_URL_T2)
+        # lets the same projects.yaml work for both bare-process dev (yaml
+        # default = http://localhost:6071) and Docker (compose injects
+        # ZOEKT_URL_T2=http://sparse-index-zoekt-t2:6070).
+        env_override = os.getenv(f"ZOEKT_URL_{name.upper()}")
+        if env_override:
+            zoekt_url = env_override
+
         dense_collection_name = ""
         dense_index = entry.get("dense_index")
         if isinstance(dense_index, dict):

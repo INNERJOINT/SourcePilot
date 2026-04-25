@@ -11,22 +11,46 @@ name: sourcepilot
 
 services:
   # ── Zoekt (search index) ─────────────────────────────────────────────
-  # Default webserver — serves the first/only project on port 6070.
-  # ZOEKT_INDEX_PATH is bound from config/projects.yaml[0].index_dir.
+  # One zoekt-webserver per project (option B: full per-project isolation).
+  # Each service mounts that project's index dir read-only and exposes a
+  # distinct host port. SourcePilot routes per-project queries via
+  # ZOEKT_URL_<NAME> env vars (see sourcepilot-gateway block).
   #
-  # To add a second project, duplicate this service block and change:
-  #   - Service name:    sparse-index-zoekt-<project-name>
-  #   - Volume source:   ZOEKT_INDEX_PATH_2 (point to second project's index dir)
-  #   - Port mapping:    ZOEKT_PORT_2:6071  (pick a unique host port)
-  #   - Healthcheck URL: http://localhost:6071/
-  # Then add a ZOEKT_URL_<project> entry in .env pointing to that port,
-  # and add a matching entry in config/projects.yaml.
+  # Adding a new project:
+  #   1. Append a new entry to config/projects.yaml with a unique
+  #      sparse_index.zoekt_url (e.g. http://localhost:6072).
+  #   2. Duplicate the sparse-index-zoekt-<name> block below — change the
+  #      service name, the volume source, and the host port.
+  #   3. Add a ZOEKT_URL_<NAME> entry under sourcepilot-gateway.environment
+  #      pointing at the new container DNS name.
+  #   4. Add the new service to sourcepilot-gateway.depends_on.
   sparse-index-zoekt:
     build: ./sparse/zoekt
     volumes:
       - ${ZOEKT_INDEX_PATH:-/mnt/code/ACE/.repo/.zoekt}:/data/index:ro
     ports:
       - "${ZOEKT_PORT:-6070}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  sparse-index-zoekt-t2:
+    build: ./sparse/zoekt
+    volumes:
+      - ${ZOEKT_INDEX_PATH_T2:-/mnt/code/T2/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT_T2:-6071}:6070"
     networks:
       - sourcepilot-net
     healthcheck:
@@ -63,6 +87,9 @@ services:
         INSTALL_DENSE: "${GATEWAY_INSTALL_DENSE:-false}"
     environment:
       ZOEKT_URL: ${ZOEKT_URL:-http://sparse-index-zoekt:6070}
+      ZOEKT_URL_ACE: ${ZOEKT_URL_ACE:-http://sparse-index-zoekt:6070}
+      ZOEKT_URL_T2: ${ZOEKT_URL_T2:-http://sparse-index-zoekt-t2:6070}
+      PROJECTS_CONFIG_PATH: /etc/sourcepilot/projects.yaml
       AUDIT_LOG_FILE: /var/log/sourcepilot/audit.log
       AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
       NL_ENABLED: ${NL_ENABLED:-false}
@@ -81,10 +108,13 @@ services:
       STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
     volumes:
       - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log
+      - ../config/projects.yaml:/etc/sourcepilot/projects.yaml:ro
     ports:
       - "${SOURCEPILOT_PORT:-9000}:9000"
     depends_on:
       sparse-index-zoekt:
+        condition: service_healthy
+      sparse-index-zoekt-t2:
         condition: service_healthy
     networks:
       - sourcepilot-net

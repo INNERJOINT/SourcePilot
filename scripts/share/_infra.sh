@@ -32,7 +32,84 @@ COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../../deploy/docker-compose.yml}"
 MAX_RETRIES="${MAX_RETRIES:-30}"
 
 # ── zoekt ─────────────────────────────────────────────────
+# Multi-project Docker mode (run_all.sh): for each project in
+# config/projects.yaml, ensure the corresponding compose service is
+# running and healthy. The first project uses service "sparse-index-zoekt"
+# (back-compat); subsequent projects use "sparse-index-zoekt-<name>".
+#
+# Native mode (single project, no projects.yaml) is preserved as a fallback:
+# it spawns one zoekt-webserver bound to ZOEKT_INDEX_PATH on ZOEKT_URL.
 infra_start_zoekt() {
+    local projects_cfg="${PROJECTS_CONFIG_PATH:-${PROJ_ROOT:-$(pwd)}/config/projects.yaml}"
+
+    if [ -f "$projects_cfg" ]; then
+        # Parse (name, zoekt_url) pairs from YAML.
+        local entries
+        entries=$(python3 - "$projects_cfg" <<'EOF'
+import re, sys
+text = open(sys.argv[1]).read()
+projects = []
+cur = {}
+for line in text.splitlines():
+    s = line.strip()
+    if s.startswith('- name:'):
+        if cur:
+            projects.append(cur)
+        cur = {'name': s.split(':', 1)[1].strip()}
+        continue
+    for key in ('zoekt_url',):
+        m = re.match(rf'\s*{key}:\s*(.+)', line)
+        if m and key not in cur:
+            cur[key] = m.group(1).strip()
+if cur:
+    projects.append(cur)
+for p in projects:
+    name = p.get('name', '')
+    url = p.get('zoekt_url', '')
+    if name and url:
+        port = re.search(r':(\d+)(?:/|$)', url)
+        port = port.group(1) if port else '6070'
+        print(f"{name}|{url}|{port}")
+EOF
+        )
+
+        if [ -n "$entries" ]; then
+            local idx=0
+            while IFS='|' read -r _name _url _port; do
+                [ -z "$_name" ] && continue
+                local svc
+                if [ "$idx" -eq 0 ]; then
+                    svc="sparse-index-zoekt"
+                else
+                    svc="sparse-index-zoekt-${_name}"
+                fi
+                idx=$((idx + 1))
+
+                if curl -sf "$_url/" >/dev/null 2>&1; then
+                    info "检测到 ${svc} 已在运行 (${_url})，跳过启动"
+                    ZOEKT_DOCKER=true
+                    continue
+                fi
+
+                info "启动 ${svc} (project=${_name}, url=${_url})..."
+                docker compose -f "$COMPOSE_FILE" up -d "$svc"
+                ZOEKT_DOCKER=true
+
+                local i
+                for i in $(seq 1 "$MAX_RETRIES"); do
+                    if curl -sf "$_url/" >/dev/null 2>&1; then
+                        info "  ${svc} 就绪"
+                        break
+                    fi
+                    [ "$i" -eq "$MAX_RETRIES" ] && warn "  ${svc} 启动超时 (${MAX_RETRIES}s)"
+                    sleep 1
+                done
+            done <<< "$entries"
+            return
+        fi
+    fi
+
+    # ── Native fallback (no projects.yaml) ─────────────────
     local zoekt_url="${ZOEKT_URL:-http://localhost:6070}"
     ZOEKT_DOCKER=false
 
@@ -42,7 +119,6 @@ infra_start_zoekt() {
         return
     fi
 
-    # 原生模式：需要 ZOEKT_INDEX_PATH
     local index_path="${ZOEKT_INDEX_PATH:-}"
     if [ -z "$index_path" ]; then
         die "ZOEKT_INDEX_PATH 未设置。请在 .env 中设置或通过环境变量传入。"
