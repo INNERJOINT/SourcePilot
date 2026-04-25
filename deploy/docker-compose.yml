@@ -199,7 +199,7 @@ services:
       - "${QDRANT_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -244,9 +244,10 @@ services:
       DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
       DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
       DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
+      PROJECTS_CONFIG_PATH: /config/projects.yaml
     volumes:
       - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
-      - ../../config:/config:ro
+      - ../config:/config:ro
     networks:
       - sourcepilot-net
 
@@ -295,7 +296,7 @@ services:
       STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
     volumes:
       - ${AOSP_SOURCE_ROOT:-/mnt/code/ACE}:/src:ro
-      - ../../config:/config:ro
+      - ../config:/config:ro
     networks:
       - sourcepilot-net
 
