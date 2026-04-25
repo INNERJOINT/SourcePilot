@@ -46,8 +46,7 @@ scripts/
 | Script | Purpose |
 |---|---|
 | `_indexing_lib.sh` | Shared helpers for indexing scripts (CLI hooks, dry-run) |
-| `sparse/reindex.sh` | Orchestrate full reindex (zoekt) |
-| `sparse/reindex_docker.sh` | Docker-based Zoekt indexing for repo-managed projects |
+| `sparse/reindex_host.sh` | Host-based Zoekt indexing for repo-managed AOSP projects (iterates `.repo/project.list`, one shard per sub-repo, supports `--parallelism N`) |
 | `sparse/zoekt_delete_shard.sh` | Delete zoekt index shards for a repo |
 | `dense/build_dense_index_batch.sh` | Batch-build dense vector index for AOSP repos |
 | `dense/build_dense_index.py` | Dense index builder (Python) |

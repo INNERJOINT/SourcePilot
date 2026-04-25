@@ -187,7 +187,7 @@ python -m sp_cockpit.indexing_cli finish \
 ```bash
 bash scripts/build_structural_index.sh  frameworks/base
 bash scripts/build_dense_index_batch.sh  frameworks/base
-bash scripts/reindex.sh  frameworks/base
+bash scripts/indexing/sparse/reindex_host.sh --project <name>
 ```
 
 ### Backend SDK isolation

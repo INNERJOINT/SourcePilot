@@ -105,8 +105,7 @@ scripts/run_sp_cockpit.sh                                  # sp-cockpit alone
 | | `run_mcp.sh` | Start MCP Server (stdio or Streamable HTTP) |
 | | `run_sp_cockpit.sh` | Start sp-cockpit FastAPI + React SPA (port 9100) |
 | | `_env.sh` | Shared `.env` loader, sourced by all `run_*.sh` scripts |
-| **Indexing** | `reindex.sh` | Zoekt index rebuild (single-repo shortcut) |
-| | `sparse/reindex_docker.sh` | Docker-based Zoekt indexing for repo-managed AOSP projects |
+| **Indexing** | `sparse/reindex_host.sh` | Host-based Zoekt indexing for repo-managed AOSP projects (iterates `.repo/project.list`, one shard per sub-repo) |
 | | `build_dense_index.py` | Build Qdrant vector index from local source files |
 | **Testing & Evaluation** | `smoke_queries.sh` | End-to-end smoke test with audit verification |
 | | `test_dense.sh` | Verify dense search pipeline is triggered |
