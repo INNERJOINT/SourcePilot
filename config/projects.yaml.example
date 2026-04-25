@@ -1,6 +1,12 @@
 # AOSP Project Registry
 # Copy this file to config/projects.yaml and edit paths.
 # Backend scope is parsed by scripts/indexing/project_config.py.
+
+# Top-level shared sparse index defaults. Per-project sparse_index blocks override these.
+sparse_index:
+  shared_index_dir: /mnt/data/zoekt-index
+  zoekt_url: http://localhost:6070
+
 projects:
   - name: ace
     source_root: /mnt/code/ACE
@@ -13,6 +19,8 @@ projects:
     sparse_index:
       index_dir: /mnt/code/ACE/.repo/.zoekt
       zoekt_url: http://localhost:6070
+      manifest_branch: default   # branch in manifests.git (default: HEAD)
+      manifest_file: default.xml # manifest XML file (default: default.xml)
       include:
         - frameworks/base
 
@@ -42,7 +50,7 @@ projects:
     source_root: /mnt/code/AOSP15
 
 # Feishu Lurk knowledge base — dense-only project (no Zoekt backend).
-# Vectors live in a Milvus collection with Feishu document schema.
+# Vectors live in a Qdrant collection with Feishu document schema.
 # Feishu collection fields: title, url, space_id, node_token, content
 # - name: feishu_lurk
 #   project_type: feishu

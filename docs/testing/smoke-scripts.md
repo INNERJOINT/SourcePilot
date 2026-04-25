@@ -1,7 +1,7 @@
 # Live Smoke Scripts
 
 > Audience: **release engineer / live-system tester**. Read this when you need
-> to verify a real, running stack (Zoekt + Milvus + Embedding + SourcePilot
+> to verify a real, running stack (Zoekt + Qdrant + Embedding + SourcePilot
 > + sp-cockpit + optionally MCP) end-to-end. None of these scripts run under
 > `pytest`; they are bash + curl + jq + sqlite3.
 
@@ -26,7 +26,7 @@ scripts/run_all.sh         # starts zoekt + SourcePilot (+ optionally MCP/sp-coc
 `scripts/smoke_queries.sh` and `scripts/test_dense.sh` additionally require:
 
 - **`DENSE_ENABLED=true`** when starting SourcePilot (otherwise the `dense_search` stage never appears).
-- **Milvus** running (default `localhost:19530`) with the `frameworks/base` collection indexed.
+- **Qdrant** running (default `localhost:6333`) with the `frameworks/base` collection indexed.
 - **Embedding service** running (default `localhost:8080`).
 - **`sp-cockpit`** running on `:9100` so it can tail `audit.log` and populate `sp-cockpit/data/audit.db` (smoke_queries inspects the SQLite DB, not the JSONL).
 
@@ -73,7 +73,7 @@ The script aborts with exit code `2` if any of these fail:
 3. SourcePilot health endpoint (`GET /api/health`) does not respond within `TIMEOUT` (default 15s).
 4. **Dense probe**: a single `binder 驱动权限校验 probe` query is fired; if no
    `dense_search` stage row appears in `audit.db` within 3 seconds, the script
-   prints "Set `DENSE_ENABLED=true`, ensure Milvus is running with
+   prints "Set `DENSE_ENABLED=true`, ensure Qdrant is running with
    `frameworks/base` indexed, and restart SourcePilot." and exits 2.
 
 ### Reading the output
@@ -168,7 +168,7 @@ process on exit. Failure to obtain a session ID exits non-zero with
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | `smoke_queries.sh` exits 2 with "audit.db 不存在" | sp-cockpit not running, or wrong `AUDIT_DB` path | Start sp-cockpit (port 9100); set `AUDIT_DB=sp-cockpit/data/audit.db` |
-| `smoke_queries.sh` exits 2 with "dense_search stage not seen" | `DENSE_ENABLED` not true, Milvus down, or `frameworks/base` not indexed | Re-export `DENSE_ENABLED=true` and restart SourcePilot |
+| `smoke_queries.sh` exits 2 with "dense_search stage not seen" | `DENSE_ENABLED` not true, Qdrant down, or `frameworks/base` not indexed | Re-export `DENSE_ENABLED=true` and restart SourcePilot |
 | `test_dense.sh` warns "audit.log 不存在" | SourcePilot configured to write audit elsewhere or audit disabled | Set `AUDIT_LOG=...` or check SourcePilot env |
 | `test_mcp_endpoints.sh` "无法获取 Session ID" | MCP not started in `streamable-http` mode, or wrong port | Start with `scripts/run_mcp.sh --transport streamable-http --port 8888` |
 | Any script: `command not found: jq` | `jq` not installed | `apt install jq` (or platform equivalent) |

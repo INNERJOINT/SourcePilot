@@ -106,7 +106,7 @@ jobs:
   sp-cockpit `pyproject.toml` cannot share a single venv because their
   dependency sets differ. Three separate jobs is the simplest faithful
   mapping.
-- **No live Zoekt / Milvus.** The pytest suites are fully mocked (respx +
+- **No live Zoekt / Qdrant.** The pytest suites are fully mocked (respx +
   AsyncMock), so no service container is needed. The smoke scripts (which
   *do* need live backends) are NOT in this template — they belong in a
   separate manually-triggered or release workflow.
@@ -115,7 +115,7 @@ jobs:
 
 ## Suggested smoke workflow (manual / release)
 
-Smoke scripts need a live SourcePilot + Zoekt + Milvus + Embedding +
+Smoke scripts need a live SourcePilot + Zoekt + Qdrant + Embedding +
 sp-cockpit. This is impractical for every PR; run on demand or before tag.
 
 ```yaml
@@ -150,7 +150,7 @@ jobs:
 ```
 
 `scripts/run_all.sh` is project-specific (it depends on access to a Zoekt
-mirror and a Milvus cluster); the snippet above shows the *shape* of the
+mirror and a Qdrant cluster); the snippet above shows the *shape* of the
 workflow, not a turnkey solution.
 
 ## Suggested Makefile targets

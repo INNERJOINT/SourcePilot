@@ -43,7 +43,7 @@ def _validate_name(name: str) -> None:
     if not _NAME_RE.match(name):
         _raise(
             f"Invalid project name {name!r}: must match [a-z0-9_]+ "
-            "(Milvus collection name constraint)"
+            "(Qdrant collection name constraint)"
         )
 
 

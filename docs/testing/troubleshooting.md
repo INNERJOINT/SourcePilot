@@ -95,7 +95,7 @@ If `scripts/smoke_queries.sh` aborts with
 **Cause.** SourcePilot is up, but the dense path is not active for the
 probe query. Possible reasons:
 - `DENSE_ENABLED` was not set to `true` when SourcePilot started.
-- Milvus is unreachable or `frameworks/base` collection isn't indexed.
+- Qdrant is unreachable or `frameworks/base` collection isn't indexed.
 - The classifier did not classify the probe query as natural-language.
 
 **Fix.**
@@ -104,15 +104,15 @@ probe query. Possible reasons:
 # Restart SourcePilot with DENSE_ENABLED=true
 DENSE_ENABLED=true scripts/run_sourcepilot.sh
 
-# Verify Milvus is reachable
-curl -fsS http://localhost:19530/v1/vector/collections
+# Verify Qdrant is reachable
+curl -fsS http://localhost:6333/collections
 ```
 
 If you only need a one-shot dense check, `scripts/test_dense.sh` is more
 forgiving than `smoke_queries.sh` — it greps `audit.log` directly and does
 not require sp-cockpit.
 
-> **Memory note:** the user only indexed `frameworks/base` into Milvus —
+> **Memory note:** the user only indexed `frameworks/base` into Qdrant —
 > queries for other repos (e.g. Launcher3) will legitimately return zero
 > dense hits. That's not a bug; `nl_outscope_dense` in `smoke_queries.sh`
 > is the case that asserts this behavior.
@@ -134,7 +134,7 @@ bash tests/test_mcp_endpoints.sh
 If you intended to test stdio, use the Python MCP client (or the unit tests
 in `tests/unit/mcp/entry/test_mcp_stdio.py`) instead.
 
-## Zoekt / SourcePilot / Milvus connection refused (smoke)
+## Zoekt / SourcePilot / Qdrant connection refused (smoke)
 
 **Cause.** The relevant service isn't running, or there's a port collision.
 
@@ -150,7 +150,7 @@ curl -fsS http://localhost:6070/             # Zoekt
 curl -fsS http://localhost:9100/api/health   # sp-cockpit (if running)
 
 # Ports occupied? Find offender
-ss -lntp | grep -E ':9000|:6070|:9100|:8888|:19530'
+ss -lntp | grep -E ':9000|:6070|:9100|:8888|:6333'
 ```
 
 ## Audit-viewer test SQLite leak / "DB locked"
@@ -164,16 +164,16 @@ calls `importlib.reload(cfg)` for exactly this reason. If you wrote a new
 fixture that bypasses `tmp_paths`, mirror that reload pattern. Always
 close any explicit `sqlite3.connect(...)` you open.
 
-## `test_dense.py` or `test_embedding.py` errors with "no Milvus collection"
+## `test_dense.py` or `test_embedding.py` errors with "no Qdrant collection"
 
 **Cause.** Despite the test name, these files are **fully mocked** unit
-tests (Milvus client is `AsyncMock`'d). If you see a real Milvus error,
+tests (Qdrant client is `AsyncMock`'d). If you see a real Qdrant error,
 the test was inadvertently skipping the mock — usually because someone
 patched the wrong import path.
 
 **Fix.** Patch where the symbol is *used*, not where it is *defined*.
-Example: if `src/adapters/dense.py` does `from milvus import MilvusClient`,
-patch `src.adapters.dense.MilvusClient`, not `milvus.MilvusClient`.
+Example: if `src/adapters/dense.py` does `from qdrant_client import QdrantClient`,
+patch `src.adapters.dense.QdrantClient`, not `qdrant_client.QdrantClient`.
 
 ## `pytest` succeeds locally but fails in (a hypothetical) CI
 

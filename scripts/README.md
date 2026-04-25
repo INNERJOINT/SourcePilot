@@ -61,7 +61,7 @@ scripts/
 | Script | Purpose |
 |---|---|
 | `smoke_queries.sh` | Smoke-test search queries against running SourcePilot |
-| `test_dense.sh` | Test dense (Milvus) search pipeline |
+| `test_dense.sh` | Test dense (Qdrant) search pipeline |
 | `verify.sh` | Unified verification (`structural-audit` / `indexer-containers`) |
 | `eval_hybrid.py` | Hybrid search evaluation (Python) |
 

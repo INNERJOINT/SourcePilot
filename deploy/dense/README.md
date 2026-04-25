@@ -1,6 +1,6 @@
-# Dense Deploy — Milvus + Embedding Service
+# Dense Deploy — Qdrant + Embedding Service
 
-Docker deployment for the Milvus vector database and embedding service that power SourcePilot's vector-retrieval feature.
+Docker deployment for the Qdrant vector database and embedding service that power SourcePilot's vector-retrieval feature.
 
 ## Quickstart
 
@@ -43,16 +43,14 @@ docker compose --profile indexer run --rm dense-indexer \
 ```
 
 约束：`--source-dir` 必须落在 `$AOSP_SOURCE_ROOT` 下，否则 wrapper 会报错退出
-（避免静默索引空内容）。宿主机上无需再安装 `pymilvus`。
+（避免静默索引空内容）。宿主机上无需再安装 `qdrant-client`。
 
 ## Service Components
 
 | Service | Port | Description |
 |---------|------|-------------|
-| Milvus | 19530 (gRPC), 9091 (REST) | Vector database |
+| Qdrant | 6333 (REST), 6334 (gRPC) | Vector database |
 | Embedding Server | 8080 | OpenAI-compatible embedding API |
-| MinIO | 9000, 9001 (console) | Milvus object-storage backend |
-| etcd | 2379 | Milvus metadata store |
 
 ## Environment Variables
 
@@ -67,7 +65,7 @@ Key variables:
 - `EMBEDDING_MODEL` — model name (default `microsoft/unixcoder-base`)
 - `EMBEDDING_DIM` — vector dimension (default 768)
 - `EMBEDDING_PORT` — embedding service port (default 8080)
-- `MILVUS_PORT` — Milvus gRPC port (default 19530)
+- `QDRANT_PORT` — Qdrant REST port (default 6333)
 
 ## Changing Models
 
@@ -96,6 +94,6 @@ After the services are up, set in the SourcePilot environment:
 
 ```bash
 export DENSE_ENABLED=true
-export DENSE_VECTOR_DB_URL=http://localhost:19530
+export DENSE_VECTOR_DB_URL=http://localhost:6333
 export DENSE_EMBEDDING_URL=http://localhost:8080/v1
 ```

@@ -37,7 +37,7 @@ flowchart TD
     Clients["Clients<br/>(LLM / IDE)"] -->|MCP| MCP["MCP Server<br/>(proxy)"]
     MCP -->|HTTP| SP["SourcePilot<br/>(gateway)"]
     SP --> Zoekt["Zoekt<br/>(BM25)"]
-    SP --> Milvus["Milvus<br/>(dense)"]
+    SP --> Qdrant["Qdrant<br/>(dense)"]
     SP --> Audit["audit.log<br/>(JSONL)"]
     Audit -->|tail| AV["SP Cockpit"]
 ```
@@ -53,7 +53,7 @@ flowchart TD
 | Node.js + npm | Build sp-cockpit frontend (optional) | `node --version` |
 | curl, jq, sqlite3 | Used by smoke test and helper scripts | `curl --version && jq --version && sqlite3 --version` |
 
-Optional (for dense/semantic search): Milvus vector DB + embedding service. See `.env.example` for `DENSE_*` variables.
+Optional (for dense/semantic search): Qdrant vector DB + embedding service. See `.env.example` for `DENSE_*` variables.
 
 ## Quick start
 
@@ -107,7 +107,7 @@ scripts/run_sp_cockpit.sh                                  # sp-cockpit alone
 | | `_env.sh` | Shared `.env` loader, sourced by all `run_*.sh` scripts |
 | **Indexing** | `reindex.sh` | Zoekt index rebuild (single-repo shortcut) |
 | | `sparse/reindex_docker.sh` | Docker-based Zoekt indexing for repo-managed AOSP projects |
-| | `build_dense_index.py` | Build Milvus vector index from local source files |
+| | `build_dense_index.py` | Build Qdrant vector index from local source files |
 | **Testing & Evaluation** | `smoke_queries.sh` | End-to-end smoke test with audit verification |
 | | `test_dense.sh` | Verify dense search pipeline is triggered |
 | | `eval_hybrid.py` | A/B comparison: hybrid (Zoekt+Dense) vs pure Zoekt |
@@ -141,7 +141,7 @@ mcp-server/                    MCP Access Layer
 
 sp-cockpit/                  FastAPI + React SPA (see sp-cockpit/README.md)
 
-deploy/                        Merged Milvus + Neo4j + Zoekt + indexer compose
+deploy/                        Merged Qdrant + Neo4j + Zoekt + indexer compose
 scripts/                       Orchestration, smoke tests, index build, A/B eval
 tests/                         unit / integration / e2e
 ```

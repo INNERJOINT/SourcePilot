@@ -3,7 +3,7 @@
 build_feishu_index.py — Feishu Lurk 知识库向量索引构建脚本
 
 从 JSONL 文件读取 Feishu 文档，按字符滑动窗口切分后
-通过 embedding 服务写入 Milvus 向量数据库。
+通过 embedding 服务写入 Qdrant 向量数据库。
 
 Usage:
     PYTHONPATH=src python scripts/indexing/feishu/build_feishu_index.py --jsonl-path docs.jsonl
@@ -242,7 +242,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
 def main():
     parser = argparse.ArgumentParser(description="Build Feishu Lurk dense vector index")
     parser.add_argument("--jsonl-path", required=True, help="Path to JSONL file with Feishu documents")
-    parser.add_argument("--collection-name", default="feishu_lurk_docs", help="Milvus collection name (default: feishu_lurk_docs)")
+    parser.add_argument("--collection-name", default="feishu_lurk_docs", help="Qdrant collection name (default: feishu_lurk_docs)")
     parser.add_argument("--window-size", type=int, default=500, help="Sliding window size in characters (default: 500)")
     parser.add_argument("--overlap", type=int, default=100, help="Overlap characters (default: 100)")
     parser.add_argument("--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")), help="Embedding batch size (default: 64)")

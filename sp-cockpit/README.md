@@ -93,7 +93,7 @@ The compose service bind-mounts:
 
 ## Indexing Admin
 
-Web UI for managing AOSP indexing jobs across three backends (Zoekt, Milvus/dense, Neo4j/structural).
+Web UI for managing AOSP indexing jobs across three backends (Zoekt, Qdrant/dense, Neo4j/structural).
 
 Access: **http://localhost:9100/repos**
 
@@ -163,7 +163,7 @@ CREATE UNIQUE INDEX idx_singleton_lock
 
 **Via UI** — navigate to `/repos`, click **Trigger Reindex** on a row.
 For the `dense` backend a confirmation dialog must be acknowledged first
-(guard against accidental Milvus collection rebuild).
+(guard against accidental Qdrant collection rebuild).
 
 **Via CLI** (wrapper scripts call this automatically):
 
@@ -192,7 +192,7 @@ bash scripts/reindex.sh  frameworks/base
 
 ### Backend SDK isolation
 
-`pymilvus` and `neo4j-driver` are **not** installed in the sp-cockpit environment.
+`qdrant-client` and `neo4j-driver` are **not** installed in the sp-cockpit environment.
 Hard-delete and entity-count operations are executed inside the indexer containers via
 `docker compose run --rm <service> python -m scripts.<op>`.
 
@@ -208,5 +208,5 @@ Hard-delete and entity-count operations are executed inside the indexer containe
 - [ ] Status turns `success` / `fail`, entity_count refreshes
 - [ ] Click **Delete** on a repo row → confirmation dialog → row disappears
 - [ ] For `dense` backend Trigger: confirmation dialog **must** appear before POST fires
-- [ ] `pytest sp-cockpit/tests/test_no_heavy_deps.py` — PASSED (no pymilvus/neo4j)
+- [ ] `pytest sp-cockpit/tests/test_no_heavy_deps.py` — PASSED (no qdrant-client/neo4j)
 - [ ] `pytest sp-cockpit/tests/test_indexing_e2e.py` — all tests green

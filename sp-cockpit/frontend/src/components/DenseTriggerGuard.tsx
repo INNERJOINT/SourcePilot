@@ -36,7 +36,7 @@ export default function DenseTriggerGuard({
       <ConfirmDialog
         open={open}
         title="确认重建 Dense 索引"
-        message={`将重建 dense 索引,可能覆盖现有 Milvus collection。仓库路径: ${repoPath}。确认继续?`}
+        message={`将重建 dense 索引,可能覆盖现有 Qdrant collection。仓库路径: ${repoPath}。确认继续?`}
         onConfirm={handleConfirm}
         onCancel={() => setOpen(false)}
       />

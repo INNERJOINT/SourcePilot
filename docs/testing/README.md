@@ -57,7 +57,7 @@ The repo exposes several hundred test cases across the three services
   tests run with `PYTHONPATH=mcp-server`. The two services intentionally do
   not share Python imports — they communicate over HTTP. Audit-viewer is a
   third, self-contained project with its own `pyproject.toml`.
-- **No live backend by default.** Pytest suites mock Zoekt, Milvus, the
+- **No live backend by default.** Pytest suites mock Zoekt, Qdrant, the
   SourcePilot HTTP API, and LLM responses via `respx`, `unittest.mock`, and
   static fixture data. Live-backend coverage lives in the smoke scripts under
   `scripts/` (see [smoke-scripts.md](./smoke-scripts.md)).

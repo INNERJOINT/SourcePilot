@@ -103,7 +103,7 @@ def main():
     import config
     if not config.DENSE_ENABLED:
         print("WARNING: DENSE_ENABLED=false. Hybrid results will be pure Zoekt.")
-        print("Set DENSE_ENABLED=true and ensure Milvus + embedding service are running.\n")
+        print("Set DENSE_ENABLED=true and ensure Qdrant + embedding service are running.\n")
 
     asyncio.run(run_eval())
 

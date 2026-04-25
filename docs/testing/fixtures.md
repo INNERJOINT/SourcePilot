@@ -2,7 +2,7 @@
 
 > Audience: **test author**. Read this when you need to know where to put a
 > shared fixture, what mocks already exist, and how the project intercepts
-> outbound HTTP / Milvus / LLM calls.
+> outbound HTTP / Qdrant / LLM calls.
 
 ## Conftest hierarchy
 
@@ -100,20 +100,20 @@ in-process. The MCP layer's `httpx.AsyncClient` is wired via `ASGITransport`
 to the SourcePilot Starlette app, so MCP→SourcePilot calls are real Python
 calls (no socket). Downstream Zoekt / dense calls are still respx-mocked.
 
-## AsyncMock pattern (Milvus, embedding, LLM)
+## AsyncMock pattern (Qdrant, embedding, LLM)
 
 The dense search adapter and LLM rewriter use `unittest.mock.AsyncMock` /
-`patch` rather than respx, because they don't go over httpx (Milvus uses its
-own gRPC client; LLM may be a custom SDK).
+`patch` rather than respx, because they don't go over httpx (Qdrant uses its
+own client; LLM may be a custom SDK).
 
 ```python
 from unittest.mock import AsyncMock, patch
 
-@patch("adapters.dense.MilvusClient")
-async def test_dense_search(mock_milvus_cls):
-    mock_milvus = AsyncMock()
-    mock_milvus.search.return_value = [{"id": 1, "distance": 0.12, ...}]
-    mock_milvus_cls.return_value = mock_milvus
+@patch("adapters.dense.QdrantClient")
+async def test_dense_search(mock_qdrant_cls):
+    mock_qdrant = AsyncMock()
+    mock_qdrant.search.return_value = [{"id": 1, "score": 0.88, "payload": {...}}]
+    mock_qdrant_cls.return_value = mock_qdrant
 
     adapter = DenseAdapter()
     results = await adapter.search([0.0] * 768, top_k=5)

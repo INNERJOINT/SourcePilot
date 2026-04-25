@@ -2,12 +2,12 @@
 # scripts/test_dense.sh — 测试 dense search 是否被触发
 #
 # 用法:
-#   DENSE_ENABLED=true scripts/run_sourcepilot.sh   # 先启动（需 Milvus + Embedding 服务）
+#   DENSE_ENABLED=true scripts/run_sourcepilot.sh   # 先启动（需 Qdrant + Embedding 服务）
 #   bash scripts/test_dense.sh
 #
 # 前置条件:
 #   - SourcePilot 以 DENSE_ENABLED=true 启动
-#   - Milvus 运行中 (默认 localhost:19530)
+#   - Qdrant 运行中 (默认 localhost:6333)
 #   - Embedding 服务运行中 (默认 localhost:8080)
 #   - frameworks/base 已完成向量索引
 #
@@ -95,7 +95,7 @@ else
         echo "       可能原因:"
         echo "       1. DENSE_ENABLED 未设为 true"
         echo "       2. 查询未被 classifier 分类为 NL 意图"
-        echo "       3. Milvus/Embedding 服务连接失败"
+        echo "       3. Qdrant/Embedding 服务连接失败"
         exit 1
     fi
 

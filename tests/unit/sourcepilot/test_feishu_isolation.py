@@ -1,6 +1,6 @@
 """
 Tests for Feishu collection isolation and routing in gateway.py.
-No live Milvus/Feishu services required.
+No live Qdrant/Feishu services required.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch

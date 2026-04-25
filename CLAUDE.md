@@ -12,7 +12,7 @@ AOSP Code Search — a hybrid RAG code search system over Android Open Source Pr
 
 ## Build & Run
 
-Infrastructure (Zoekt, Milvus, Neo4j) runs as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
+Infrastructure (Zoekt, Qdrant, Neo4j) runs as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 
@@ -84,7 +84,7 @@ shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
 
 Scripts are organized under `scripts/`:
 - `share/` — shared bash libraries (`_common.sh` logging, `_env.sh` dotenv loader, `_infra.sh` service starters)
-- `indexing/` — index build scripts (Zoekt, dense/Milvus, Neo4j structural)
+- `indexing/` — index build scripts (Zoekt, dense/Qdrant, Neo4j structural)
 - `testing/` — smoke tests (`smoke_queries.sh`), dense verification, hybrid eval
 
 All scripts use `set -euo pipefail` and source `share/_common.sh`. Run any with `-h` for usage.

@@ -4,7 +4,7 @@
 # 用法:
 #   ./scripts/build_dense_index_batch.sh [--skip-existing]
 #
-# 新数据追加到已有 Milvus collection，不影响已索引的仓库。
+# 新数据追加到已有 Qdrant collection，不影响已索引的仓库。
 #
 # NOTE: -e intentionally omitted — batch-continue contract: single repo failure
 # must not abort remaining repos.

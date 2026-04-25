@@ -20,7 +20,7 @@ tests/
 │   │   ├── conftest.py                           # adds src/ to sys.path
 │   │   ├── adapters/
 │   │   │   ├── test_base.py                      # SearchAdapter ABC contract
-│   │   │   ├── test_dense.py                     # DenseAdapter (Milvus client AsyncMock'd)
+│   │   │   ├── test_dense.py                     # DenseAdapter (Qdrant client AsyncMock'd)
 │   │   │   ├── test_embedding.py                 # Embedding service client
 │   │   │   └── test_zoekt.py                     # ZoektAdapter (respx-mocked Zoekt HTTP)
 │   │   ├── config/
@@ -71,7 +71,7 @@ The repo has several hundred test functions across these trees
 | File | Module under test | Key technique |
 |------|-------------------|---------------|
 | `test_base.py` | `src/adapters/base.py` (SearchAdapter ABC) | Direct subclass instantiation, ABC method-presence assertions |
-| `test_dense.py` | `src/adapters/dense.py` (Milvus dense search) | `AsyncMock` patches the Milvus client; embedding call mocked |
+| `test_dense.py` | `src/adapters/dense.py` (Qdrant dense search) | `AsyncMock` patches the Qdrant client; embedding call mocked |
 | `test_embedding.py` | `src/adapters/embedding.py` | `respx` against the embedding service URL |
 | `test_zoekt.py` | `src/adapters/zoekt.py` | `respx` against Zoekt `/search`, `/repos`, `/print`; HTML `<pre>` parsing for `/print` |
 
@@ -174,7 +174,7 @@ PYTHONPATH=src pytest tests/unit/sourcepilot/ --cov=src --cov-report=term-missin
 3. The local `tests/unit/sourcepilot/conftest.py` already adds `src/` to
    `sys.path`. The global `tests/conftest.py` already sets the env vars
    (`ZOEKT_URL`, `NL_ENABLED=false`, `AUDIT_ENABLED=false`, ...).
-4. Mock outbound HTTP with `respx`; mock async Milvus/embedding clients with
+4. Mock outbound HTTP with `respx`; mock async Qdrant/embedding clients with
    `unittest.mock.AsyncMock`. See [fixtures.md](./fixtures.md) for examples.
 5. Run only your file: `PYTHONPATH=src pytest tests/unit/sourcepilot/gateway/test_foo.py -v`.
 

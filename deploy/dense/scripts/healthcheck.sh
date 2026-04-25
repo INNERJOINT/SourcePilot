@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# 健康检查：Milvus + Embedding 服务
+# 健康检查：Qdrant + Embedding 服务
 set -euo pipefail
 
-MILVUS_HOST="${MILVUS_HOST:-localhost}"
-MILVUS_HEALTH_PORT="${MILVUS_HEALTH_PORT:-9091}"
+QDRANT_HOST="${QDRANT_HOST:-localhost}"
+QDRANT_PORT="${QDRANT_PORT:-6333}"
 EMBEDDING_HOST="${EMBEDDING_HOST:-localhost}"
 EMBEDDING_PORT="${EMBEDDING_PORT:-8080}"
 
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 ERRORS=0
 
-# 1. Milvus 健康检查
-echo "Checking Milvus at ${MILVUS_HOST}:${MILVUS_HEALTH_PORT}..."
-if curl -sf "http://${MILVUS_HOST}:${MILVUS_HEALTH_PORT}/healthz" >/dev/null 2>&1; then
-    echo "  ✓ Milvus healthy"
+# 1. Qdrant 健康检查
+echo "Checking Qdrant at ${QDRANT_HOST}:${QDRANT_PORT}..."
+if curl -sf "http://${QDRANT_HOST}:${QDRANT_PORT}/healthz" >/dev/null 2>&1; then
+    echo "  ✓ Qdrant healthy"
 else
-    echo "  ✗ Milvus unreachable"
+    echo "  ✗ Qdrant unreachable"
     ERRORS=$((ERRORS + 1))
 fi
 

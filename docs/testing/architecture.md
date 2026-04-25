@@ -9,7 +9,7 @@
 ```
                           ┌────────────────────────────┐
                           │   Live Smoke Scripts       │   scripts/smoke_queries.sh
-                          │   (real Zoekt + Milvus +   │   scripts/test_dense.sh
+                          │   (real Zoekt + Qdrant +   │   scripts/test_dense.sh
                           │    SourcePilot + LLM)      │   tests/test_mcp_endpoints.sh
                           └────────────────────────────┘
                        ┌──────────────────────────────────┐
@@ -42,7 +42,7 @@ backends; they are not run by `pytest`.
 | Unit (SourcePilot Cockpit) | `sp-cockpit/tests/` | `(cd sp-cockpit && pytest -v)` | Parser, ingester, API, retention |
 | Integration | `tests/integration/{test_gateway_pipeline.py, test_api_contract.py}` | `PYTHONPATH=src pytest tests/integration/ -v` | Full gateway pipeline (classify → search → fuse → rank) with respx-mocked Zoekt; HTTP API shape via Starlette TestClient |
 | E2E | `tests/e2e/test_mcp_sourcepilot_chain.py` | `PYTHONPATH=src pytest tests/e2e/ -v` | MCP server in-process calls SourcePilot in-process (both Python imports; HTTP client is `respx`-mocked) |
-| Live smoke | `scripts/smoke_queries.sh`, `scripts/test_dense.sh`, `tests/test_mcp_endpoints.sh` | see [smoke-scripts.md](./smoke-scripts.md) | Full real stack: Zoekt + Milvus + Embedding + SourcePilot + sp-cockpit |
+| Live smoke | `scripts/smoke_queries.sh`, `scripts/test_dense.sh`, `tests/test_mcp_endpoints.sh` | see [smoke-scripts.md](./smoke-scripts.md) | Full real stack: Zoekt + Qdrant + Embedding + SourcePilot + sp-cockpit |
 
 ## Service / PYTHONPATH boundary
 
@@ -84,7 +84,7 @@ flowchart LR
     Router --> Zoekt[ZoektAdapter]
     Router --> Dense[DenseAdapter]
     Zoekt -->|httpx.AsyncClient| Respx{respx mock}
-    Dense -->|AsyncMock patch| Mock[Milvus AsyncMock]
+    Dense -->|AsyncMock patch| Mock[Qdrant AsyncMock]
     Respx --> MockData[mock_zoekt_responses.py]
     Mock --> MockEmbed[mock_llm_responses.py]
     Gateway --> Audit[observability.audit]
@@ -93,7 +93,7 @@ flowchart LR
 
 In the integration suite, `respx` intercepts all outgoing httpx calls and
 returns canned data from `tests/fixtures/mock_*_responses.py`. The dense
-adapter's Milvus client is replaced via `unittest.mock.AsyncMock`. Audit
+adapter's Qdrant client is replaced via `unittest.mock.AsyncMock`. Audit
 emission is disabled globally via `AUDIT_ENABLED=false` in
 `tests/conftest.py`.
 
@@ -104,7 +104,7 @@ sequenceDiagram
     participant User as smoke_queries.sh
     participant SP as SourcePilot :9000
     participant Zoekt as Zoekt :6070
-    participant Milvus as Milvus :19530
+    participant Qdrant as Qdrant :6333
     participant Emb as Embedding :8080
     participant AV as sp-cockpit :9100
     participant DB as audit.db (SQLite)
@@ -112,7 +112,7 @@ sequenceDiagram
     User->>SP: POST /api/search (X-Trace-Id)
     SP->>Zoekt: GET /search
     SP->>Emb: POST /embed
-    SP->>Milvus: vector search
+    SP->>Qdrant: Qdrant vector search
     SP-->>User: JSON results
     SP->>SP: append audit.log (JSONL)
     AV->>SP: tail audit.log → ingest into audit.db

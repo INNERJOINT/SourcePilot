@@ -3,7 +3,7 @@
 build_dense_index.py — 向量索引构建脚本
 
 从 Zoekt 获取 frameworks/base 的文件列表，滑动窗口 chunk 分割后
-通过 embedding 服务写入 Milvus 向量数据库。
+通过 embedding 服务写入 Qdrant 向量数据库。
 
 Usage:
     PYTHONPATH=src python scripts/build_dense_index.py [--repos frameworks/base] [--batch-size 32]
@@ -282,7 +282,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")), help="Embedding batch size (default: 64)")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
     parser.add_argument("--project-name", default=None, help="Project name for collection naming (e.g. 'ace' → collection 'aosp_code_ace')")
-    parser.add_argument("--collection-name", default=None, help="Override Milvus collection name")
+    parser.add_argument("--collection-name", default=None, help="Override Qdrant collection name")
     args = parser.parse_args()
 
     # Resolve collection name

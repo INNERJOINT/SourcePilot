@@ -2,12 +2,12 @@
 # scripts/smoke_queries.sh — SourcePilot 手动 smoke 巡检
 #
 # 用法:
-#   scripts/run_all.sh            # 先把 SourcePilot/zoekt/Milvus/sp-cockpit 起好
+#   scripts/run_all.sh            # 先把 SourcePilot/zoekt/Qdrant/sp-cockpit 起好
 #   bash scripts/smoke_queries.sh
 #
 # 前置条件:
 #   - DENSE_ENABLED=true (SourcePilot 启动时需设置)
-#   - Milvus 运行中，frameworks/base 已完成向量索引
+#   - Qdrant 运行中，frameworks/base 已完成向量索引
 #   - sp-cockpit 运行中 (port 9100)，audit.db 正在被填充
 #   - 审查入口: http://localhost:9100  (按 trace_id 过滤逐条人工审查)
 #
@@ -76,7 +76,7 @@ for _ in 1 2 3; do
     [[ "$probe_count" -gt 0 ]] && break
 done
 if [[ "$probe_count" -eq 0 ]]; then
-    echo "ERROR: dense_search stage not seen after 3s. Set DENSE_ENABLED=true, ensure Milvus is running with frameworks/base indexed, and restart SourcePilot." >&2
+    echo "ERROR: dense_search stage not seen after 3s. Set DENSE_ENABLED=true, ensure Qdrant is running with frameworks/base indexed, and restart SourcePilot." >&2
     exit 2
 fi
 

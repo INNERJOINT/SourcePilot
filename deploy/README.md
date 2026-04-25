@@ -54,21 +54,13 @@ lines; benefit is preserving every developer's `docker compose up -d` muscle
 memory and any CI that assumes a root compose. Delete-and-require-`-f` was
 considered and rejected as user-hostile with no compensating benefit.
 
-### ADR #3 — Pinned volume names without `external: true`
+### ADR #3 — Legacy Milvus volumes retired
 
-`etcd_data`, `minio_data`, and `milvus_data` carry the legacy
-`dense-deploy_*` prefix via explicit `name:` keys. They are NOT marked
-`external: true`:
-
-- On hosts that already have the volumes (production, dev workstations
-  pre-migration), compose binds to the existing volumes by name → no data
-  movement, no risk of orphaning Milvus state.
-- On fresh hosts (CI, new dev boxes), compose creates the volumes on first
-  `up` instead of failing with "volume not found", which is what
-  `external: true` would do.
-
-Renaming the volumes was rejected because it required a manual
-`docker volume rename` migration on every host with no compensating benefit.
+`etcd_data`, `minio_data`, and `milvus_data` (formerly carrying the legacy
+`dense-deploy_*` prefix) have been retired. The dense vector store now uses
+Qdrant, which requires only a single `qdrant_data` volume. Hosts that still
+have the old Milvus volumes can safely remove them with
+`docker volume rm <volume-name>` once Qdrant is confirmed healthy.
 
 ### ADR #4 — Neo4j joins `sourcepilot-net`
 

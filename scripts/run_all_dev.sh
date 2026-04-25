@@ -2,7 +2,7 @@
 # ──────────────────────────────────────────────────────
 #  AOSP Code Search 开发模式启动脚本
 #
-#  基础设施（zoekt/milvus/neo4j）通过 Docker 启动，
+#  基础设施（zoekt/qdrant/neo4j）通过 Docker 启动，
 #  应用服务（SourcePilot/MCP/sp-cockpit）以裸进程运行，
 #  修改代码后无需重建镜像即可验证。
 #

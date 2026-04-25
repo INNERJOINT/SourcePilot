@@ -13,7 +13,7 @@
 #     前提是它落在 $AOSP_SOURCE_ROOT 之下（与 compose 的 :ro 卷一致）。
 #
 # 前置:
-#   - Milvus + embedding-server 已通过 `docker compose up -d` 启动并 healthy。
+#   - Qdrant + embedding-server 已通过 `docker compose up -d` 启动并 healthy。
 #   - .env 中设置了 AOSP_SOURCE_ROOT（或使用默认 /mnt/code/ACE）。
 set -euo pipefail
 

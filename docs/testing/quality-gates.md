@@ -73,7 +73,7 @@ When reviewing a PR that adds tests, suggested questions:
       `tests/unit/mcp/...` vs `sp-cockpit/tests/...`)?
 - [ ] **PYTHONPATH**: does the test rely on the surrounding `conftest.py` to
       add `src/` or `mcp-server/` to `sys.path`? It must not hardcode paths.
-- [ ] **Mocking**: outbound HTTP via `respx`; Milvus / async clients via
+- [ ] **Mocking**: outbound HTTP via `respx`; Qdrant / async clients via
       `unittest.mock.AsyncMock`. No real network calls.
 - [ ] **Fixture reuse**: does it duplicate canned data instead of importing
       from `tests/fixtures/mock_*_responses.py`?
@@ -91,7 +91,7 @@ When reviewing a PR that adds tests, suggested questions:
 - [ ] **Speed**: a single test should run in well under one second; if it
       sleeps, justify it.
 - [ ] **No new live-backend dependency**: pytest must remain runnable
-      without Zoekt / Milvus / SourcePilot — those belong in smoke scripts.
+      without Zoekt / Qdrant / SourcePilot — those belong in smoke scripts.
 
 ## Audit-log assertion patterns (descriptive — already used in the codebase)
 
@@ -136,7 +136,7 @@ The repo deliberately separates the two concerns:
 | | Pytest suites | Smoke scripts |
 |---|--------------|---------------|
 | Need live Zoekt? | No (respx-mocked) | Yes |
-| Need live Milvus? | No (AsyncMock) | Yes (`DENSE_ENABLED=true` + indexed `frameworks/base`) |
+| Need live Qdrant? | No (AsyncMock) | Yes (`DENSE_ENABLED=true` + indexed `frameworks/base`) |
 | Need live LLM? | No (canned responses) | Optional, depends on `NL_ENABLED` config |
 | Run on CI by default? | Yes (suggested) | Manual / on tag (suggested) |
 
