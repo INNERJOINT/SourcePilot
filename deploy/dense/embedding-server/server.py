@@ -1,6 +1,10 @@
-"""Embedding Server — ONNX Runtime multi-model /v1/embeddings API.
+"""Embedding Server — multi-backend /v1/embeddings API.
 
-Loads multiple ONNX INT8-quantized models, routes by "model" field in request.
+Backends:
+- ONNX INT8 (CPU, AVX-512 VNNI): standard BERT models — high throughput.
+- PyTorch (sentence-transformers): models with custom architectures
+  (e.g. nomic_bert / CodeRankEmbed) that optimum cannot export.
+
 CPU-only, optimized for i9-9980XE (18C/36T).
 """
 
@@ -25,14 +29,14 @@ OMP_NUM_THREADS = int(os.environ.get("OMP_NUM_THREADS", "18"))
 MAX_BATCH_SIZE = int(os.environ.get("EMBEDDING_MAX_BATCH_SIZE", "64"))
 MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR", "/app/models")
 
-# Model registry: name -> model_dir_name
+# Model registry: name -> (model_dir_name, backend)
 MODEL_REGISTRY = {
-    "nomic-ai/CodeRankEmbed": "CodeRankEmbed",
-    "BAAI/bge-base-zh-v1.5": "bge-base-zh-v1.5",
+    "nomic-ai/CodeRankEmbed": ("CodeRankEmbed", "pytorch"),
+    "BAAI/bge-base-zh-v1.5": ("bge-base-zh-v1.5", "onnx-int8"),
 }
 
-# Runtime state: name -> (session, tokenizer, dim, lock)
-MODELS: dict[str, tuple] = {}
+# Runtime state: name -> dict with backend-specific handles
+MODELS: dict[str, dict] = {}
 
 
 def _create_session(onnx_path: str) -> ort.InferenceSession:
@@ -44,9 +48,8 @@ def _create_session(onnx_path: str) -> ort.InferenceSession:
     return ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
 
 
-def load_model(name: str, model_dir: str) -> tuple:
-    """Load ONNX model and its tokenizer."""
-    # Find the ONNX file (prefer quantized)
+def load_onnx_model(name: str, model_dir: str) -> dict:
+    """Load ONNX (preferring quantized) + tokenizers Tokenizer."""
     model_path = Path(model_dir)
     onnx_file = model_path / "model_quantized.onnx"
     if not onnx_file.exists():
@@ -58,12 +61,45 @@ def load_model(name: str, model_dir: str) -> tuple:
     tokenizer = Tokenizer.from_file(str(model_path / "tokenizer.json"))
     dim = session.get_outputs()[0].shape[-1]
     assert dim == 768, f"Model {name} has dim {dim}, expected 768"
-    lock = asyncio.Lock()
-    logger.info("Loaded model '%s' from %s (dim=%d)", name, onnx_file, dim)
-    return session, tokenizer, dim, lock
+    logger.info("Loaded ONNX model '%s' from %s (dim=%d)", name, onnx_file, dim)
+    return {
+        "backend": "onnx-int8",
+        "session": session,
+        "tokenizer": tokenizer,
+        "dim": dim,
+        "lock": asyncio.Lock(),
+    }
 
 
-def _mean_pool_and_normalize(token_embeddings: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+def load_pytorch_model(name: str, model_dir: str) -> dict:
+    """Load via sentence-transformers (PyTorch CPU)."""
+    # Lazy import: torch + sentence-transformers are heavy.
+    import torch
+    from sentence_transformers import SentenceTransformer
+
+    torch.set_num_threads(OMP_NUM_THREADS)
+    model = SentenceTransformer(model_dir, trust_remote_code=True, device="cpu")
+    model.eval()
+    # `get_sentence_embedding_dimension` was renamed to `get_embedding_dimension` in newer
+    # sentence-transformers; fall back for compatibility with older releases.
+    get_dim = (
+        getattr(model, "get_embedding_dimension", None)
+        or model.get_sentence_embedding_dimension
+    )
+    dim = int(get_dim())
+    assert dim == 768, f"Model {name} has dim {dim}, expected 768"
+    logger.info("Loaded PyTorch model '%s' from %s (dim=%d)", name, model_dir, dim)
+    return {
+        "backend": "pytorch",
+        "model": model,
+        "dim": dim,
+        "lock": asyncio.Lock(),
+    }
+
+
+def _mean_pool_and_normalize(
+    token_embeddings: np.ndarray, attention_mask: np.ndarray
+) -> np.ndarray:
     """Mean pooling over non-padding tokens, then L2-normalize."""
     mask_expanded = attention_mask[:, :, np.newaxis].astype(np.float32)
     summed = np.sum(token_embeddings * mask_expanded, axis=1)
@@ -76,22 +112,27 @@ def _mean_pool_and_normalize(token_embeddings: np.ndarray, attention_mask: np.nd
 
 @asynccontextmanager
 async def lifespan(app):
-    for name, dir_name in MODEL_REGISTRY.items():
+    for name, (dir_name, backend) in MODEL_REGISTRY.items():
         model_dir = os.path.join(MODEL_DIR, dir_name)
-        if os.path.isdir(model_dir):
-            try:
-                MODELS[name] = load_model(name, model_dir)
-            except Exception as e:
-                logger.error("Failed to load model '%s': %s", name, e)
-                raise
-        else:
+        if not os.path.isdir(model_dir):
             logger.warning("Model dir not found: %s — skipping '%s'", model_dir, name)
+            continue
+        try:
+            if backend == "onnx-int8":
+                MODELS[name] = load_onnx_model(name, model_dir)
+            elif backend == "pytorch":
+                MODELS[name] = load_pytorch_model(name, model_dir)
+            else:
+                raise ValueError(f"Unknown backend '{backend}' for model '{name}'")
+        except Exception as e:
+            logger.error("Failed to load model '%s' (%s): %s", name, backend, e)
+            raise
     if not MODELS:
         raise RuntimeError("No models loaded. Check EMBEDDING_MODEL_DIR and model directories.")
     yield
 
 
-app = FastAPI(title="ONNX Embedding Server", lifespan=lifespan)
+app = FastAPI(title="Embedding Server", lifespan=lifespan)
 
 
 class EmbeddingRequest(BaseModel):
@@ -116,8 +157,58 @@ class EmbeddingResponse(BaseModel):
 async def health():
     if not MODELS:
         raise HTTPException(status_code=503, detail="No models loaded")
-    models_info = {name: {"dim": info[2]} for name, info in MODELS.items()}
+    models_info = {
+        name: {"dim": info["dim"], "backend": info["backend"]}
+        for name, info in MODELS.items()
+    }
     return {"status": "ok", "models": models_info}
+
+
+async def _encode_onnx(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
+    session: ort.InferenceSession = info["session"]
+    tokenizer: Tokenizer = info["tokenizer"]
+    encodings = tokenizer.encode_batch(texts)
+    max_len = max(len(e.ids) for e in encodings)
+    input_ids = np.zeros((len(texts), max_len), dtype=np.int64)
+    attention_mask = np.zeros((len(texts), max_len), dtype=np.int64)
+    for i, enc in enumerate(encodings):
+        length = len(enc.ids)
+        input_ids[i, :length] = enc.ids
+        attention_mask[i, :length] = enc.attention_mask
+
+    loop = asyncio.get_event_loop()
+    async with info["lock"]:
+        def _run():
+            feeds = {"input_ids": input_ids, "attention_mask": attention_mask}
+            input_names = [inp.name for inp in session.get_inputs()]
+            if "token_type_ids" in input_names:
+                feeds["token_type_ids"] = np.zeros_like(input_ids)
+            return session.run(None, feeds)
+        outputs = await loop.run_in_executor(None, _run)
+
+    vectors = _mean_pool_and_normalize(outputs[0], attention_mask)
+    token_count = int(sum(len(e.ids) for e in encodings))
+    return vectors, token_count
+
+
+async def _encode_pytorch(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
+    model = info["model"]
+    loop = asyncio.get_event_loop()
+    async with info["lock"]:
+        def _run():
+            return model.encode(
+                texts,
+                batch_size=len(texts),
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+        vectors = await loop.run_in_executor(None, _run)
+
+    # Approximate token count via the model's tokenizer.
+    tok = model.tokenizer
+    token_count = int(sum(len(ids) for ids in tok(texts, add_special_tokens=True)["input_ids"]))
+    return vectors.astype(np.float32, copy=False), token_count
 
 
 @app.post("/v1/embeddings")
@@ -133,43 +224,20 @@ async def embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
         available = list(MODELS.keys())
         raise HTTPException(status_code=400, detail=f"Unknown model '{model_name}'. Available: {available}")
 
-    session, tokenizer, dim, lock = MODELS[model_name]
-
-    # Tokenize
-    encodings = tokenizer.encode_batch(texts)
-    max_len = max(len(e.ids) for e in encodings)
-    input_ids = np.zeros((len(texts), max_len), dtype=np.int64)
-    attention_mask = np.zeros((len(texts), max_len), dtype=np.int64)
-    for i, enc in enumerate(encodings):
-        length = len(enc.ids)
-        input_ids[i, :length] = enc.ids
-        attention_mask[i, :length] = enc.attention_mask
-
+    info = MODELS[model_name]
     start = time.perf_counter()
-    loop = asyncio.get_event_loop()
 
-    async with lock:
-        def _run_inference():
-            feeds = {"input_ids": input_ids, "attention_mask": attention_mask}
-            # Some models also need token_type_ids
-            input_names = [inp.name for inp in session.get_inputs()]
-            if "token_type_ids" in input_names:
-                feeds["token_type_ids"] = np.zeros_like(input_ids)
-            return session.run(None, feeds)
-
-        outputs = await loop.run_in_executor(None, _run_inference)
-
-    token_embeddings = outputs[0]  # (batch, seq_len, dim)
-    vectors = _mean_pool_and_normalize(token_embeddings, attention_mask)
+    if info["backend"] == "onnx-int8":
+        vectors, token_count = await _encode_onnx(info, texts)
+    elif info["backend"] == "pytorch":
+        vectors, token_count = await _encode_pytorch(info, texts)
+    else:
+        raise HTTPException(status_code=500, detail=f"Unknown backend '{info['backend']}'")
 
     latency = round((time.perf_counter() - start) * 1000, 1)
-    logger.info("Encoded %d texts with '%s' in %.1fms", len(texts), model_name, latency)
+    logger.info("Encoded %d texts with '%s' (%s) in %.1fms", len(texts), model_name, info["backend"], latency)
 
-    data = [
-        EmbeddingData(embedding=vec.tolist(), index=i)
-        for i, vec in enumerate(vectors)
-    ]
-    token_count = sum(len(e.ids) for e in encodings)
+    data = [EmbeddingData(embedding=vec.tolist(), index=i) for i, vec in enumerate(vectors)]
     return EmbeddingResponse(
         data=data,
         model=model_name,
