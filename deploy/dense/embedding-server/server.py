@@ -1,9 +1,9 @@
-"""Embedding Server — multi-backend /v1/embeddings API.
+"""Embedding Server — ONNX INT8 /v1/embeddings API.
 
-Backends:
-- ONNX INT8 (CPU, AVX-512 VNNI): standard BERT models — high throughput.
-- PyTorch (sentence-transformers): models with custom architectures
-  (e.g. nomic_bert / CodeRankEmbed) that optimum cannot export.
+All models run on a single backend: ONNX INT8 (CPU, AVX-512 VNNI), keeping the
+runtime image torch-free. Models that don't export cleanly via optimum (e.g.
+nomic_bert / CodeRankEmbed) are pulled from pre-built ONNX releases at build
+time (see download_models.py).
 
 CPU-only, optimized for i9-9980XE (18C/36T).
 """
@@ -29,9 +29,12 @@ OMP_NUM_THREADS = int(os.environ.get("OMP_NUM_THREADS", "18"))
 MAX_BATCH_SIZE = int(os.environ.get("EMBEDDING_MAX_BATCH_SIZE", "64"))
 MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR", "/app/models")
 
-# Model registry: name -> (model_dir_name, backend)
+# Model registry: public_name -> (model_dir_name, backend)
+# The public name is what callers pass in `request.model`; we keep
+# "nomic-ai/CodeRankEmbed" stable so existing clients (indexers, retrievers)
+# don't need to change after the backend swap to ONNX.
 MODEL_REGISTRY = {
-    "nomic-ai/CodeRankEmbed": ("CodeRankEmbed", "pytorch"),
+    "nomic-ai/CodeRankEmbed": ("CodeRankEmbed", "onnx-int8"),
     "BAAI/bge-base-zh-v1.5": ("bge-base-zh-v1.5", "onnx-int8"),
 }
 
@@ -71,32 +74,6 @@ def load_onnx_model(name: str, model_dir: str) -> dict:
     }
 
 
-def load_pytorch_model(name: str, model_dir: str) -> dict:
-    """Load via sentence-transformers (PyTorch CPU)."""
-    # Lazy import: torch + sentence-transformers are heavy.
-    import torch
-    from sentence_transformers import SentenceTransformer
-
-    torch.set_num_threads(OMP_NUM_THREADS)
-    model = SentenceTransformer(model_dir, trust_remote_code=True, device="cpu")
-    model.eval()
-    # `get_sentence_embedding_dimension` was renamed to `get_embedding_dimension` in newer
-    # sentence-transformers; fall back for compatibility with older releases.
-    get_dim = (
-        getattr(model, "get_embedding_dimension", None)
-        or model.get_sentence_embedding_dimension
-    )
-    dim = int(get_dim())
-    assert dim == 768, f"Model {name} has dim {dim}, expected 768"
-    logger.info("Loaded PyTorch model '%s' from %s (dim=%d)", name, model_dir, dim)
-    return {
-        "backend": "pytorch",
-        "model": model,
-        "dim": dim,
-        "lock": asyncio.Lock(),
-    }
-
-
 def _mean_pool_and_normalize(
     token_embeddings: np.ndarray, attention_mask: np.ndarray
 ) -> np.ndarray:
@@ -120,8 +97,6 @@ async def lifespan(app):
         try:
             if backend == "onnx-int8":
                 MODELS[name] = load_onnx_model(name, model_dir)
-            elif backend == "pytorch":
-                MODELS[name] = load_pytorch_model(name, model_dir)
             else:
                 raise ValueError(f"Unknown backend '{backend}' for model '{name}'")
         except Exception as e:
@@ -191,26 +166,6 @@ async def _encode_onnx(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
     return vectors, token_count
 
 
-async def _encode_pytorch(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
-    model = info["model"]
-    loop = asyncio.get_event_loop()
-    async with info["lock"]:
-        def _run():
-            return model.encode(
-                texts,
-                batch_size=len(texts),
-                normalize_embeddings=True,
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
-        vectors = await loop.run_in_executor(None, _run)
-
-    # Approximate token count via the model's tokenizer.
-    tok = model.tokenizer
-    token_count = int(sum(len(ids) for ids in tok(texts, add_special_tokens=True)["input_ids"]))
-    return vectors.astype(np.float32, copy=False), token_count
-
-
 @app.post("/v1/embeddings")
 async def embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     texts = request.input if isinstance(request.input, list) else [request.input]
@@ -229,8 +184,6 @@ async def embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
 
     if info["backend"] == "onnx-int8":
         vectors, token_count = await _encode_onnx(info, texts)
-    elif info["backend"] == "pytorch":
-        vectors, token_count = await _encode_pytorch(info, texts)
     else:
         raise HTTPException(status_code=500, detail=f"Unknown backend '{info['backend']}'")
 

@@ -2,6 +2,15 @@
 
 Docker deployment for the Qdrant vector database and embedding service that power SourcePilot's vector-retrieval feature.
 
+The embedding service runs **ONNX INT8** for both models (CPU-only, AVX-512 VNNI):
+
+| Public name | Source | Backend |
+|---|---|---|
+| `nomic-ai/CodeRankEmbed` | [`sirasagi62/code-rank-embed-onnx`](https://huggingface.co/sirasagi62/code-rank-embed-onnx) | ONNX INT8 (dynamic-quantized at build time) |
+| `BAAI/bge-base-zh-v1.5` | upstream HF checkpoint | ONNX INT8 (exported + quantized via optimum) |
+
+The runtime image carries no PyTorch / sentence-transformers — only `onnxruntime` + `tokenizers`.
+
 ## Quickstart
 
 ```bash

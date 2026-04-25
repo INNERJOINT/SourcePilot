@@ -1,2 +1,2 @@
-code_model=nomic-ai/CodeRankEmbed dim=768 backend=pytorch
+code_model=nomic-ai/CodeRankEmbed dim=768 backend=onnx-int8 source=sirasagi62/code-rank-embed-onnx
 zh_model=BAAI/bge-base-zh-v1.5 dim=768 backend=onnx-int8

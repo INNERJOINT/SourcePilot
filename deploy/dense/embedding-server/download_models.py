@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Download embedding models at Docker build time.
 
-Two backends:
-- ONNX INT8 (AVX-512 VNNI): standard BERT models exportable by optimum.
-- PyTorch (sentence-transformers): models with custom architectures
-  (e.g. nomic_bert / CodeRankEmbed) that optimum cannot export.
+All models use the ONNX INT8 backend (AVX-512 VNNI) for fast CPU inference.
+- BAAI/bge-base-zh-v1.5: exported + quantized via optimum.
+- nomic-ai/CodeRankEmbed: pulled as a pre-built ONNX from
+  sirasagi62/code-rank-embed-onnx, then dynamically quantized to INT8.
 """
 
 import os
@@ -13,8 +13,10 @@ from pathlib import Path
 MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR", "/app/models")
 
 # (hf_name, output_subdir, backend)
+# - "onnx-int8":     export from a transformers checkpoint via optimum, then quantize.
+# - "onnx-prebuilt": snapshot-download a repo that already ships model.onnx, then quantize.
 MODELS = [
-    ("nomic-ai/CodeRankEmbed", "CodeRankEmbed", "pytorch"),
+    ("sirasagi62/code-rank-embed-onnx", "CodeRankEmbed", "onnx-prebuilt"),
     ("BAAI/bge-base-zh-v1.5", "bge-base-zh-v1.5", "onnx-int8"),
 ]
 
@@ -44,29 +46,40 @@ def export_and_quantize_onnx(hf_name: str, output_dir: str) -> None:
     print(f"[onnx] Done: {out}")
 
 
-def download_pytorch(hf_name: str, output_dir: str) -> None:
-    """Snapshot-download the model into output_dir for SentenceTransformer at runtime.
+def download_and_quantize_prebuilt_onnx(hf_name: str, output_dir: str) -> None:
+    """Snapshot-download a pre-built ONNX repo, then dynamically quantize to INT8.
 
-    Using a self-contained directory (not the HF cache) keeps the runtime image
-    self-sufficient and avoids HF hub network calls on container start.
+    Used for models whose custom architecture (e.g. nomic_bert) cannot be exported
+    by optimum, but where a community ONNX release is available.
     """
     from huggingface_hub import snapshot_download
+    from onnxruntime.quantization import QuantType, quantize_dynamic
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    print(f"[pytorch] Snapshot downloading {hf_name} -> {out}")
-    snapshot_download(
-        repo_id=hf_name,
-        local_dir=str(out),
+
+    print(f"[onnx-prebuilt] Snapshot downloading {hf_name} -> {out}")
+    snapshot_download(repo_id=hf_name, local_dir=str(out))
+
+    src_onnx = out / "model.onnx"
+    if not src_onnx.exists():
+        raise FileNotFoundError(f"Expected model.onnx in {out}")
+
+    quantized = out / "model_quantized.onnx"
+    print(f"[onnx-prebuilt] Dynamic-quantizing {src_onnx} -> {quantized} (INT8/QUInt8)")
+    quantize_dynamic(
+        model_input=str(src_onnx),
+        model_output=str(quantized),
+        weight_type=QuantType.QUInt8,
     )
 
-    # Smoke-test: load with sentence-transformers to fail fast at build time.
-    print(f"[pytorch] Smoke-testing {hf_name} load...")
-    from sentence_transformers import SentenceTransformer
-    st = SentenceTransformer(str(out), trust_remote_code=True)
-    emb = st.encode(["test"])
-    assert emb.shape[-1] == 768, f"Expected dim 768, got {emb.shape[-1]}"
-    print(f"[pytorch] Done: {out} (dim={emb.shape[-1]})")
+    # Free disk: keep only the quantized ONNX (server prefers model_quantized.onnx).
+    src_onnx.unlink()
+    print(f"[onnx-prebuilt] Removed FP32 model.onnx, kept {quantized.name}")
+
+    if not (out / "tokenizer.json").exists():
+        raise FileNotFoundError(f"tokenizer.json missing in {out}")
+    print(f"[onnx-prebuilt] Done: {out}")
 
 
 def main() -> None:
@@ -74,8 +87,8 @@ def main() -> None:
         output_dir = os.path.join(MODEL_DIR, dir_name)
         if backend == "onnx-int8":
             export_and_quantize_onnx(hf_name, output_dir)
-        elif backend == "pytorch":
-            download_pytorch(hf_name, output_dir)
+        elif backend == "onnx-prebuilt":
+            download_and_quantize_prebuilt_onnx(hf_name, output_dir)
         else:
             raise ValueError(f"Unknown backend: {backend}")
     print("All models prepared.")
