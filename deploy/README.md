@@ -71,11 +71,11 @@ compose can reach Neo4j by hostname (`neo4j:7687`). This was implicit
 isolation, not deliberate; auth (`NEO4J_AUTH=neo4j/sourcepilot`) remains the
 access-control mechanism.
 
-### ADR #5 — Compose project name pinned to `dify`
+### ADR #5 — Compose project name pinned to `sourcepilot`
 
-The compose file declares `name: dify` at the top level. Without this,
+The compose file declares `name: sourcepilot` at the top level. Without this,
 direct invocation (`docker compose -f deploy/docker-compose.yml ...`) would
 use the directory-derived project name `deploy`, while the root shim path
-would use `dify`. The two would create parallel `*_sourcepilot-net` networks
-and parallel volume copies, silently diverging. Pinning the project name
-guarantees a single canonical set of resources regardless of invocation.
+would use a different prefix. The two would create parallel `*_sourcepilot-net`
+networks and parallel volume copies, silently diverging. Pinning the project
+name guarantees a single canonical set of resources regardless of invocation.

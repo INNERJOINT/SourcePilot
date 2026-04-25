@@ -12,7 +12,7 @@ AOSP Code Search — a hybrid RAG code search system over Android Open Source Pr
 
 ## Build & Run
 
-Infrastructure (Zoekt, Qdrant, Neo4j) runs as Docker containers (Compose project `dify`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
+Infrastructure (Zoekt, Qdrant, Neo4j) runs as Docker containers (Compose project `sourcepilot`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 

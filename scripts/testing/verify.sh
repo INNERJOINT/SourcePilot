@@ -164,8 +164,8 @@ _run_indexer_containers() {
         docker compose -f "$COMPOSE" --profile indexer config -q
     _check "deploy compose config (default profile — 不应含 dense-indexer/structural-indexer)" \
         bash -c "svc=\$(docker compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^structural-indexer\$'"
-    _check "deploy compose project name = dify" \
-        bash -c "docker compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'dify'"
+    _check "deploy compose project name = sourcepilot" \
+        bash -c "docker compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'sourcepilot'"
     _check "root shim resolves to deploy compose" \
         docker compose -f "$DIR/docker-compose.yml" config -q
 
