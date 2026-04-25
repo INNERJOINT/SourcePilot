@@ -28,14 +28,25 @@ logger = logging.getLogger(__name__)
 OMP_NUM_THREADS = int(os.environ.get("OMP_NUM_THREADS", "18"))
 MAX_BATCH_SIZE = int(os.environ.get("EMBEDDING_MAX_BATCH_SIZE", "64"))
 MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR", "/app/models")
+CODE_EMBEDDING_MODEL = os.environ.get("CODE_EMBEDDING_MODEL", "nomic-ai/CodeRankEmbed")
 
-# Model registry: public_name -> (model_dir_name, backend)
+# Set of supported code embedding models (exactly one is active at runtime).
+CODE_MODELS = {"nomic-ai/CodeRankEmbed", "microsoft/unixcoder-base"}
+
+if CODE_EMBEDDING_MODEL not in CODE_MODELS:
+    raise RuntimeError(
+        f"CODE_EMBEDDING_MODEL={CODE_EMBEDDING_MODEL!r} is not valid. "
+        f"Valid values: {sorted(CODE_MODELS)}"
+    )
+
+# Model registry: public_name -> (model_dir_name, backend, pooling)
 # The public name is what callers pass in `request.model`; we keep
 # "nomic-ai/CodeRankEmbed" stable so existing clients (indexers, retrievers)
 # don't need to change after the backend swap to ONNX.
 MODEL_REGISTRY = {
-    "nomic-ai/CodeRankEmbed": ("CodeRankEmbed", "onnx-int8"),
-    "BAAI/bge-base-zh-v1.5": ("bge-base-zh-v1.5", "onnx-int8"),
+    "nomic-ai/CodeRankEmbed": ("CodeRankEmbed", "onnx-int8", "mean"),
+    "microsoft/unixcoder-base": ("unixcoder-base", "onnx-int8", "cls"),
+    "BAAI/bge-base-zh-v1.5": ("bge-base-zh-v1.5", "onnx-int8", "mean"),
 }
 
 # Runtime state: name -> dict with backend-specific handles
@@ -51,7 +62,7 @@ def _create_session(onnx_path: str) -> ort.InferenceSession:
     return ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
 
 
-def load_onnx_model(name: str, model_dir: str) -> dict:
+def load_onnx_model(name: str, model_dir: str, pooling: str) -> dict:
     """Load ONNX (preferring quantized) + tokenizers Tokenizer."""
     model_path = Path(model_dir)
     onnx_file = model_path / "model_quantized.onnx"
@@ -64,9 +75,12 @@ def load_onnx_model(name: str, model_dir: str) -> dict:
     tokenizer = Tokenizer.from_file(str(model_path / "tokenizer.json"))
     dim = session.get_outputs()[0].shape[-1]
     assert dim == 768, f"Model {name} has dim {dim}, expected 768"
-    logger.info("Loaded ONNX model '%s' from %s (dim=%d)", name, onnx_file, dim)
+    logger.info(
+        "Loaded ONNX model '%s' from %s (dim=%d, pooling=%s)", name, onnx_file, dim, pooling
+    )
     return {
         "backend": "onnx-int8",
+        "pooling": pooling,
         "session": session,
         "tokenizer": tokenizer,
         "dim": dim,
@@ -87,16 +101,26 @@ def _mean_pool_and_normalize(
     return pooled / norms
 
 
+def _cls_pool_and_normalize(token_embeddings: np.ndarray) -> np.ndarray:
+    """CLS token pooling (index 0), then L2-normalize."""
+    pooled = token_embeddings[:, 0, :]
+    norms = np.linalg.norm(pooled, axis=1, keepdims=True)
+    norms = np.clip(norms, a_min=1e-9, a_max=None)
+    return pooled / norms
+
+
 @asynccontextmanager
 async def lifespan(app):
-    for name, (dir_name, backend) in MODEL_REGISTRY.items():
+    for name, (dir_name, backend, pooling) in MODEL_REGISTRY.items():
+        if name in CODE_MODELS and name != CODE_EMBEDDING_MODEL:
+            continue
         model_dir = os.path.join(MODEL_DIR, dir_name)
         if not os.path.isdir(model_dir):
             logger.warning("Model dir not found: %s — skipping '%s'", model_dir, name)
             continue
         try:
             if backend == "onnx-int8":
-                MODELS[name] = load_onnx_model(name, model_dir)
+                MODELS[name] = load_onnx_model(name, model_dir, pooling)
             else:
                 raise ValueError(f"Unknown backend '{backend}' for model '{name}'")
         except Exception as e:
@@ -132,11 +156,24 @@ class EmbeddingResponse(BaseModel):
 async def health():
     if not MODELS:
         raise HTTPException(status_code=503, detail="No models loaded")
-    models_info = {
-        name: {"dim": info["dim"], "backend": info["backend"]}
+    code_models_info = {
+        name: {"dim": info["dim"], "backend": info["backend"], "pooling": info["pooling"]}
         for name, info in MODELS.items()
+        if name in CODE_MODELS
     }
-    return {"status": "ok", "models": models_info}
+    auxiliary_models_info = {
+        name: {"dim": info["dim"], "backend": info["backend"], "pooling": info["pooling"]}
+        for name, info in MODELS.items()
+        if name not in CODE_MODELS
+    }
+    return {
+        "status": "ok",
+        "active_code_model": CODE_EMBEDDING_MODEL,
+        "models": {
+            "code": code_models_info,
+            "auxiliary": auxiliary_models_info,
+        },
+    }
 
 
 async def _encode_onnx(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
@@ -161,7 +198,14 @@ async def _encode_onnx(info: dict, texts: list[str]) -> tuple[np.ndarray, int]:
             return session.run(None, feeds)
         outputs = await loop.run_in_executor(None, _run)
 
-    vectors = _mean_pool_and_normalize(outputs[0], attention_mask)
+    pooling = info["pooling"]
+    if pooling == "mean":
+        vectors = _mean_pool_and_normalize(outputs[0], attention_mask)
+    elif pooling == "cls":
+        vectors = _cls_pool_and_normalize(outputs[0])
+    else:
+        raise ValueError(f"Unknown pooling strategy: {pooling!r}")
+
     token_count = int(sum(len(e.ids) for e in encodings))
     return vectors, token_count
 
@@ -172,12 +216,21 @@ async def embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     if not texts:
         raise HTTPException(status_code=400, detail="input must not be empty")
     if len(texts) > MAX_BATCH_SIZE:
-        raise HTTPException(status_code=400, detail=f"batch size {len(texts)} exceeds max {MAX_BATCH_SIZE}")
+        raise HTTPException(
+            status_code=400, detail=f"batch size {len(texts)} exceeds max {MAX_BATCH_SIZE}"
+        )
 
     model_name = request.model
     if model_name not in MODELS:
         available = list(MODELS.keys())
-        raise HTTPException(status_code=400, detail=f"Unknown model '{model_name}'. Available: {available}")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown model '{model_name}'. Available: {available}. "
+                f"active_code_model={CODE_EMBEDDING_MODEL!r}. "
+                f"To switch, restart embedding-server with CODE_EMBEDDING_MODEL=<name>."
+            ),
+        )
 
     info = MODELS[model_name]
     start = time.perf_counter()
@@ -188,7 +241,10 @@ async def embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
         raise HTTPException(status_code=500, detail=f"Unknown backend '{info['backend']}'")
 
     latency = round((time.perf_counter() - start) * 1000, 1)
-    logger.info("Encoded %d texts with '%s' (%s) in %.1fms", len(texts), model_name, info["backend"], latency)
+    logger.info(
+        "Encoded %d texts with '%s' (%s) in %.1fms",
+        len(texts), model_name, info["backend"], latency
+    )
 
     data = [EmbeddingData(embedding=vec.tolist(), index=i) for i, vec in enumerate(vectors)]
     return EmbeddingResponse(

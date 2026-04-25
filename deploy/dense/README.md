@@ -106,3 +106,25 @@ export DENSE_ENABLED=true
 export DENSE_VECTOR_DB_URL=http://localhost:6333
 export DENSE_EMBEDDING_URL=http://localhost:8080/v1
 ```
+
+## Switching the code-embedding model
+
+1. Set `CODE_EMBEDDING_MODEL=microsoft/unixcoder-base` (or back to `nomic-ai/CodeRankEmbed`) in your env / `.env`.
+2. Rebuild the embedding-server image: `docker compose build dense-index-coderankembed`.
+3. Bring the stack up / restart the embedding-server: `docker compose up -d dense-index-coderankembed`.
+4. Edit `config/projects.yaml` so the relevant project's `dense_index.embedding_model` matches and `collection_name` includes the model suffix (e.g. `aosp_code_<proj>_dense_unixcoder`).
+5. Run the indexer: `docker compose --profile indexer run --rm dense-indexer python scripts/indexing/dense/build_dense_index.py --project-name <proj> --source-dir /src/<...>`.
+6. Smoke-check: `curl -s http://localhost:9088/health | jq` — confirm `active_code_model` matches.
+
+Sample `/health` response:
+
+```json
+{
+  "status": "ok",
+  "active_code_model": "microsoft/unixcoder-base",
+  "models": {
+    "code": "microsoft/unixcoder-base",
+    "auxiliary": "BAAI/bge-base-zh-v1.5"
+  }
+}
+```

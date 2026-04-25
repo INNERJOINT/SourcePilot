@@ -18,6 +18,7 @@ MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR", "/app/models")
 MODELS = [
     ("sirasagi62/code-rank-embed-onnx", "CodeRankEmbed", "onnx-prebuilt"),
     ("BAAI/bge-base-zh-v1.5", "bge-base-zh-v1.5", "onnx-int8"),
+    ("microsoft/unixcoder-base", "unixcoder-base", "onnx-int8"),
 ]
 
 

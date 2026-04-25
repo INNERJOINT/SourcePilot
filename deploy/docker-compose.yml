@@ -216,6 +216,7 @@ services:
       EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
       HOST: "0.0.0.0"
       PORT: "8080"
+      CODE_EMBEDDING_MODEL: ${CODE_EMBEDDING_MODEL:-nomic-ai/CodeRankEmbed}
     ports:
       - "${EMBEDDING_PORT:-9088}:8080"
     healthcheck:

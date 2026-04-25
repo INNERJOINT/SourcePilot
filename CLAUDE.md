@@ -102,6 +102,24 @@ Key variables (see `.env.example` for full list):
 | `NL_ENABLED` | `true` | NL rewrite pipeline toggle |
 | `AUDIT_LOG_FILE` | `$PROJ_ROOT/audit.log` | SourcePilot audit output |
 | `MCP_AUTH_TOKEN` | — | Bearer token for MCP Streamable HTTP mode |
+| `CODE_EMBEDDING_MODEL` | `nomic-ai/CodeRankEmbed` | Embedding-server-side; selects which code model to load. Valid: `nomic-ai/CodeRankEmbed`, `microsoft/unixcoder-base`. `bge-base-zh-v1.5` always loads regardless. |
+
+## Switching the Dense Code-Embedding Model
+
+`CODE_EMBEDDING_MODEL` selects the active code model **at embedding-server boot**. Switching is not a hot operation — it requires an image rebuild (the model is baked in by `download_models.py` at `docker build` time) AND a project-config change. Skipping any step silently corrupts the vector store.
+
+**Compose env-file gotcha:** `.env` lives in the repo root, but `docker compose -f deploy/docker-compose.yml` defaults its project directory to `deploy/`, so it looks for `deploy/.env` and silently uses the in-compose `${VAR:-default}` fallbacks instead. **Always pass `--env-file` explicitly** (or run from repo root with `--project-directory .`). Symptom of getting this wrong: `docker compose ... config | grep CODE_EMBEDDING_MODEL` prints the default, and `/health` reports the wrong `active_code_model` despite a correct `.env`.
+
+**Required steps in order** (run from repo root `/mnt/code/SourcePilot`):
+
+1. **Edit `.env`** — set `CODE_EMBEDDING_MODEL=microsoft/unixcoder-base` (or back to `nomic-ai/CodeRankEmbed`).
+2. **Rebuild the embedding-server image** — `docker compose --env-file .env -f deploy/docker-compose.yml build dense-index-coderankembed` (~+5min, +500MB the first time UniXcoder is added).
+3. **Restart with force-recreate** — `docker compose --env-file .env -f deploy/docker-compose.yml up -d --force-recreate dense-index-coderankembed`. Without `--force-recreate`, env changes may not be applied even after rebuild.
+4. **Verify** — first `docker compose --env-file .env -f deploy/docker-compose.yml config | grep CODE_EMBEDDING_MODEL` (should print the new value, not the fallback). Then `curl -s http://localhost:9088/health | jq` must show `"active_code_model": "microsoft/unixcoder-base"`.
+5. **Edit `config/projects.yaml`** for each affected project: set `dense_index.embedding_model` to match AND change `dense_index.collection_name` to a **new** name (convention: append `_unixcoder`, e.g. `aosp_code_ace_dense_unixcoder`). The indexer pre-flight (`_preflight_check_active_code_model` in `scripts/indexing/dense/build_dense_index.py`) aborts with an actionable error if server and project disagree.
+6. **Run the indexer** — `./scripts/indexing/dense/build_dense_index_batch.sh`.
+
+**Vector-store contamination rule:** Qdrant collections are dimension-only (768 for both models), so writing UniXcoder vectors into a CodeRank collection **succeeds silently** but destroys recall. **Never reuse the same `collection_name` across models.** Old collection can stay (for A/B comparison) or be dropped: `curl -X DELETE http://localhost:6333/collections/<old_name>`.
 
 ## CI
 

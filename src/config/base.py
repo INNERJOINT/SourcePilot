@@ -36,6 +36,9 @@ DENSE_ENABLED = os.getenv("DENSE_ENABLED", "false").lower() == "true"
 DENSE_VECTOR_DB_URL = os.getenv("DENSE_VECTOR_DB_URL", "http://localhost:6333")
 DENSE_COLLECTION_NAME = os.getenv("DENSE_COLLECTION_NAME", "aosp_code")
 DENSE_EMBEDDING_URL = os.getenv("DENSE_EMBEDDING_URL", "http://localhost:8080/v1")
+# DENSE_EMBEDDING_MODEL is a legacy gateway-side default. ProjectConfig.embedding_model
+# (config/projects.yaml) overrides it for all real traffic. The embedding-server's
+# active code model is selected by CODE_EMBEDDING_MODEL on the server, not here.
 DENSE_EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "unixcoder-base")
 DENSE_EMBEDDING_MODEL_CODE = os.getenv("DENSE_EMBEDDING_MODEL_CODE", "nomic-ai/CodeRankEmbed")
 DENSE_EMBEDDING_MODEL_ZH = os.getenv("DENSE_EMBEDDING_MODEL_ZH", "BAAI/bge-base-zh-v1.5")

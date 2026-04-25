@@ -1,15 +1,15 @@
 """Tests for EmbeddingClient."""
 
+import httpx
 import pytest
 import respx
-import httpx
 
 from adapters.embedding import EmbeddingClient
 
 
-@pytest.fixture
-def client():
-    return EmbeddingClient(base_url="http://localhost:8080/v1", model="unixcoder-base")
+@pytest.fixture(params=["nomic-ai/CodeRankEmbed", "microsoft/unixcoder-base"])
+def client(request):
+    return EmbeddingClient(base_url="http://localhost:8080/v1", model=request.param)
 
 
 class TestEmbed:

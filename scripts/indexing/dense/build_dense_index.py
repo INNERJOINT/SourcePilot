@@ -20,6 +20,50 @@ import uuid
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+CODE_MODELS = {"nomic-ai/CodeRankEmbed", "microsoft/unixcoder-base"}
+
+def _preflight_check_active_code_model(
+    embedding_url: str, embedding_model: str | None, collection_name: str
+) -> None:
+    """Check embedding-server /health before starting index build.
+
+    - Warns if active_code_model mismatches the project's embedding_model.
+    - Warns if collection_name looks wrong for unixcoder.
+    - Never aborts on unreachable server (let the actual embed call fail).
+    """
+    effective_model = embedding_model
+    try:
+        import httpx
+        health_url = embedding_url.rstrip("/v1").rstrip("/") + "/health"
+        resp = httpx.get(health_url, timeout=5.0)
+        resp.raise_for_status()
+        data = resp.json()
+        active = data.get("active_code_model")
+        if active is None:
+            logger.info(
+                "Embedding-server /health does not report active_code_model — "
+                "skipping consistency check (older image)."
+            )
+        elif effective_model in CODE_MODELS and active != effective_model:
+            raise SystemExit(
+                f"Embedding-server active_code_model={active} does not match "
+                f"project embedding_model={effective_model}. "
+                f"Restart the embedding-server with CODE_EMBEDDING_MODEL={effective_model} "
+                f"(and rebuild the image if the model artifacts are missing)."
+            )
+    except SystemExit:
+        raise
+    except Exception as e:
+        logger.warning("Embedding-server /health unreachable: %s — proceeding anyway", e)
+
+    if effective_model == "microsoft/unixcoder-base" and "unixcoder" not in collection_name:
+        logger.warning(
+            "Collection name '%s' does not contain 'unixcoder' — risk of cross-encoder "
+            "vector contamination if reusing an existing collection.",
+            collection_name,
+        )
+
+
 SOURCE_EXTENSIONS = {
     ".java", ".kt", ".py", ".c", ".cc", ".cpp", ".h", ".hpp",
     ".aidl", ".rs", ".go",
@@ -135,11 +179,22 @@ def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dic
 async def build_index(args, collection_name: str, embedding_model: str | None = None):
     """主索引构建流程。"""
     from adapters.embedding import EmbeddingClient
-    from config import DENSE_COLLECTION_NAME, DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
+    from config import (
+        DENSE_EMBEDDING_DIM,
+        DENSE_EMBEDDING_MODEL,
+        DENSE_EMBEDDING_URL,
+        DENSE_VECTOR_DB_URL,
+    )
 
     DENSE_COLLECTION_NAME = collection_name  # override with resolved name
 
-    embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL)
+    _preflight_check_active_code_model(
+        DENSE_EMBEDDING_URL, embedding_model or DENSE_EMBEDDING_MODEL, DENSE_COLLECTION_NAME
+    )
+
+    embedding = EmbeddingClient(
+        base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL
+    )
 
     # 1. 扫描本地文件
     logger.info("Scanning source files in %s ...", args.source_dir)
@@ -156,7 +211,9 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         chunks = read_and_chunk_file(f, args.window_size, args.overlap)
         all_chunks.extend(chunks)
         if (i + 1) % 500 == 0:
-            logger.info("  processed %d/%d files, %d chunks so far", i + 1, len(files), len(all_chunks))
+            logger.info(
+                "  processed %d/%d files, %d chunks so far", i + 1, len(files), len(all_chunks)
+            )
 
     logger.info("Total chunks: %d", len(all_chunks))
     if not all_chunks:
@@ -164,7 +221,10 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         return
 
     # 3. 批量 embedding（并发）
-    logger.info("Generating embeddings (batch_size=%d, concurrency=%d) ...", args.batch_size, args.concurrency)
+    logger.info(
+        "Generating embeddings (batch_size=%d, concurrency=%d) ...",
+        args.batch_size, args.concurrency,
+    )
     all_vectors: list = [None] * len(all_chunks)
     texts = [c["content"] for c in all_chunks]
     sem = asyncio.Semaphore(args.concurrency)
@@ -181,7 +241,10 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
                     return
                 except Exception as e:
                     if attempt == 2:
-                        logger.error("Embedding failed at batch %d-%d after 3 retries: %s — skipping", batch_start, batch_end, e)
+                        logger.error(
+                            "Embedding failed at batch %d-%d after 3 retries: %s — skipping",
+                            batch_start, batch_end, e,
+                        )
                         failed_ranges.append((batch_start, batch_end))
                         return
                     await asyncio.sleep(2 ** attempt)
@@ -200,7 +263,10 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
             if isinstance(r, Exception):
                 logger.error("Unexpected exception from embed_batch: %s", r)
         done = min((group_start + chunk_size) * args.batch_size, len(texts))
-        logger.info("  embedded %d/%d chunks (failed batches so far: %d)", done, len(texts), len(failed_ranges))
+        logger.info(
+            "  embedded %d/%d chunks (failed batches so far: %d)",
+            done, len(texts), len(failed_ranges),
+        )
 
     failed_chunk_count = sum(e - s for s, e in failed_ranges)
     logger.info(
@@ -221,9 +287,13 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     if not client.collection_exists(DENSE_COLLECTION_NAME):
         client.create_collection(
             collection_name=DENSE_COLLECTION_NAME,
-            vectors_config=models.VectorParams(size=DENSE_EMBEDDING_DIM, distance=models.Distance.COSINE),
+            vectors_config=models.VectorParams(
+                size=DENSE_EMBEDDING_DIM, distance=models.Distance.COSINE
+            ),
         )
-        client.create_payload_index(DENSE_COLLECTION_NAME, "repo", models.PayloadSchemaType.KEYWORD)
+        client.create_payload_index(
+            DENSE_COLLECTION_NAME, "repo", models.PayloadSchemaType.KEYWORD
+        )
         logger.info("Created collection '%s' with HNSW index (cosine)", DENSE_COLLECTION_NAME)
 
     # 批量插入（跳过 embedding 失败的 chunk）
@@ -268,20 +338,39 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     )
     if failed_ranges:
         logger.warning(
-            "Build finished with %d failed embedding batches (%d chunks). Re-run on this repo to retry.",
+            "Build finished with %d failed embedding batches (%d chunks). "
+            "Re-run on this repo to retry.",
             len(failed_ranges), failed_chunk_count,
         )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Build dense vector index for AOSP code")
-    parser.add_argument("--source-dir", default="/mnt/code/ACE/frameworks/base", help="Local source directory to index")
-    parser.add_argument("--repo-name", default="frameworks/base", help="Repo name stored in metadata (default: frameworks/base)")
-    parser.add_argument("--window-size", type=int, default=30, help="Sliding window size in lines (default: 30)")
+    parser.add_argument(
+        "--source-dir", default="/mnt/code/ACE/frameworks/base",
+        help="Local source directory to index",
+    )
+    parser.add_argument(
+        "--repo-name", default="frameworks/base",
+        help="Repo name stored in metadata (default: frameworks/base)",
+    )
+    parser.add_argument(
+        "--window-size", type=int, default=30,
+        help="Sliding window size in lines (default: 30)",
+    )
     parser.add_argument("--overlap", type=int, default=10, help="Overlap lines (default: 10)")
-    parser.add_argument("--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")), help="Embedding batch size (default: 64)")
-    parser.add_argument("--concurrency", type=int, default=8, help="Concurrent embedding requests (default: 8)")
-    parser.add_argument("--project-name", default=None, help="Project name for collection naming (e.g. 'ace' → collection 'aosp_code_ace')")
+    parser.add_argument(
+        "--batch-size", type=int, default=int(os.environ.get("EMBEDDING_BATCH_SIZE", "64")),
+        help="Embedding batch size (default: 64)",
+    )
+    parser.add_argument(
+        "--concurrency", type=int, default=8,
+        help="Concurrent embedding requests (default: 8)",
+    )
+    parser.add_argument(
+        "--project-name", default=None,
+        help="Project name for collection naming (e.g. 'ace' → collection 'aosp_code_ace')",
+    )
     parser.add_argument("--collection-name", default=None, help="Override Qdrant collection name")
     args = parser.parse_args()
 
