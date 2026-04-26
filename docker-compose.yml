@@ -1,0 +1,4 @@
+# Thin shim — actual compose lives at deploy/docker-compose.yml.
+# Kept here so `docker compose up -d` at repo root continues to work.
+include:
+  - path: deploy/docker-compose.yml

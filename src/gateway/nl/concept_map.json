@@ -1,0 +1,17 @@
+{
+  "SystemServer 启动": ["SystemServer", "startBootstrapServices", "startCoreServices", "file:SystemServer.java"],
+  "Activity 生命周期": ["ActivityThread", "handleLaunchActivity", "performCreate", "performResume"],
+  "Binder 通信": ["BinderProxy", "transact", "onTransact", "IPCThreadState"],
+  "权限检查": ["checkPermission", "enforcePermission", "PermissionManagerService"],
+  "窗口管理": ["WindowManagerService", "WindowState", "DisplayContent"],
+  "Zygote": ["ZygoteInit", "forkSystemServer", "ZygoteServer"],
+  "AMS": ["ActivityManagerService", "startActivity", "ActivityStarter"],
+  "PMS": ["PackageManagerService", "scanDirLI", "PackageParser"],
+  "WMS": ["WindowManagerService", "addWindow", "WindowState"],
+  "Input 事件": ["InputDispatcher", "InputReader", "InputChannel"],
+  "开机流程": ["SystemServer", "ZygoteInit", "init.rc"],
+  "Binder": ["BinderProxy", "transact", "onTransact", "IPCThreadState"],
+  "SurfaceFlinger": ["SurfaceFlinger", "VSYNC", "HWComposer", "BufferQueue"],
+  "音频": ["AudioFlinger", "AudioPolicyService", "AudioTrack"],
+  "电源管理": ["PowerManagerService", "WakeLock", "DeviceIdleController"]
+}

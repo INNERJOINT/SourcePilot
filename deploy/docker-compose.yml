@@ -1,0 +1,328 @@
+# Merged deploy compose — replaces dense-deploy/, structural-deploy/, zoekt-deploy/.
+# Invocation:
+#   docker compose -f deploy/docker-compose.yml up -d           # all non-indexer services
+#   docker compose -f deploy/docker-compose.yml --profile indexer run --rm dense-indexer ...
+#   docker compose up -d                                        # via root shim
+#
+# Project name is pinned to `sourcepilot` so direct invocation and the root
+# shim resolve to the same network/volume prefix (otherwise direct -f produces
+# a `deploy_*` prefix while shim produces a directory-derived prefix).
+name: sourcepilot
+
+services:
+  # ── Zoekt (search index) ─────────────────────────────────────────────
+  # One zoekt-webserver per project (option B: full per-project isolation).
+  # Each service mounts that project's index dir read-only and exposes a
+  # distinct host port. SourcePilot routes per-project queries via
+  # ZOEKT_URL_<NAME> env vars (see sourcepilot-gateway block).
+  #
+  # Adding a new project:
+  #   1. Append a new entry to config/projects.yaml with a unique
+  #      sparse_index.zoekt_url (e.g. http://localhost:6072).
+  #   2. Duplicate the sparse-index-zoekt-<name> block below — change the
+  #      service name, the volume source, and the host port.
+  #   3. Add a ZOEKT_URL_<NAME> entry under sourcepilot-gateway.environment
+  #      pointing at the new container DNS name.
+  #   4. Add the new service to sourcepilot-gateway.depends_on.
+  sparse-index-zoekt:
+    build: ./sparse/zoekt
+    volumes:
+      - ${ZOEKT_INDEX_PATH:-/opt/aosp/aosp_project/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT:-6070}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  sparse-index-zoekt-t2:
+    build: ./sparse/zoekt
+    volumes:
+      - ${ZOEKT_INDEX_PATH_T2:-/opt/aosp/aosp_project2/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT_T2:-6071}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  zoekt-indexserver:
+    build: ./sparse/zoekt
+    entrypoint: ["zoekt-git-index"]
+    command: ["-index", "/data/index", "/data/repo/"]
+    volumes:
+      - ${ZOEKT_REPO_PATH:-/opt/aosp/aosp_project/.repo}:/data/repo:ro
+      - zoekt_index:/data/index
+    networks:
+      - sourcepilot-net
+    profiles:
+      - tools
+
+  # ── SourcePilot Gateway (HTTP API) ───────────────────────────────────
+  sourcepilot-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/gateway/Dockerfile
+      args:
+        INSTALL_DENSE: "${GATEWAY_INSTALL_DENSE:-false}"
+    environment:
+      ZOEKT_URL: ${ZOEKT_URL:-http://sparse-index-zoekt:6070}
+      ZOEKT_URL_AOSP_PROJECT: ${ZOEKT_URL_AOSP_PROJECT:-http://sparse-index-zoekt:6070}
+      ZOEKT_URL_T2: ${ZOEKT_URL_T2:-http://sparse-index-zoekt-t2:6070}
+      PROJECTS_CONFIG_PATH: /etc/sourcepilot/projects.yaml
+      AUDIT_LOG_FILE: /var/log/sourcepilot/audit.log
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
+      NL_ENABLED: ${NL_ENABLED:-false}
+      NL_MODEL: ${NL_MODEL:-}
+      NL_API_KEY: ${NL_API_KEY:-}
+      NL_API_BASE: ${NL_API_BASE:-}
+      DENSE_ENABLED: ${DENSE_ENABLED:-false}
+      DENSE_VECTOR_DB_URL: http://qdrant:6333
+      DENSE_EMBEDDING_URL: http://dense-index-coderankembed:8080/v1
+      DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
+      DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
+      DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
+      STRUCTURAL_ENABLED: ${STRUCTURAL_ENABLED:-false}
+      STRUCTURAL_NEO4J_URI: bolt://neo4j:7687
+      STRUCTURAL_NEO4J_USER: ${STRUCTURAL_NEO4J_USER:-neo4j}
+      STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
+    volumes:
+      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log
+      - ../config/projects.yaml:/etc/sourcepilot/projects.yaml:ro
+    ports:
+      - "${SOURCEPILOT_PORT:-9000}:9000"
+    depends_on:
+      sparse-index-zoekt:
+        condition: service_healthy
+      sparse-index-zoekt-t2:
+        condition: service_healthy
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure:5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── SourcePilot Cockpit ──────────────────────────────────────────────
+  sp-cockpit:
+    # sp-cockpit source lives at repo root; build context is one level up
+    # from this compose file.
+    build: ../sp-cockpit
+    environment:
+      SP_COCKPIT_AUDIT_LOG_PATH: /var/log/sourcepilot/audit.log
+      SP_COCKPIT_AUDIT_DB_PATH: /data/audit.db
+    volumes:
+      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log:ro
+      - ../sp-cockpit/data:/data
+    ports:
+      - "${SP_COCKPIT_PORT:-9100}:9100"
+    depends_on:
+      sourcepilot-gateway:
+        condition: service_started
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9100/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: on-failure:5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── MCP Server ──────────────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: deploy/mcp/Dockerfile
+    environment:
+      SOURCEPILOT_URL: ${SOURCEPILOT_URL:-http://sourcepilot-gateway:9000}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+    ports:
+      - "${MCP_PORT:-8888}:8888"
+    depends_on:
+      sourcepilot-gateway:
+        condition: service_healthy
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: on-failure:5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Qdrant (dense lane) ──────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.12.6
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - sourcepilot-net
+    restart: unless-stopped
+
+  dense-index-coderankembed:
+    build:
+      context: ./dense/embedding-server
+    environment:
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-microsoft/unixcoder-base}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-768}
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      CODE_EMBEDDING_MODEL: ${CODE_EMBEDDING_MODEL:-nomic-ai/CodeRankEmbed}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+      ORT_INTER_OP_NUM_THREADS: ${ORT_INTER_OP_NUM_THREADS:-1}
+      EMBEDDING_MAX_BATCH_SIZE: ${EMBEDDING_MAX_BATCH_SIZE:-256}
+    ports:
+      - "${EMBEDDING_PORT:-9088}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - sourcepilot-net
+
+  dense-indexer:
+    build:
+      context: ..
+      dockerfile: deploy/dense/indexer/Dockerfile
+    profiles: ["indexer"]
+    restart: "no"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      dense-index-coderankembed:
+        condition: service_healthy
+    environment:
+      DENSE_VECTOR_DB_URL: http://qdrant:6333
+      DENSE_EMBEDDING_URL: http://dense-index-coderankembed:8080/v1
+      DENSE_EMBEDDING_MODEL: ${DENSE_EMBEDDING_MODEL:-unixcoder-base}
+      DENSE_EMBEDDING_DIM: ${DENSE_EMBEDDING_DIM:-768}
+      DENSE_COLLECTION_NAME: ${DENSE_COLLECTION_NAME:-aosp_code}
+      PROJECTS_CONFIG_PATH: /config/projects.yaml
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-128}
+      EMBEDDING_CONCURRENCY: ${EMBEDDING_CONCURRENCY:-32}
+      EMBEDDING_MAX_CONNECTIONS: ${EMBEDDING_MAX_CONNECTIONS:-64}
+      EMBEDDING_MAX_KEEPALIVE: ${EMBEDDING_MAX_KEEPALIVE:-32}
+    volumes:
+      - ${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}:/src:ro
+      - ../config:/config:ro
+    networks:
+      - sourcepilot-net
+
+  # ── Neo4j (structural lane) ───────────────────────────────────────────────
+  # Now joins sourcepilot-net (was previously on its own default bridge in
+  # structural-deploy/docker-compose.yml). See deploy/README.md ADR #4.
+  neo4j:
+    image: neo4j:5-community
+    container_name: sourcepilot-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/sourcepilot
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_pagecache_size: 2G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "sourcepilot", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - sourcepilot-net
+
+  structural-indexer:
+    build:
+      context: ..
+      dockerfile: deploy/structural/indexer/Dockerfile
+    profiles: ["indexer"]
+    restart: "no"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      STRUCTURAL_NEO4J_URI: bolt://neo4j:7687
+      STRUCTURAL_NEO4J_USER: ${STRUCTURAL_NEO4J_USER:-neo4j}
+      STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
+    volumes:
+      - ${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}:/src:ro
+      - ../config:/config:ro
+    networks:
+      - sourcepilot-net
+
+# ── Networks ────────────────────────────────────────────────────────────
+networks:
+  sourcepilot-net:
+    name: sourcepilot-net
+    driver: bridge
+
+# ── Volumes ─────────────────────────────────────────────────────────────
+volumes:
+  zoekt_index:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:

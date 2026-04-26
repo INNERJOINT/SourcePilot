@@ -1,0 +1,101 @@
+name: Test
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    env:
+      ZOEKT_URL: "http://mock-zoekt:6070"
+      NL_ENABLED: "false"
+      SOURCEPILOT_URL: "http://mock-sourcepilot:9000"
+      MCP_AUTH_TOKEN: "test-token-12345"
+      AUDIT_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/requirements.txt
+          pip install -r mcp-server/requirements.txt
+          pip install pytest pytest-asyncio respx
+
+      - name: Run SourcePilot tests
+        run: PYTHONPATH=src pytest tests/unit/sourcepilot/ tests/integration/ tests/e2e/ -v
+
+      - name: Run MCP tests
+        run: PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
+
+  shell-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shellcheck (error-level gate)
+        run: shellcheck -x -S error scripts/*.sh
+      - name: bash -n syntax check
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done
+
+  sp-cockpit:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install backend deps
+        working-directory: sp-cockpit
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi 'uvicorn[standard]' pydantic pytest pytest-asyncio httpx ruff
+      - name: Ruff check
+        working-directory: sp-cockpit
+        run: ruff check sp_cockpit
+      - name: Backend tests
+        working-directory: sp-cockpit
+        run: pytest tests/ -v
+      - name: Frontend install
+        working-directory: sp-cockpit/frontend
+        run: npm ci || npm install --no-audit --no-fund
+      - name: Frontend typecheck + build
+        working-directory: sp-cockpit/frontend
+        run: npm run build
+
+  docker-test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose -f tests/docker-compose.yml up -d --build
+
+      - name: Run Docker integration tests
+        run: bash tests/docker-test.sh
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f tests/docker-compose.yml down -v

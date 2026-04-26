@@ -1,0 +1,38 @@
+# AOSP Project Registry
+# Copy this file to config/projects.yaml and edit paths.
+# Backend scope is parsed by scripts/indexing/project_config.py.
+
+projects:
+  - name: aosp_project
+    source_root: /opt/aosp/aosp_project
+    repo_path: /opt/aosp/aosp_project/.repo
+    collection_name: aosp_code_aosp_project
+
+    sparse_index:
+      index_dir: /opt/aosp/aosp_project/.repo/.zoekt
+      zoekt_url: http://localhost:6070
+
+    dense_index:
+      collection_name: aosp_code_aosp_project_dense_unixcoder
+      embedding_model: microsoft/unixcoder-base
+      include:
+        - frameworks/base
+
+    structural_index:
+      include:
+        # - frameworks/base
+        - packages/modules/NetworkStack
+
+  # - name: t2
+  #   source_root: /opt/aosp/aosp_project2
+  #   repo_path: /opt/aosp/aosp_project2/.repo
+
+  #   sparse_index:
+  #     index_dir: /opt/aosp/aosp_project2/.repo/.zoekt
+  #     zoekt_url: http://localhost:6071
+  #     manifest_branch: default
+  #     manifest_file: device_vendor_v1.xml
+
+    # dense_index:
+    #   collection_name: aosp_code_t2_dense_unixcoder
+    #   embedding_model: microsoft/unixcoder-base

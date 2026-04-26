@@ -1,0 +1,6 @@
+# Versions tracked in /pyproject.toml [project.optional-dependencies.mcp].
+mcp>=1.0,<2
+httpx>=0.27
+uvicorn[standard]>=0.27
+starlette>=0.37
+pydantic>=2.5
