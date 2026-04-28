@@ -46,6 +46,9 @@ PYTHONPATH=mcp-server pytest tests/unit/mcp/ -v
 PYTHONPATH=src pytest tests/unit/sourcepilot/test_gateway.py -v
 PYTHONPATH=src pytest tests/unit/sourcepilot/test_gateway.py::test_exact_query -v
 
+# Shell static checks (same entry point used by CI)
+bash tests/shell/static_check.sh
+
 # SP Cockpit (separate project, run from its directory)
 cd sp-cockpit && pytest tests/ -v
 ```
@@ -57,7 +60,7 @@ Tests mock Zoekt via `respx` — no live backend needed. `pytest.ini` config in 
 ```bash
 ruff check src/ mcp-server/ tests/        # Python lint (rules: E, F, W, I, B, UP; line-length 100)
 ruff check sp-cockpit/sp_cockpit          # SP Cockpit backend
-shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
+bash tests/shell/static_check.sh          # Shell static checks: shellcheck, shfmt -d, bash -n
 ```
 
 ## Two PYTHONPATH Roots
@@ -125,7 +128,8 @@ Key variables (see `.env.example` for full list):
 
 ## CI
 
-GitHub Actions (`.github/workflows/test.yml`) runs three jobs:
-1. **test** — SourcePilot + MCP pytest suites (mocks Zoekt, disables NL and audit)
-2. **shell-lint** — `shellcheck -x -S error` + `bash -n` on all scripts
-3. **sp-cockpit** — ruff + pytest + frontend typecheck/build
+GitHub Actions (`.github/workflows/test.yml`) runs four jobs:
+1. **test** — SourcePilot + MCP pytest suites (mocks Zoekt, disables NL and audit; manual `workflow_dispatch` only)
+2. **shell-lint** — `bash tests/shell/static_check.sh` (recursive `shellcheck`, `shfmt -d`, and `bash -n` for `scripts/**/*.sh`)
+3. **sp-cockpit** — ruff + pytest + frontend typecheck/build (manual `workflow_dispatch` only)
+4. **docker-test** — Docker integration test via `tests/docker-test.sh` (manual `workflow_dispatch` only)

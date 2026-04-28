@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: ["*"]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 jobs:
@@ -44,15 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: shellcheck (error-level gate)
-        run: shellcheck -x -S error scripts/*.sh
-      - name: bash -n syntax check
-        run: |
-          for f in scripts/*.sh; do
-            bash -n "$f"
-          done
+      - name: Install shell tooling
+        run: sudo apt-get update && sudo apt-get install -y shellcheck shfmt
+      - name: Shell static checks
+        run: bash tests/shell/static_check.sh
 
   sp-cockpit:
     if: github.event_name == 'workflow_dispatch'

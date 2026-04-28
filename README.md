@@ -166,7 +166,7 @@ Contributions are welcome! Feel free to open an issue for bug reports or feature
 Before submitting a PR, please make sure:
 - Tests pass: `PYTHONPATH=src pytest tests/ -v`
 - Linting is clean: `ruff check src/ mcp-server/ tests/`
-- Shell scripts pass: `shellcheck -x -S error scripts/*.sh`
+- Shell static checks pass: `bash tests/shell/static_check.sh`
 
 ## License
 
