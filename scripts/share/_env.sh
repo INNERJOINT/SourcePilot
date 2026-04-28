@@ -22,43 +22,43 @@ set -euo pipefail
 
 # Use PROJ_ROOT from _common.sh (must be sourced first)
 if [ -f "$PROJ_ROOT/.env" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-        # 跳过空行和注释行
-        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+  while IFS= read -r line || [ -n "$line" ]; do
+    # 跳过空行和注释行
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-        # 去除 export 前缀
-        line="${line#export }"
-        line="${line#export	}"
+    # 去除 export 前缀
+    line="${line#export }"
+    line="${line#export	}"
 
-        # 分割 key=value（仅在第一个 = 处分割）
-        key="${line%%=*}"
-        value="${line#*=}"
+    # 分割 key=value（仅在第一个 = 处分割）
+    key="${line%%=*}"
+    value="${line#*=}"
 
-        # 去除 key 两端空白
-        key="${key#"${key%%[![:space:]]*}"}"
-        key="${key%"${key##*[![:space:]]}"}"
+    # 去除 key 两端空白
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
 
-        # 跳过无效的 key
-        [[ -z "$key" || "$key" =~ [^a-zA-Z0-9_] ]] && continue
+    # 跳过无效的 key
+    [[ -z "$key" || "$key" =~ [^a-zA-Z0-9_] ]] && continue
 
-        # 去除 value 的行内注释（仅对非引号值生效）
-        case "$value" in
-            \"*\"|\'*\')
-                # 引号值：去除首尾引号
-                value="${value:1:${#value}-2}"
-                ;;
-            *)
-                # 非引号值：去除行内注释（ # 之后的内容）
-                value="${value%%[[:space:]]#*}"
-                # 去除尾部空白
-                value="${value%"${value##*[![:space:]]}"}"
-                ;;
-        esac
+    # 去除 value 的行内注释（仅对非引号值生效）
+    case "$value" in
+      \"*\" | \'*\')
+        # 引号值：去除首尾引号
+        value="${value:1:${#value}-2}"
+        ;;
+      *)
+        # 非引号值：去除行内注释（ # 之后的内容）
+        value="${value%%[[:space:]]#*}"
+        # 去除尾部空白
+        value="${value%"${value##*[![:space:]]}"}"
+        ;;
+    esac
 
-        # 仅设置当前环境中未定义的变量
-        if [ -z "${!key+x}" ]; then
-            export "$key=$value"
-        fi
-    done < "$PROJ_ROOT/.env"
-    echo "Loaded config from $PROJ_ROOT/.env" >&2
+    # 仅设置当前环境中未定义的变量
+    if [ -z "${!key+x}" ]; then
+      export "$key=$value"
+    fi
+  done < "$PROJ_ROOT/.env"
+  echo "Loaded config from $PROJ_ROOT/.env" >&2
 fi

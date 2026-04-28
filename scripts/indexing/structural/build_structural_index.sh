@@ -13,7 +13,7 @@
 #   - 调用方显式设置的关键环境变量优先于 .env。
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$0")/../../.." && pwd)       # 项目根
+DIR=$(cd "$(dirname "$0")/../../.." && pwd) # 项目根
 STRUCTURAL_DIR="$DIR/deploy/structural"
 COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
@@ -22,46 +22,46 @@ source "$(dirname "$0")/../_indexing_lib.sh"
 source "$(dirname "$0")/../../share/_common.sh"
 
 _PRESERVE_ENV_VARS=(
-    AOSP_SOURCE_ROOT
-    STRUCTURAL_NEO4J_URI
-    STRUCTURAL_NEO4J_USER
-    STRUCTURAL_NEO4J_PASSWORD
+  AOSP_SOURCE_ROOT
+  STRUCTURAL_NEO4J_URI
+  STRUCTURAL_NEO4J_USER
+  STRUCTURAL_NEO4J_PASSWORD
 )
 declare -A _PRESERVE_ENV_VALS=()
 for _var in "${_PRESERVE_ENV_VARS[@]}"; do
-    if [[ -v "$_var" ]]; then
-        _PRESERVE_ENV_VALS["$_var"]="${!_var}"
-    fi
+  if [[ -v "$_var" ]]; then
+    _PRESERVE_ENV_VALS["$_var"]="${!_var}"
+  fi
 done
 for envfile in "$DIR/.env" "$STRUCTURAL_DIR/.env"; do
-    if [ -f "$envfile" ]; then
-        set -a
-        # shellcheck disable=SC1090
-        source "$envfile"
-        set +a
-    fi
+  if [ -f "$envfile" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$envfile"
+    set +a
+  fi
 done
 for _var in "${!_PRESERVE_ENV_VALS[@]}"; do
-    export "$_var=${_PRESERVE_ENV_VALS[$_var]}"
+  export "$_var=${_PRESERVE_ENV_VALS[$_var]}"
 done
 
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}"
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT%/}"
 
 translate_path() {
-    local host_path="$1"
-    host_path="${host_path%/}"
-    if [[ "$host_path" == /src* ]]; then
-        # 已经是容器内路径
-        echo "$host_path"
-    elif [[ "$host_path" == "$AOSP_SOURCE_ROOT" ]]; then
-        echo "/src"
-    elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
-        echo "/src/${host_path#${AOSP_SOURCE_ROOT}/}"
-    else
-        echo "ERROR: --source-root '$host_path' 不在 AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT' 之下" >&2
-        return 2
-    fi
+  local host_path="$1"
+  host_path="${host_path%/}"
+  if [[ "$host_path" == /src* ]]; then
+    # 已经是容器内路径
+    echo "$host_path"
+  elif [[ "$host_path" == "$AOSP_SOURCE_ROOT" ]]; then
+    echo "/src"
+  elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
+    echo "/src/${host_path#${AOSP_SOURCE_ROOT}/}"
+  else
+    echo "ERROR: --source-root '$host_path' 不在 AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT' 之下" >&2
+    return 2
+  fi
 }
 
 ARGS=()
@@ -72,82 +72,82 @@ _STRUCTURAL_SOURCE_ROOT_LABEL="$AOSP_SOURCE_ROOT"
 i=0
 argv=("$@")
 n=$#
-while (( i < n )); do
-    arg="${argv[$i]}"
-    case "$arg" in
-        -h|--help) _common_parse_help --help ;;
-        --source-root)
-            host_path="${argv[$((i+1))]:-}"
-            if [[ -z "$host_path" ]]; then
-                echo "ERROR: --source-root 需要一个参数" >&2
-                exit 2
-            fi
-            container_path=$(translate_path "$host_path") || exit 2
-            ARGS+=("--source-root" "$container_path")
-            HAS_SOURCE_ROOT=true
-            _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
-            i=$((i+2))
-            ;;
-        --source-root=*)
-            host_path="${arg#--source-root=}"
-            container_path=$(translate_path "$host_path") || exit 2
-            ARGS+=("--source-root=$container_path")
-            HAS_SOURCE_ROOT=true
-            _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
-            i=$((i+1))
-            ;;
-        --project-name)
-            _STRUCTURAL_PROJECT_NAME="${argv[$((i+1))]:-}"
-            ARGS+=("$arg" "$_STRUCTURAL_PROJECT_NAME")
-            i=$((i+2))
-            ;;
-        --project-name=*)
-            _STRUCTURAL_PROJECT_NAME="${arg#--project-name=}"
-            ARGS+=("$arg")
-            i=$((i+1))
-            ;;
-        --repo-name)
-            _STRUCTURAL_REPO_NAME="${argv[$((i+1))]:-}"
-            ARGS+=("$arg" "$_STRUCTURAL_REPO_NAME")
-            i=$((i+2))
-            ;;
-        --repo-name=*)
-            _STRUCTURAL_REPO_NAME="${arg#--repo-name=}"
-            ARGS+=("$arg")
-            i=$((i+1))
-            ;;
-        *)
-            ARGS+=("$arg")
-            i=$((i+1))
-            ;;
-    esac
+while ((i < n)); do
+  arg="${argv[$i]}"
+  case "$arg" in
+    -h | --help) _common_parse_help --help ;;
+    --source-root)
+      host_path="${argv[$((i + 1))]:-}"
+      if [[ -z "$host_path" ]]; then
+        echo "ERROR: --source-root 需要一个参数" >&2
+        exit 2
+      fi
+      container_path=$(translate_path "$host_path") || exit 2
+      ARGS+=("--source-root" "$container_path")
+      HAS_SOURCE_ROOT=true
+      _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
+      i=$((i + 2))
+      ;;
+    --source-root=*)
+      host_path="${arg#--source-root=}"
+      container_path=$(translate_path "$host_path") || exit 2
+      ARGS+=("--source-root=$container_path")
+      HAS_SOURCE_ROOT=true
+      _STRUCTURAL_SOURCE_ROOT_LABEL="$container_path"
+      i=$((i + 1))
+      ;;
+    --project-name)
+      _STRUCTURAL_PROJECT_NAME="${argv[$((i + 1))]:-}"
+      ARGS+=("$arg" "$_STRUCTURAL_PROJECT_NAME")
+      i=$((i + 2))
+      ;;
+    --project-name=*)
+      _STRUCTURAL_PROJECT_NAME="${arg#--project-name=}"
+      ARGS+=("$arg")
+      i=$((i + 1))
+      ;;
+    --repo-name)
+      _STRUCTURAL_REPO_NAME="${argv[$((i + 1))]:-}"
+      ARGS+=("$arg" "$_STRUCTURAL_REPO_NAME")
+      i=$((i + 2))
+      ;;
+    --repo-name=*)
+      _STRUCTURAL_REPO_NAME="${arg#--repo-name=}"
+      ARGS+=("$arg")
+      i=$((i + 1))
+      ;;
+    *)
+      ARGS+=("$arg")
+      i=$((i + 1))
+      ;;
+  esac
 done
 
 if ! $HAS_SOURCE_ROOT; then
-    ARGS=("--source-root" "/src" "${ARGS[@]}")
-    _STRUCTURAL_SOURCE_ROOT_LABEL="/src"
+  ARGS=("--source-root" "/src" "${ARGS[@]}")
+  _STRUCTURAL_SOURCE_ROOT_LABEL="/src"
 fi
 
 if [[ -n "$_STRUCTURAL_REPO_NAME" ]]; then
-    _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_REPO_NAME"
+  _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_REPO_NAME"
 else
-    _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_SOURCE_ROOT_LABEL"
+  _STRUCTURAL_REPO_LABEL="$_STRUCTURAL_SOURCE_ROOT_LABEL"
 fi
 
 echo "[structural-indexer] AOSP_SOURCE_ROOT=$AOSP_SOURCE_ROOT  ARGS=${ARGS[*]}"
 start_indexing_job "$_STRUCTURAL_REPO_LABEL" structural "$_STRUCTURAL_PROJECT_NAME"
 
 if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
-    echo "[structural-indexer] DRY_RUN — skipping docker compose"
-    trap - EXIT
-    finish_indexing_job success 0
-    exit 0
+  echo "[structural-indexer] DRY_RUN — skipping docker compose"
+  trap - EXIT
+  finish_indexing_job success 0
+  exit 0
 fi
 
 docker compose \
-    -f "$COMPOSE_FILE" \
-    --profile indexer \
-    run --rm structural-indexer "${ARGS[@]}" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
+  -f "$COMPOSE_FILE" \
+  --profile indexer \
+  run --rm structural-indexer "${ARGS[@]}" 2>&1 | tee -a "${LOG_PATH:-/dev/stderr}"
 _structural_exit=${PIPESTATUS[0]}
 trap - EXIT
 finish_indexing_job "$([ "$_structural_exit" -eq 0 ] && echo success || echo fail)" "$_structural_exit"

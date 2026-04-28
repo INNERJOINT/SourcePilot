@@ -36,10 +36,18 @@ fi
 
 shellcheck -x -S error "${shell_scripts[@]}"
 
+set +e
 shfmt_diff="$(shfmt -d -i 2 -ci -sr "${shell_scripts[@]}")"
+shfmt_status=$?
+set -e
+
 if [[ -n "$shfmt_diff" ]]; then
   printf '%s\n' "$shfmt_diff"
   exit 1
+fi
+
+if ((shfmt_status != 0)); then
+  exit "$shfmt_status"
 fi
 
 for f in "${shell_scripts[@]}"; do

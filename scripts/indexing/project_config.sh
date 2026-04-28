@@ -14,20 +14,20 @@ _PC_PROJ_ROOT="$(cd "${_PC_SCRIPT_DIR}/../.." && pwd)"
 _PC_CONFIG="${_PC_PROJ_ROOT}/config/projects.yaml"
 
 fallback_single_project() {
-    local source_root="${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}"
-    local name
-    name="$(basename "${source_root}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/_*$//')"
-    local collection_name="aosp_code_${name}"
-    echo "${name}|${source_root}|${collection_name}"
+  local source_root="${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}"
+  local name
+  name="$(basename "${source_root}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/_*$//')"
+  local collection_name="aosp_code_${name}"
+  echo "${name}|${source_root}|${collection_name}"
 }
 
 load_projects() {
-    if [[ ! -f "${_PC_CONFIG}" ]]; then
-        fallback_single_project
-        return
-    fi
+  if [[ ! -f "${_PC_CONFIG}" ]]; then
+    fallback_single_project
+    return
+  fi
 
-    python3 - "${_PC_CONFIG}" <<'PYEOF'
+  python3 - "${_PC_CONFIG}" << 'PYEOF'
 import sys, yaml, re, os
 from pathlib import Path
 

@@ -34,104 +34,107 @@ STOP_ONLY=false
 ONLY=""
 
 while [ $# -gt 0 ]; do
-    case "$1" in
-        --with-zoekt) WITH_ZOEKT=true ;;
-        --stop) STOP_ONLY=true ;;
-        --only) ONLY="${2:-}"; shift ;;
-        -h|--help)
-            sed -n '2,20p' "$0"
-            exit 0
-            ;;
-        *) die "未知参数: $1" ;;
-    esac
-    shift
+  case "$1" in
+    --with-zoekt) WITH_ZOEKT=true ;;
+    --stop) STOP_ONLY=true ;;
+    --only)
+      ONLY="${2:-}"
+      shift
+      ;;
+    -h | --help)
+      sed -n '2,20p' "$0"
+      exit 0
+      ;;
+    *) die "未知参数: $1" ;;
+  esac
+  shift
 done
 
 kill_port() {
-    local port="$1"
-    local name="$2"
-    local pids
-    pids=$(lsof -ti ":$port" 2>/dev/null || true)
-    if [ -z "$pids" ]; then
-        info "[$name] 端口 $port 空闲，跳过"
-        return
-    fi
-    info "[$name] 停止端口 $port 上的进程: $pids"
+  local port="$1"
+  local name="$2"
+  local pids
+  pids=$(lsof -ti ":$port" 2> /dev/null || true)
+  if [ -z "$pids" ]; then
+    info "[$name] 端口 $port 空闲，跳过"
+    return
+  fi
+  info "[$name] 停止端口 $port 上的进程: $pids"
+  # shellcheck disable=SC2086
+  kill $pids 2> /dev/null || true
+  sleep 1
+  pids=$(lsof -ti ":$port" 2> /dev/null || true)
+  if [ -n "$pids" ]; then
+    warn "[$name] 进程未响应，发送 SIGKILL: $pids"
     # shellcheck disable=SC2086
-    kill $pids 2>/dev/null || true
-    sleep 1
-    pids=$(lsof -ti ":$port" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        warn "[$name] 进程未响应，发送 SIGKILL: $pids"
-        # shellcheck disable=SC2086
-        kill -9 $pids 2>/dev/null || true
-    fi
+    kill -9 $pids 2> /dev/null || true
+  fi
 }
 
 # ── 停止阶段 ───────────────────────────────────────────
 info "停止服务..."
 
 case "$ONLY" in
-    dense)
-        info "重启 Dense 检索栈 (qdrant + dense-index-coderankembed)..."
-        docker compose -f "$COMPOSE_FILE" restart qdrant dense-index-coderankembed
-        info "Dense 检索栈已重启"
-        exit 0
-        ;;
-    structural)
-        info "重启 Neo4j..."
-        docker compose -f "$COMPOSE_FILE" restart neo4j
-        info "Neo4j 已重启"
-        exit 0
-        ;;
-    sourcepilot)
-        # 停止 SourcePilot 全栈相关容器（不含 MCP）
-        info "[SourcePilot] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
-        info "[sp-cockpit] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
-        if [ "$WITH_ZOEKT" = true ]; then
-            kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
-        fi
-        if [ "$STOP_ONLY" = true ]; then
-            info "已停止。"
-            exit 0
-        fi
-        info ""
-        info "启动服务..."
-        exec "$DIR/run_sourcepilot.sh"
-        ;;
-    mcp)
-        info "[MCP] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop mcp-server 2>/dev/null || true
-        ;;
-    sp)
-        info "[SourcePilot] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
-        ;;
-    av)
-        info "[sp-cockpit] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
-        ;;
-    "")
-        info "[MCP] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop mcp-server 2>/dev/null || true
-        info "[SourcePilot] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2>/dev/null || true
-        info "[sp-cockpit] 停止容器..."
-        docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2>/dev/null || true
-        if [ "$WITH_ZOEKT" = true ]; then
-            kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
-        fi
-        ;;
-    *)
-        die "--only 只支持: sp | mcp | av | sourcepilot | dense | structural"
-        ;;
+  dense)
+    info "重启 Dense 检索栈 (qdrant + dense-index-coderankembed)..."
+    docker compose -f "$COMPOSE_FILE" restart qdrant dense-index-coderankembed
+    info "Dense 检索栈已重启"
+    exit 0
+    ;;
+  structural)
+    info "重启 Neo4j..."
+    docker compose -f "$COMPOSE_FILE" restart neo4j
+    info "Neo4j 已重启"
+    exit 0
+    ;;
+  sourcepilot)
+    # 停止 SourcePilot 全栈相关容器（不含 MCP）
+    info "[SourcePilot] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2> /dev/null || true
+    info "[sp-cockpit] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2> /dev/null || true
+    if [ "$WITH_ZOEKT" = true ]; then
+      kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
+    fi
+    if [ "$STOP_ONLY" = true ]; then
+      info "已停止。"
+      exit 0
+    fi
+    info ""
+    info "启动服务..."
+    exec "$DIR/run_sourcepilot.sh"
+    ;;
+  mcp)
+    info "[MCP] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop mcp-server 2> /dev/null || true
+    ;;
+  sp)
+    info "[SourcePilot] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2> /dev/null || true
+    ;;
+  av)
+    info "[sp-cockpit] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2> /dev/null || true
+    ;;
+  "")
+    info "[MCP] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop mcp-server 2> /dev/null || true
+    info "[SourcePilot] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway 2> /dev/null || true
+    info "[sp-cockpit] 停止容器..."
+    docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2> /dev/null || true
+    if [ "$WITH_ZOEKT" = true ]; then
+      kill_port "$ZOEKT_PORT_DEFAULT" "sparse-index-zoekt"
+    fi
+    ;;
+  *)
+    die "--only 只支持: sp | mcp | av | sourcepilot | dense | structural"
+    ;;
 esac
 
 if [ "$STOP_ONLY" = true ]; then
-    info "已停止。"
-    exit 0
+  info "已停止。"
+  exit 0
 fi
 
 # ── 启动阶段 ───────────────────────────────────────────
@@ -139,16 +142,16 @@ echo "" >&2
 info "启动服务..."
 
 case "$ONLY" in
-    sp)
-        docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
-        ;;
-    mcp)
-        exec "$DIR/run_mcp.sh" --transport streamable-http
-        ;;
-    av)
-        exec "$DIR/run_sp_cockpit.sh"
-        ;;
-    "")
-        exec "$DIR/run_all.sh"
-        ;;
+  sp)
+    docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
+    ;;
+  mcp)
+    exec "$DIR/run_mcp.sh" --transport streamable-http
+    ;;
+  av)
+    exec "$DIR/run_sp_cockpit.sh"
+    ;;
+  "")
+    exec "$DIR/run_all.sh"
+    ;;
 esac

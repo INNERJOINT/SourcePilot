@@ -21,8 +21,8 @@ source "$DIR/_env.sh"
 # 使用 pyenv 虚拟环境
 VENV_PYTHON="/home/slave/.pyenv/versions/sourcepilot_py3_env/bin/python3"
 if [ ! -x "$VENV_PYTHON" ]; then
-    echo "Warning: $VENV_PYTHON not found, using system python3" >&2
-    VENV_PYTHON="python3"
+  echo "Warning: $VENV_PYTHON not found, using system python3" >&2
+  VENV_PYTHON="python3"
 fi
 
 export PYTHONPATH="$PROJ_ROOT/src"
@@ -36,21 +36,21 @@ PORT="9000"
 
 # 解析命令行参数
 while [ $# -gt 0 ]; do
-    case "$1" in
-        -h|--help) _common_parse_help --help ;;
-        --host)
-            HOST="$2"
-            shift 2
-            ;;
-        --port)
-            PORT="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown argument: $1" >&2
-            exit 1
-            ;;
-    esac
+  case "$1" in
+    -h | --help) _common_parse_help --help ;;
+    --host)
+      HOST="$2"
+      shift 2
+      ;;
+    --port)
+      PORT="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
 done
 
 echo "SourcePilot HTTP API" >&2
