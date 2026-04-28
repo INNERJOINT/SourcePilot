@@ -79,13 +79,13 @@ Edit `.env` — at minimum set:
 
 **2. Configure projects**
 
-Edit `config/projects.yaml` to register your AOSP checkout(s):
+Copy `config/projects.yaml.example` to `config/projects.yaml`, then declare each project you want to index. At minimum, make sure the project `name`, source paths, sparse index directory, and Zoekt URL are correct:
 
 ```yaml
 projects:
   - name: myproject
     source_root: /path/to/aosp_project          # AOSP checkout root
-    repo_path: /path/to/aosp_project/.repo      # .repo directory
+    repo_path: /path/to/aosp_project/.repo      # path indexed by sparse reindex.sh
 
     sparse_index:
       index_dir: /path/to/aosp_project/.repo/.zoekt
@@ -102,6 +102,8 @@ projects:
         - packages/modules/NetworkStack
 ```
 
+When using the bundled Docker Compose Zoekt service, set `ZOEKT_INDEX_PATH` in `.env` to the same directory as `sparse_index.index_dir` for the project served on port 6070.
+
 **3. Start infrastructure**
 
 ```bash
@@ -113,8 +115,10 @@ This starts Zoekt, Qdrant, Neo4j, and the embedding server.
 **4. Build indexes**
 
 ```bash
-# Sparse index (BM25) — Docker-based Zoekt indexing per sub-project
-scripts/indexing/sparse/reindex_docker.sh --project myproject
+# Sparse index (BM25) — uses config/projects.yaml
+scripts/indexing/sparse/reindex.sh --project myproject
+# or index every project declared in config/projects.yaml
+scripts/indexing/sparse/reindex.sh --all
 
 # Dense index (semantic embeddings) — vectorize source into Qdrant
 scripts/indexing/dense/build_dense_index_batch.sh
@@ -124,7 +128,7 @@ scripts/indexing/structural/build_structural_index_batch.sh
 ```
 
 > Each index type is independent — you can start with sparse only and add dense/structural later.
-> Use `--parallelism 8` for faster sparse indexing. Set `INDEXING_DRY_RUN=1` to preview commands without executing.
+> Set `INDEXING_DRY_RUN=1` to preview sparse indexing without executing `zoekt-git-index`.
 
 **5. Start application services**
 

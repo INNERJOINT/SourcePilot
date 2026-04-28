@@ -9,8 +9,11 @@ sparse_index:
 
 projects:
   - name: aosp_project
+    # AOSP checkout root; backend include paths are resolved relative to this directory.
     source_root: /opt/aosp/aosp_project
+    # AOSP repo metadata directory; Zoekt reindex reads project.list from here.
     repo_path: /opt/aosp/aosp_project/.repo
+    # Default Qdrant dense collection name when dense_index.collection_name is omitted.
     collection_name: aosp_code_ace
 
     # Sparse (Zoekt) backend configuration.

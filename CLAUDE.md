@@ -85,7 +85,9 @@ shellcheck -x -S error scripts/*.sh       # Shell lint (CI gate)
 
 Scripts are organized under `scripts/`:
 - `share/` — shared bash libraries (`_common.sh` logging, `_env.sh` dotenv loader, `_infra.sh` service starters)
-- `indexing/` — index build scripts (Zoekt, dense/Qdrant, Neo4j structural)
+- `indexing/` — index build scripts. For Zoekt sparse indexing, use only `scripts/indexing/sparse/reindex.sh` after declaring the target project in `config/projects.yaml`:
+  - `scripts/indexing/sparse/reindex.sh --project <name>` for one project
+  - `scripts/indexing/sparse/reindex.sh --all` for all declared projects
 - `testing/` — smoke tests (`smoke_queries.sh`), dense verification, hybrid eval
 
 All scripts use `set -euo pipefail` and source `share/_common.sh`. Run any with `-h` for usage.
