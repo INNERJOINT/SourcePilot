@@ -17,14 +17,14 @@ _common_parse_help "$@"
 _run_structural_audit() {
   local SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
   local SP_COCKPIT_URL="${SP_COCKPIT_URL:-http://localhost:9100}"
-  local AUDIT_DB="${AUDIT_DB:-/opt/aosp/aosp_project2/Dify/sp-cockpit/data/audit.db}"
+  local AUDIT_DB="${AUDIT_DB:-${PROJ_ROOT}/sp-cockpit/data/audit.db}"
 
   info "Checking sp-cockpit health..."
   if ! curl -sf "${SP_COCKPIT_URL}/api/health" > /dev/null 2>&1; then
     log ERROR "sp-cockpit not responding (${SP_COCKPIT_URL}/api/health)"
     echo ""
     echo "Please start sp-cockpit first:"
-    echo "  cd /opt/aosp/aosp_project2/Dify && bash scripts/run_all.sh"
+    echo "  bash scripts/run_all.sh"
     echo "  # Or start independently: cd sp-cockpit && uvicorn main:app --port 9100"
     return 1
   fi
@@ -103,7 +103,7 @@ _run_structural_audit() {
     echo "Debug steps:"
     echo "  1. Confirm STRUCTURAL_ENABLED=true is set"
     echo "  2. Confirm Neo4j is accessible and structural index has been built"
-    echo "  3. Check audit.log: tail -50 /opt/aosp/aosp_project2/Dify/audit.log | grep structural_search"
+    echo "  3. Check audit.log: tail -50 audit.log | grep structural_search"
   fi
 
   # ─── Latency comparison report ────────────────────────────────────────────────────────

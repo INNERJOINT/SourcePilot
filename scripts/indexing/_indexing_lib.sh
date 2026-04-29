@@ -106,3 +106,47 @@ finish_indexing_job() {
       --status "$status" \
       --exit-code "$exit_code" || true
 }
+
+# ---------------------------------------------------------------------------
+# _get_project_config project_name
+#   Reads _project_config.py output and sets NAME, REPO_PATH, INDEX_DIR,
+#   ZOEKT_URL, SHARED_INDEX_DIR as local-scope variables in the caller.
+#   Safe alternative to eval — parses key=value lines directly.
+# ---------------------------------------------------------------------------
+_INDEXING_PYHELPER="${_INDEXING_LIB_DIR}/_project_config.py"
+
+_get_project_config() {
+  local line key val
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    # Strip surrounding single quotes added by the Python helper
+    val="${val#\'}"
+    val="${val%\'}"
+    case "$key" in
+      NAME) NAME="$val" ;;
+      REPO_PATH) REPO_PATH="$val" ;;
+      INDEX_DIR) INDEX_DIR="$val" ;;
+      ZOEKT_URL) ZOEKT_URL="$val" ;;
+      SHARED_INDEX_DIR) SHARED_INDEX_DIR="$val" ;;
+      *) echo "[indexing-lib] WARN: Unknown config key: $key" >&2 ;;
+    esac
+  done < <(python3 "$_INDEXING_PYHELPER" --project "$1")
+}
+
+# ---------------------------------------------------------------------------
+# _wait_for_slot max_jobs
+#   Block until background job count drops below max_jobs.
+# ---------------------------------------------------------------------------
+_wait_for_slot() {
+  local max_jobs="$1"
+  while true; do
+    local running
+    running=$(jobs -rp | wc -l)
+    if [[ "$running" -lt "$max_jobs" ]]; then
+      break
+    fi
+    wait -n 2> /dev/null || true
+  done
+}

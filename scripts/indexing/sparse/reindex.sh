@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      shift
+      die "Unknown option: $1"
       ;;
   esac
 done
@@ -79,17 +79,6 @@ if ! command -v "$_ZOEKT_BIN" > /dev/null 2>&1; then
   echo "  Or set ZOEKT_GIT_INDEX_BIN to point at the binary." >&2
   exit 127
 fi
-
-# ---------------------------------------------------------------------------
-# Python config helper
-# ---------------------------------------------------------------------------
-_PYHELPER="$(dirname "$0")/../_project_config.py"
-
-_get_project_config() {
-  local config_block
-  config_block=$(python3 "$_PYHELPER" --project "$1")
-  eval "$config_block"
-}
 
 # ---------------------------------------------------------------------------
 # _index_one_sub  source_root  index_dir  sub_path  project_name  counter  total  status_dir
@@ -135,22 +124,6 @@ _index_one_sub() {
     return 1
   fi
   return 0
-}
-
-# ---------------------------------------------------------------------------
-# _wait_for_slot  max_jobs
-#   Block until background job count drops below max_jobs.
-# ---------------------------------------------------------------------------
-_wait_for_slot() {
-  local max_jobs="$1"
-  while true; do
-    local running
-    running=$(jobs -rp | wc -l)
-    if [[ "$running" -lt "$max_jobs" ]]; then
-      break
-    fi
-    wait -n 2> /dev/null || true
-  done
 }
 
 # ---------------------------------------------------------------------------
@@ -227,7 +200,7 @@ _index_project() {
 if [[ "$_MODE" == "single" ]]; then
   _index_project "$_PROJECT_NAME"
 else
-  _names=$(python3 "$_PYHELPER" --list)
+  _names=$(python3 "$_INDEXING_PYHELPER" --list)
   _overall=0
   while IFS= read -r name; do
     [[ -z "$name" ]] && continue

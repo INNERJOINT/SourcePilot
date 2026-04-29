@@ -9,7 +9,9 @@ scripts/share/.  Fixtures provide:
 
 from __future__ import annotations
 
+import json
 import os
+import stat
 import subprocess
 import textwrap
 from pathlib import Path
@@ -60,3 +62,63 @@ def _run_bash(
 def run_bash():
     """Return a callable that executes a bash snippet."""
     return _run_bash
+
+
+@pytest.fixture()
+def mock_command(tmp_path, monkeypatch):
+    """Create fake commands on PATH that record calls to a JSONL log.
+
+    Returns (add_command, read_calls).  Usage::
+
+        add_command, read_calls = mock_command
+        add_command("curl", stdout='{"ok":true}')
+        # … run script …
+        calls = read_calls()
+        assert calls[0]["cmd"] == "curl"
+    """
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+
+    log_file = tmp_path / "mock-calls.jsonl"
+
+    monkeypatch.setenv("MOCK_COMMAND_LOG", str(log_file))
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ.get('PATH', '')}")
+
+    def add_command(
+        name: str,
+        *,
+        stdout: str = "",
+        stderr: str = "",
+        exit_code: int = 0,
+    ):
+        fake_cmd = fake_bin / name
+        fake_cmd.write_text(
+            f"""#!/usr/bin/env python3
+import json, os, pathlib, sys
+
+log_file = pathlib.Path(os.environ["MOCK_COMMAND_LOG"])
+record = {{
+    "cmd": {name!r},
+    "argv": sys.argv[1:],
+    "cwd": os.getcwd(),
+}}
+with log_file.open("a", encoding="utf-8") as f:
+    f.write(json.dumps(record, ensure_ascii=False) + "\\n")
+
+sys.stdout.write({stdout!r})
+sys.stderr.write({stderr!r})
+sys.exit({exit_code!r})
+"""
+        )
+        fake_cmd.chmod(fake_cmd.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        return fake_cmd
+
+    def read_calls():
+        if not log_file.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in log_file.read_text(encoding="utf-8").splitlines()
+        ]
+
+    return add_command, read_calls

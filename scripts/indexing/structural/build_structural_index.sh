@@ -22,30 +22,12 @@ COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 # shellcheck source=../_indexing_lib.sh
 source "$(dirname "$0")/../_indexing_lib.sh"
 source "$(dirname "$0")/../../share/_common.sh"
+SOURCEPILOT_ENV_NO_AUTOLOAD=1 source "$(dirname "$0")/../../share/_env.sh"
 
-_PRESERVE_ENV_VARS=(
-  AOSP_SOURCE_ROOT
-  STRUCTURAL_NEO4J_URI
-  STRUCTURAL_NEO4J_USER
-  STRUCTURAL_NEO4J_PASSWORD
-)
-declare -A _PRESERVE_ENV_VALS=()
-for _var in "${_PRESERVE_ENV_VARS[@]}"; do
-  if [[ -v "$_var" ]]; then
-    _PRESERVE_ENV_VALS["$_var"]="${!_var}"
-  fi
-done
-for envfile in "$DIR/.env" "$STRUCTURAL_DIR/.env"; do
-  if [ -f "$envfile" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$envfile"
-    set +a
-  fi
-done
-for _var in "${!_PRESERVE_ENV_VALS[@]}"; do
-  export "$_var=${_PRESERVE_ENV_VALS[$_var]}"
-done
+# Load .env files without overriding caller-set variables (load_env_file
+# exports only variables not already set in the environment).
+load_env_file "$DIR/.env" 2> /dev/null || true
+load_env_file "$STRUCTURAL_DIR/.env" 2> /dev/null || true
 
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}"
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT%/}"

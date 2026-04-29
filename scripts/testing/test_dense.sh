@@ -57,7 +57,7 @@ HTTP_CODE=$(curl -s --max-time "$TIMEOUT" \
   -o "$RESP" -w "%{http_code}" \
   -X POST -H "content-type: application/json" \
   -H "X-Trace-Id: $TRACE_ID" \
-  -d "{\"query\":\"$QUERY\",\"top_k\":5}" \
+  -d "$(jq -nc --arg q "$QUERY" '{query: $q, top_k: 5}')" \
   "$SOURCEPILOT_URL/api/search" 2> /dev/null || echo "000")
 
 if [[ "$HTTP_CODE" != "200" ]]; then

@@ -49,7 +49,8 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
 
 
-def _load_projects(config_path: Path) -> list[dict]:
+def _load_config(config_path: Path) -> tuple[list[dict], dict | None]:
+    """Load projects and top-level sparse_index defaults from the config file."""
     if not config_path.exists():
         print(f"ERROR: config file not found: {config_path}", file=sys.stderr)
         sys.exit(1)
@@ -71,28 +72,41 @@ def _load_projects(config_path: Path) -> list[dict]:
         print(f"ERROR: 'projects' must be a non-empty list in {config_path}", file=sys.stderr)
         sys.exit(1)
 
-    return projects
+    top_sparse = data.get("sparse_index")
+    return projects, top_sparse if isinstance(top_sparse, dict) else None
 
 
-def _print_project(entry: dict) -> None:
+def _print_project(entry: dict, top_sparse: dict | None = None) -> None:
     """Print shell-eval-safe lines for one project entry."""
     name = entry.get("name", "")
     repo_path = entry.get("repo_path", "")
     index_dir = entry.get("index_dir", "")
     zoekt_url = entry.get("zoekt_url", "")
+    shared_index_dir = ""
 
-    # sparse_index overrides top-level fields
+    # Top-level sparse_index defaults
+    if isinstance(top_sparse, dict):
+        if top_sparse.get("shared_index_dir"):
+            shared_index_dir = top_sparse["shared_index_dir"]
+        if top_sparse.get("zoekt_url"):
+            zoekt_url = top_sparse["zoekt_url"]
+
+    # Per-project sparse_index overrides
     sparse_index = entry.get("sparse_index")
     if isinstance(sparse_index, dict):
         if sparse_index.get("index_dir"):
             index_dir = sparse_index["index_dir"]
         if sparse_index.get("zoekt_url"):
             zoekt_url = sparse_index["zoekt_url"]
+        if sparse_index.get("shared_index_dir"):
+            shared_index_dir = sparse_index["shared_index_dir"]
 
     print(f"NAME={_shell_quote(name)}")
     print(f"REPO_PATH={_shell_quote(repo_path)}")
     print(f"INDEX_DIR={_shell_quote(index_dir)}")
     print(f"ZOEKT_URL={_shell_quote(zoekt_url)}")
+    if shared_index_dir:
+        print(f"SHARED_INDEX_DIR={_shell_quote(shared_index_dir)}")
 
 
 def main() -> None:
@@ -104,7 +118,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config_path = _find_config_path()
-    projects = _load_projects(config_path)
+    projects, top_sparse = _load_config(config_path)
 
     if args.list:
         for entry in projects:
@@ -115,7 +129,7 @@ def main() -> None:
         for i, entry in enumerate(projects):
             if i > 0:
                 print()
-            _print_project(entry)
+            _print_project(entry, top_sparse)
         return
 
     # --project <name>
@@ -124,7 +138,7 @@ def main() -> None:
         available = [e.get("name", "") for e in projects]
         print(f"ERROR: unknown project '{args.project}'. Available: {available}", file=sys.stderr)
         sys.exit(1)
-    _print_project(matches[0])
+    _print_project(matches[0], top_sparse)
 
 
 if __name__ == "__main__":

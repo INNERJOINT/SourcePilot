@@ -1,4 +1,4 @@
-"""Tests for caller scripts (run_mcp.sh, run_sp_cockpit.sh) VENV_PYTHON fallback."""
+"""Tests for VENV_PYTHON fallback patterns in run_all.sh (MCP + sp-cockpit)."""
 
 from __future__ import annotations
 
@@ -42,19 +42,19 @@ def test_run_sp_cockpit_venv_fallback(run_bash, proj_root):
     assert "VENV_PYTHON=python3" in r.stdout
 
 
-def test_run_mcp_has_venv_fallback_pattern(run_bash, proj_root):
-    """Verify run_mcp.sh actually contains the VENV_PYTHON fallback pattern."""
+def test_run_all_has_venv_python_pattern(run_bash, proj_root):
+    """Verify run_all.sh contains the VENV_PYTHON assignment (MCP+cockpit use it)."""
     r = run_bash(
-        f'grep -c "VENV_PYTHON=" "{proj_root}/scripts/run_mcp.sh"',
+        f'grep -c "VENV_PYTHON=" "{proj_root}/scripts/run_all.sh"',
     )
     assert r.returncode == 0
     assert int(r.stdout.strip()) >= 1
 
 
-def test_run_sp_cockpit_has_venv_fallback_pattern(run_bash, proj_root):
-    """Verify run_sp_cockpit.sh contains the VENV_PYTHON fallback pattern."""
+def test_run_all_has_venv_python_executable_check(run_bash, proj_root):
+    """Verify run_all.sh checks that VENV_PYTHON is executable."""
     r = run_bash(
-        f'grep -c "VENV_PYTHON=" "{proj_root}/scripts/run_sp_cockpit.sh"',
+        f'grep -c "! -x.*VENV_PYTHON" "{proj_root}/scripts/run_all.sh"',
     )
     assert r.returncode == 0
     assert int(r.stdout.strip()) >= 1
