@@ -12,24 +12,21 @@ AOSP Code Search — a hybrid RAG code search system over Android Open Source Pr
 
 ## Build & Run
 
-Infrastructure (Zoekt, Qdrant, Neo4j) runs as Docker containers (Compose project `sourcepilot`, config in `deploy/docker-compose.yml`). Application services (SourcePilot, MCP, SP Cockpit) run as **bare processes** via `run_all_dev.sh` for fast iteration — no image rebuild needed after code changes.
+Infrastructure (Zoekt, Qdrant, Neo4j) and SourcePilot always run as Docker containers (Compose project `sourcepilot`, config in `deploy/docker-compose.yml`). MCP and SP Cockpit default to **bare processes** but can be switched to Docker via `.env` variables `MCP_DOCKER` and `SP_COCKPIT_DOCKER`.
 
 Python runtime: `/opt/pyenv/versions/dify_py3_env/bin/python3`
 
 ```bash
-scripts/run_all_dev.sh          # Dev mode: infra via Docker, apps as bare processes
-scripts/run_all.sh              # Full stack (all Docker): Zoekt → SourcePilot → MCP → SP Cockpit
-scripts/run_sourcepilot.sh      # SourcePilot only
-scripts/run_mcp.sh              # MCP (auto-starts SourcePilot)
-scripts/run_sp_cockpit.sh       # SP Cockpit only
-scripts/restart.sh              # Stop & restart (supports --only sp|mcp|av)
+scripts/run_all.sh              # Full stack: infra+SourcePilot in Docker, MCP+Cockpit bare (default)
+MCP_DOCKER=true scripts/run_all.sh        # Also run MCP in Docker
+SP_COCKPIT_DOCKER=true scripts/run_all.sh # Also run SP Cockpit in Docker
 ```
 
-To inspect or debug running services, **first check the local bare process** (stdout/stderr in the terminal running `run_all_dev.sh`). If the service is not running locally, fall back to Docker:
+To inspect or debug running services:
 
 ```bash
 docker compose ps                           # List running containers
-docker compose logs -f sourcepilot-gateway  # Tail logs (fallback when service runs in Docker)
+docker compose logs -f sourcepilot-gateway  # Tail SourcePilot logs
 docker compose exec sourcepilot-gateway sh  # Shell into container
 ```
 
@@ -107,6 +104,8 @@ Key variables (see `.env.example` for full list):
 | `NL_ENABLED` | `true` | NL rewrite pipeline toggle |
 | `AUDIT_LOG_FILE` | `$PROJ_ROOT/audit.log` | SourcePilot audit output |
 | `MCP_AUTH_TOKEN` | — | Bearer token for MCP Streamable HTTP mode |
+| `MCP_DOCKER` | `false` | Run MCP server in Docker (`true`) or as bare process (`false`) |
+| `SP_COCKPIT_DOCKER` | `false` | Run SP Cockpit in Docker (`true`) or as bare process (`false`) |
 | `CODE_EMBEDDING_MODEL` | `nomic-ai/CodeRankEmbed` | Embedding-server-side; selects which code model to load. Valid: `nomic-ai/CodeRankEmbed`, `microsoft/unixcoder-base`. `bge-base-zh-v1.5` always loads regardless. |
 
 ## Switching the Dense Code-Embedding Model
