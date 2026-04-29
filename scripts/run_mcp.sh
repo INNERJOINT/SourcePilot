@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────
-#  AOSP Code Search MCP Server 启动脚本
+#  AOSP Code Search MCP Server startup script
 #
-#  支持两种传输模式：
-#    ./run_mcp.sh                               # stdio 模式（默认，供 Claude Code / Cursor 等本地工具）
-#    ./run_mcp.sh --transport streamable-http    # Streamable HTTP 模式（Docker，供远程客户端 HTTP 访问）
+#  Supports two transport modes:
+#    ./run_mcp.sh                               # stdio mode (default, for local tools like Claude Code / Cursor)
+#    ./run_mcp.sh --transport streamable-http    # Streamable HTTP mode (Docker, for remote HTTP clients)
 #
-#  Streamable HTTP 模式额外参数：
-#    --host 0.0.0.0     监听地址（默认 0.0.0.0）
-#    --port 8888        监听端口（默认 8888）
+#  Additional parameters for Streamable HTTP mode:
+#    --host 0.0.0.0     listen address (default 0.0.0.0)
+#    --port 8888        listen port (default 8888)
 #
-#  SourcePilot 依赖：
-#    stdio 模式：如果 SOURCEPILOT_URL 未设置，脚本会自动在后台启动 SourcePilot
-#    streamable-http 模式：通过 Docker compose 启动 SourcePilot + MCP Server
+#  SourcePilot dependency:
+#    stdio mode: If SOURCEPILOT_URL is not set, the script auto-starts SourcePilot in background
+#    streamable-http mode: Started via Docker compose (SourcePilot + MCP Server)
 #
-#  环境变量：
-#    ZOEKT_URL        Zoekt webserver 地址 (默认 http://localhost:6070)
-#    SOURCEPILOT_URL  SourcePilot API 地址 (stdio 模式：若未设置则自动启动)
-#    MCP_PORT         Streamable HTTP 监听端口 (可选，等价于 --port)
+#  Environment variables:
+#    ZOEKT_URL        Zoekt webserver URL (default http://localhost:6070)
+#    SOURCEPILOT_URL  SourcePilot API URL (stdio mode: auto-starts if not set)
+#    MCP_PORT         Streamable HTTP listen port (optional, equivalent to --port)
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
-# 加载共享库
+# Load shared libraries
 source "$DIR/share/_common.sh"
 _common_parse_help "$@"
 
-# 加载 .env 配置（如果存在）
+# Load .env config (if present)
 source "$DIR/share/_env.sh"
 
-# ── streamable-http 模式检测 ──────────────────────────
+# ── streamable-http mode detection ────────────────────
 IS_HTTP_MODE=false
 for arg in "$@"; do
   if [ "$arg" = "streamable-http" ]; then
@@ -40,7 +40,7 @@ for arg in "$@"; do
   fi
 done
 
-# ── streamable-http 模式：使用 Docker ────────────────
+# ── streamable-http mode: using Docker ────────────────
 if [ "$IS_HTTP_MODE" = true ]; then
   source "$DIR/share/_infra.sh"
 
@@ -49,9 +49,9 @@ if [ "$IS_HTTP_MODE" = true ]; then
 
   cleanup() {
     echo "" >&2
-    info "正在停止服务..."
+    info "Stopping services..."
     docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway mcp-server 2> /dev/null || true
-    info "服务已停止。"
+    info "Services stopped."
   }
   trap cleanup EXIT INT TERM
 
@@ -61,29 +61,29 @@ if [ "$IS_HTTP_MODE" = true ]; then
 
   echo "" >&2
   echo "════════════════════════════════════════════" >&2
-  echo "  MCP Server (streamable-http) 已启动：" >&2
+  echo "  MCP Server (streamable-http) started:" >&2
   echo "    SourcePilot  (Docker)  (http://localhost:9000)" >&2
   echo "    MCP Server   (Docker)  (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
   echo "" >&2
-  echo "  按 Ctrl+C 停止服务" >&2
+  echo "  Press Ctrl+C to stop services" >&2
   echo "════════════════════════════════════════════" >&2
 
-  # 监控 Docker 服务健康状态
+  # Monitor Docker service health
   while true; do
     unhealthy=$(docker compose -f "$COMPOSE_FILE" ps --format json |
       jq -r 'select(.Health == "unhealthy" or .State == "exited") | .Service' 2> /dev/null || true)
     if [ -n "$unhealthy" ]; then
-      warn "服务异常: $unhealthy"
+      warn "Unhealthy service: $unhealthy"
       break
     fi
     sleep 5
   done
-  info "某个服务异常退出，正在关闭所有服务..."
+  info "A service exited unexpectedly; shutting down all services..."
   exit 0
 fi
 
-# ── stdio 模式：裸进程启动 ────────────────────────────
-VENV_PYTHON="/home/slave/.pyenv/versions/sourcepilot_py3_env/bin/python3"
+# ── stdio mode: bare process startup ─────────────────
+VENV_PYTHON="${VENV_PYTHON:-/opt/pyenv/versions/dify_py3_env/bin/python3}"
 if [ ! -x "$VENV_PYTHON" ]; then
   echo "Warning: $VENV_PYTHON not found, using system python3" >&2
   VENV_PYTHON="python3"

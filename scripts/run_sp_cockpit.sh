@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────
-#  SourcePilot Cockpit 启动脚本（FastAPI + React SPA）
+#  SourcePilot Cockpit startup script (FastAPI + React SPA)
 #
-#  用法：
-#    ./run_sp_cockpit.sh                       # Docker 模式（默认）
-#    ./run_sp_cockpit.sh --bare                # 裸进程模式（pyenv，旧行为）
-#    ./run_sp_cockpit.sh --bare --host 0.0.0.0 # 裸进程模式 + 自定义参数
-#    ./run_sp_cockpit.sh --bare --port 9200    # 裸进程模式 + 自定义端口
-#    ./run_sp_cockpit.sh --bare --build        # 裸进程模式 + 构建前端
-#    ./run_sp_cockpit.sh --bare --no-frontend  # 裸进程模式 + 仅后端 API
+#  Usage:
+#    ./run_sp_cockpit.sh                       # Docker mode (default)
+#    ./run_sp_cockpit.sh --bare                # bare process mode (pyenv, legacy)
+#    ./run_sp_cockpit.sh --bare --host 0.0.0.0 # bare process mode + custom host
+#    ./run_sp_cockpit.sh --bare --port 9200    # bare process mode + custom port
+#    ./run_sp_cockpit.sh --bare --build        # bare process mode + build frontend
+#    ./run_sp_cockpit.sh --bare --no-frontend  # bare process mode + API only
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -20,16 +20,16 @@ source "$DIR/share/_common.sh"
 APP_DIR="$PROJ_ROOT/sp-cockpit"
 source "$DIR/share/_env.sh"
 
-# ── --bare 模式：裸进程（旧行为） ─────────────────────
+# ── --bare mode: bare process (legacy) ────────────────
 for arg in "$@"; do
   if [ "$arg" = "--bare" ]; then
-    # 移除 --bare 参数，转发其余参数
+    # Remove --bare flag, forward remaining args
     BARE_ARGS=()
     for a in "$@"; do
       [ "$a" = "--bare" ] || BARE_ARGS+=("$a")
     done
 
-    VENV_PYTHON="/home/slave/.pyenv/versions/sourcepilot_py3_env/bin/python3"
+    VENV_PYTHON="${VENV_PYTHON:-/opt/pyenv/versions/dify_py3_env/bin/python3}"
     if [ ! -x "$VENV_PYTHON" ]; then
       echo "Warning: $VENV_PYTHON not found, using system python3" >&2
       VENV_PYTHON="python3"
@@ -107,7 +107,7 @@ for arg in "$@"; do
   fi
 done
 
-# ── Docker 模式（默认） ────────────────────────────────
+# ── Docker mode (default) ─────────────────────────────
 source "$DIR/share/_infra.sh"
 
 SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
@@ -116,34 +116,34 @@ SP_COCKPIT_RUNNING=false
 
 cleanup() {
   echo "" >&2
-  info "正在停止 sp-cockpit..."
+  info "Stopping sp-cockpit..."
   docker compose -f "$COMPOSE_FILE" stop sp-cockpit 2> /dev/null || true
-  info "sp-cockpit 已停止。"
+  info "sp-cockpit stopped."
 }
 trap cleanup EXIT INT TERM
 
 infra_start_cockpit
 
 if [ "$SP_COCKPIT_RUNNING" != true ]; then
-  die "sp-cockpit 启动失败"
+  die "sp-cockpit startup failed"
 fi
 
 echo "" >&2
 echo "════════════════════════════════════════════" >&2
-echo "  sp-cockpit 已启动：" >&2
+echo "  sp-cockpit started:" >&2
 echo "    sp-cockpit  (Docker)  (http://localhost:${SP_COCKPIT_PORT})" >&2
 echo "" >&2
-echo "  按 Ctrl+C 停止服务" >&2
+echo "  Press Ctrl+C to stop services" >&2
 echo "════════════════════════════════════════════" >&2
 
-# 监控 Docker 服务健康状态
+# Monitor Docker service health
 while true; do
   unhealthy=$(docker compose -f "$COMPOSE_FILE" ps --format json |
     jq -r 'select(.Health == "unhealthy" or .State == "exited") | .Service' 2> /dev/null || true)
   if [ -n "$unhealthy" ]; then
-    warn "服务异常: $unhealthy"
+    warn "Unhealthy service: $unhealthy"
     break
   fi
   sleep 5
 done
-info "某个服务异常退出，正在关闭所有服务..."
+info "A service exited unexpectedly; shutting down all services..."

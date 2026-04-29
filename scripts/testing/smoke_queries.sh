@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# scripts/smoke_queries.sh — SourcePilot 手动 smoke 巡检
+# scripts/smoke_queries.sh — SourcePilot manual smoke test
 #
-# 用法:
-#   scripts/run_all.sh            # 先把 SourcePilot/zoekt/Qdrant/sp-cockpit 起好
+# Usage:
+#   scripts/run_all.sh            # Start SourcePilot/zoekt/Qdrant/sp-cockpit first
 #   bash scripts/smoke_queries.sh
 #
-# 前置条件:
-#   - DENSE_ENABLED=true (SourcePilot 启动时需设置)
-#   - Qdrant 运行中，frameworks/base 已完成向量索引
-#   - sp-cockpit 运行中 (port 9100)，audit.db 正在被填充
-#   - 审查入口: http://localhost:9100  (按 trace_id 过滤逐条人工审查)
+# Prerequisites:
+#   - DENSE_ENABLED=true (must be set when SourcePilot starts)
+#   - Qdrant running, frameworks/base vector index complete
+#   - sp-cockpit running (port 9100), audit.db being populated
+#   - Audit review URL: http://localhost:9100  (filter by trace_id for manual review)
 #
-# 依赖: bash + curl + jq + sqlite3 + (uuidgen 或 openssl) + GNU date (Linux)
-# 端点: SourcePilot HTTP API (默认 http://localhost:9000)
-# 退出码: 0 全 PASS 且 audit 通过 / 1 任一 FAIL 或 audit 失败 / 2 前置检查不通过
+# Dependencies: bash + curl + jq + sqlite3 + (uuidgen or openssl) + GNU date (Linux)
+# Endpoint: SourcePilot HTTP API (default http://localhost:9000)
+# Exit code: 0 all PASS and audit passed / 1 any FAIL or audit failed / 2 pre-flight check failed
 
 set -euo pipefail
 
@@ -29,33 +29,33 @@ AOSP_PROJECT="${AOSP_PROJECT:-aosp_project}"
 RESP_FILE="$(mktemp -t smoke_resp.XXXXXX.json)"
 trap 'rm -f "$RESP_FILE"' EXIT
 
-# ─── 前置检查 ────────────────────────────────────────
+# ─── Pre-flight checks ────────────────────────────────────────
 for tool in curl jq sqlite3; do
   if ! command -v "$tool" > /dev/null 2>&1; then
-    echo "ERROR: 需要 $tool，请先安装" >&2
+    echo "ERROR: requires $tool, please install first" >&2
     exit 2
   fi
 done
 
-# uuidgen 或 openssl 二选一
+# uuidgen or openssl, either one
 if ! command -v uuidgen > /dev/null 2>&1 && ! command -v openssl > /dev/null 2>&1; then
-  echo "ERROR: 需要 uuidgen 或 openssl，请先安装其中之一" >&2
+  echo "ERROR: requires uuidgen or openssl, please install either one" >&2
   exit 2
 fi
 
 if [[ ! -f "$AUDIT_DB" ]]; then
-  echo "ERROR: audit.db 不存在: $AUDIT_DB" >&2
-  echo "       请先运行 sp-cockpit 使其创建并填充 audit.db" >&2
+  echo "ERROR: audit.db does not exist: $AUDIT_DB" >&2
+  echo "       please run sp-cockpit first to create and populate audit.db" >&2
   exit 2
 fi
 
 if ! curl -fsS --max-time "$TIMEOUT" "$SOURCEPILOT_URL/api/health" > /dev/null 2>&1; then
-  echo "ERROR: SourcePilot 健康检查失败 (GET $SOURCEPILOT_URL/api/health)" >&2
-  echo "       请先运行 scripts/run_all.sh 把服务起好" >&2
+  echo "ERROR: SourcePilot health check failed (GET $SOURCEPILOT_URL/api/health)" >&2
+  echo "       please run scripts/run_all.sh to start services first" >&2
   exit 2
 fi
 
-# ─── gen_trace_id 工具函数 ────────────────────────────
+# ─── gen_trace_id utility function ────────────────────────
 gen_trace_id() {
   if command -v uuidgen > /dev/null 2>&1; then
     uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-'
@@ -64,7 +64,7 @@ gen_trace_id() {
   fi
 }
 
-# ─── dense-enabled 探针 ──────────────────────────────
+# ─── dense-enabled probe ──────────────────────────────
 probe_tid=$(gen_trace_id)
 curl -s --max-time "$TIMEOUT" \
   -o /dev/null \
@@ -83,15 +83,15 @@ if [[ "$probe_count" -eq 0 ]]; then
   exit 2
 fi
 
-# ─── 计数器 ────────────────────────────────────────
+# ─── counters ────────────────────────────────────────
 PASSED=0
 FAILED=0
 SKIPPED=0
 
-# ─── 关联数组: 存储每个用例的 trace_id ───────────────
+# ─── associative arrays: store trace_id for each test case ───────────────
 declare -A TRACE_IDS
 
-# ─── 通用 runner ────────────────────────────────────
+# ─── common runner ────────────────────────────────────
 # run_case <name> <path> <json> <optional:yes|no> <shape:list|dict>
 run_case() {
   local name="$1" path="$2" json="$3" optional="$4" shape="$5"
@@ -121,7 +121,7 @@ run_case() {
     count=1
   fi
 
-  # dict 含 error 键 → 视为业务错误（用于 optional 降级判断）
+  # dict contains error key -> treat as business error (for optional degradation check)
   if jq -e 'type == "object" and has("error")' "$RESP_FILE" > /dev/null 2>&1; then
     has_error=0
   fi
@@ -141,7 +141,7 @@ run_case() {
     "$status" "$name" "$http_code" "$dur" "$count" "$trace_id"
 }
 
-# ─── 用例清单 ───────────────────────────────────────
+# ─── Test cases ───────────────────────────────────────
 echo "=== SourcePilot smoke @ $SOURCEPILOT_URL ==="
 
 run_case zoekt_keyword /api/search "{\"query\":\"binder_open\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
@@ -153,12 +153,12 @@ run_case regex /api/search_regex "{\"pattern\":\"binder_[a-z_]+\",\"top_k\":3,\"
 run_case list_repos /api/list_repos "{\"query\":\"\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
 run_case get_file /api/get_file_content "{\"repo\":\"frameworks/base\",\"filepath\":\"core/java/android/os/Binder.java\",\"start_line\":1,\"end_line\":40,\"project\":\"$AOSP_PROJECT\"}" yes dict
 
-# ─── 汇总 ─────────────────────────────────────────
+# ─── Summary ─────────────────────────────────────────
 echo "---"
 echo "PASSED=$PASSED FAILED=$FAILED SKIPPED=$SKIPPED"
-echo "(注: count=0 不算 fail；PASS 仅看 HTTP 200 + JSON 可解析)"
+echo "(Note: count=0 is not a fail; PASS only checks HTTP 200 + parseable JSON)"
 
-# ─── audit 校验 ─────────────────────────────────────
+# ─── audit verification ─────────────────────────────────────
 echo "--- audit verification @ $AUDIT_DB ---"
 AUDIT_FAIL=0
 
@@ -205,10 +205,10 @@ out_zoekt=$(sqlite3 "$AUDIT_DB" 'SELECT COALESCE(json_extract(payload_json,"$.st
 }
 
 echo "AUDIT_FAIL=$AUDIT_FAIL"
-echo "审查入口: http://localhost:9100  (按 trace_id 过滤逐条人工审查 rewrite/RRF/rerank)"
+echo "Audit review URL: http://localhost:9100  (filter by trace_id for manual review of rewrite/RRF/rerank)"
 for n in "${!TRACE_IDS[@]}"; do printf '  %-22s trace_id=%s\n' "$n" "${TRACE_IDS[$n]}"; done
 
-# ─── 最终退出码 ───────────────────────────────────────
+# ─── Final exit code ───────────────────────────────────────
 if ((FAILED == 0 && AUDIT_FAIL == 0)); then
   exit 0
 else

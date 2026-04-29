@@ -1,49 +1,49 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────
-#  AOSP Code Search 一键启动脚本
+#  AOSP Code Search all-in-one startup script
 #
-#  启动顺序：
-#    1. sparse-index-zoekt（索引服务）
-#    2. Dense 检索栈（DENSE_ENABLED=true 时）
-#    3. Neo4j 结构化索引（STRUCTURAL_ENABLED=true 时）
-#    4. SourcePilot（搜索引擎 API，Docker）
-#    5. MCP Server（协议代理，Docker）
-#    6. sp-cockpit（审计面板，Docker）
+#  Startup order:
+#    1. sparse-index-zoekt (index service)
+#    2. Dense retrieval stack (when DENSE_ENABLED=true)
+#    3. Neo4j structural index (when STRUCTURAL_ENABLED=true)
+#    4. SourcePilot (search engine API, Docker)
+#    5. MCP Server (protocol proxy, Docker)
+#    6. sp-cockpit (audit dashboard, Docker)
 #
-#  配置：
-#    从 .env 文件读取配置（参见 .env.example）
-#    也可通过命令行环境变量覆盖
+#  Configuration:
+#    Read config from .env file (see .env.example)
+#    Can also override via CLI env vars
 #
-#  用法：
-#    ./run_all.sh                           # 使用 .env 配置
-#    ZOEKT_INDEX_PATH=/path ./run_all.sh    # 覆盖索引路径
-#    DENSE_ENABLED=true ./run_all.sh        # 包含 Dense 检索栈
+#  Usage:
+#    ./run_all.sh                           # Use .env config
+#    ZOEKT_INDEX_PATH=/path ./run_all.sh    # Override index path
+#    DENSE_ENABLED=true ./run_all.sh        # Include dense retrieval stack
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
-# 加载共享库
+# Load shared libraries
 source "$DIR/share/_common.sh"
 _common_parse_help "$@"
 source "$DIR/share/_env.sh"
 source "$DIR/share/_infra.sh"
 
-# ── 配置 ──────────────────────────────────────────────
+# ── Configuration ────────────────────────────────────
 ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
 MCP_PORT="${MCP_PORT:-8888}"
 SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
 SP_COCKPIT_ENABLED="${SP_COCKPIT_ENABLED:-true}"
 
-# ── 进程管理 ──────────────────────────────────────────
+# ── Process management ───────────────────────────────
 PIDS=()
 SP_COCKPIT_RUNNING=false
 ZOEKT_DOCKER=false
 
 cleanup() {
   echo "" >&2
-  info "正在停止所有服务..."
+  info "Stopping all services..."
   docker compose -f "$COMPOSE_FILE" stop sourcepilot-gateway mcp-server sp-cockpit 2> /dev/null || true
   for pid in "${PIDS[@]}"; do
     if kill -0 "$pid" 2> /dev/null; then
@@ -57,40 +57,40 @@ cleanup() {
     fi
   done
   wait 2> /dev/null || true
-  info "所有服务已停止。"
+  info "All services stopped."
 }
 trap cleanup EXIT INT TERM
 
-# ── 1. 启动 sparse-index-zoekt ──────────────────────────
+# ── 1. Start sparse-index-zoekt ─────────────────────────
 infra_start_zoekt
 
-# ── 2. 启动 Dense 检索栈 ─────────────────────────────
+# ── 2. Start Dense retrieval stack ────────────────────
 infra_start_dense
 
-# ── 3. 启动 Neo4j ────────────────────────────────────
+# ── 3. Start Neo4j ───────────────────────────────────
 infra_start_structural
 
-# ── 4. 启动 SourcePilot ──────────────────────────────
+# ── 4. Start SourcePilot ─────────────────────────────
 infra_start_sourcepilot
 
-# ── 5. 启动 MCP Server ───────────────────────────────
+# ── 5. Start MCP Server ──────────────────────────────
 export SOURCEPILOT_URL="http://localhost:9000"
 infra_start_mcp
 
-# ── 6. 启动 sp-cockpit ───────────────────────────────
+# ── 6. Start sp-cockpit ──────────────────────────────
 infra_start_cockpit
 
-# ── 启动完成 ──────────────────────────────────────────
+# ── Startup complete ─────────────────────────────────
 echo "" >&2
 echo "════════════════════════════════════════════" >&2
-echo "  所有服务已启动：" >&2
+echo "  All services started:" >&2
 if [ "$ZOEKT_DOCKER" = true ]; then
   echo "    sparse-index-zoekt  (Docker)       ($ZOEKT_URL)" >&2
 else
   echo "    sparse-index-zoekt  PID ${PIDS[0]:-?}  ($ZOEKT_URL)" >&2
 fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
-  echo "    Dense 检索栈     (Docker)       (Qdrant :6333)" >&2
+  echo "    Dense stack      (Docker)       (Qdrant :6333)" >&2
 fi
 if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
   echo "    Neo4j            (Docker)       (bolt://localhost:7687)" >&2
@@ -101,21 +101,21 @@ if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
   if [ "$SP_COCKPIT_RUNNING" = true ]; then
     echo "    sp-cockpit       (Docker)       (http://localhost:${SP_COCKPIT_PORT})" >&2
   else
-    echo "    sp-cockpit       (启动失败/超时)" >&2
+    echo "    sp-cockpit       (startup failed/timed out)" >&2
   fi
 fi
 echo "" >&2
-echo "  按 Ctrl+C 停止所有服务" >&2
+echo "  Press Ctrl+C to stop all services" >&2
 echo "════════════════════════════════════════════" >&2
 
-# 监控 Docker 服务健康状态
+# Monitor Docker service health
 while true; do
   unhealthy=$(docker compose -f "$COMPOSE_FILE" ps --format json |
     jq -r 'select(.Health == "unhealthy" or .State == "exited") | .Service' 2> /dev/null || true)
   if [ -n "$unhealthy" ]; then
-    warn "服务异常: $unhealthy"
+    warn "Unhealthy service: $unhealthy"
     break
   fi
   sleep 5
 done
-info "某个服务异常退出，正在关闭所有服务..."
+info "A service exited unexpectedly; shutting down all services..."

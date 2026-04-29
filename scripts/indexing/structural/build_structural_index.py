@@ -1,26 +1,27 @@
 """
-build_structural_index.py — SourcePilot 结构化索引构建脚本
+build_structural_index.py — SourcePilot structural index builder
 
-用途:
-    遍历 AOSP 源码目录，通过 tree-sitter 提取 Java/C++/Python 的
-    文件、类、方法节点及其边关系，批量写入 Neo4j 图数据库。
+Purpose:
+    Walk an AOSP source directory, extract Java/C++/Python file, class,
+    and method nodes plus their edge relationships via tree-sitter,
+    and batch-write them into a Neo4j graph database.
 
-用法:
+Usage:
     python scripts/build_structural_index.py \\
         --source-root /opt/aosp/aosp_project/.repo/frameworks/base \\
         --languages java,cpp,python \\
         --batch-size 100
 
-    # 重建（先清空所有节点）
+    # Rebuild (clear all nodes first)
     python scripts/build_structural_index.py --source-root /path/to/src --reset
 
-    # 仅处理前 500 个文件（测试用）
+    # Process only the first 500 files (for testing)
     python scripts/build_structural_index.py --source-root /path/to/src --max-files 500
 
-环境变量（可被命令行参数覆盖）:
-    STRUCTURAL_NEO4J_URI      默认 bolt://localhost:7687
-    STRUCTURAL_NEO4J_USER     默认 neo4j
-    STRUCTURAL_NEO4J_PASSWORD 默认 sourcepilot
+Environment variables (can be overridden by command-line arguments):
+    STRUCTURAL_NEO4J_URI      default bolt://localhost:7687
+    STRUCTURAL_NEO4J_USER     default neo4j
+    STRUCTURAL_NEO4J_PASSWORD default sourcepilot
 """
 
 import argparse
@@ -29,61 +30,61 @@ import re as _re
 import sys
 
 # ---------------------------------------------------------------------------
-# 1. Argparse — 必须在 import 重量级依赖之前，保证 --help 不因缺包而失败
+# 1. Argparse — must come before heavy imports so --help works even if deps are missing
 # ---------------------------------------------------------------------------
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="构建 AOSP 源码 → Neo4j 结构化索引",
+        description="Build AOSP source -> Neo4j structural index",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--source-root",
         required=True,
-        help="源码根目录，例如 /opt/aosp/aosp_project/.repo/frameworks/base",
+        help="Source root directory, e.g. /opt/aosp/aosp_project/.repo/frameworks/base",
     )
     p.add_argument(
         "--batch-size",
         type=int,
         default=100,
-        help="每批 Cypher UNWIND 写入的节点/边数量（默认 100）",
+        help="Number of nodes/edges per Cypher UNWIND batch (default 100)",
     )
     p.add_argument(
         "--languages",
         default="java,cpp,python",
-        help="要解析的语言列表，逗号分隔（默认 java,cpp,python）",
+        help="Comma-separated list of languages to parse (default java,cpp,python)",
     )
     p.add_argument(
         "--strict",
         action="store_true",
-        help="解析失败率 > 0.2 时以 exit(3) 中止",
+        help="Abort with exit(3) when parse failure rate > 0.2",
     )
     p.add_argument(
         "--neo4j-uri",
         default=os.environ.get("STRUCTURAL_NEO4J_URI", "bolt://localhost:7687"),
-        help="Neo4j Bolt URI（默认 bolt://localhost:7687）",
+        help="Neo4j Bolt URI (default bolt://localhost:7687)",
     )
     p.add_argument(
         "--neo4j-user",
         default=os.environ.get("STRUCTURAL_NEO4J_USER", "neo4j"),
-        help="Neo4j 用户名（默认 neo4j）",
+        help="Neo4j username (default neo4j)",
     )
     p.add_argument(
         "--neo4j-password",
         default=os.environ.get("STRUCTURAL_NEO4J_PASSWORD", "sourcepilot"),
-        help="Neo4j 密码（默认 sourcepilot）",
+        help="Neo4j password (default sourcepilot)",
     )
     p.add_argument(
         "--reset",
         action="store_true",
-        help="构建前清空所有节点与索引",
+        help="Clear all nodes and indexes before building",
     )
     p.add_argument(
         "--max-files",
         type=int,
         default=None,
-        help="最多处理 N 个文件（测试用保护措施）",
+        help="Process at most N files (safety limit for testing)",
     )
     p.add_argument(
         "--project-name",
@@ -99,35 +100,35 @@ def _build_parser() -> argparse.ArgumentParser:
             "or falls back to synthetic project-root repo."
         ),
     )
-    # DocEntity LLM 提取（Pass 2）
+    # DocEntity LLM extraction (Pass 2)
     p.add_argument(
         "--extract-doc-entities",
         action="store_true",
         default=False,
-        help="启用 Pass 2：通过 LLM 从注释中提取领域概念节点（DocEntity）",
+        help="Enable Pass 2: extract domain concept nodes (DocEntity) from comments via LLM",
     )
     p.add_argument(
         "--max-doc-entities",
         type=int,
         default=500,
-        help="DocEntity 提取上限，超过后立即停止（默认 500）",
+        help="DocEntity extraction cap; stops immediately when reached (default 500)",
     )
     p.add_argument(
         "--doc-entity-llm-model",
         default=os.environ.get("NL_MODEL", ""),
-        help="DocEntity 提取使用的 LLM 模型（默认 $NL_MODEL）",
+        help="LLM model used for DocEntity extraction (default $NL_MODEL)",
     )
     p.add_argument(
         "--doc-entity-batch-size",
         type=int,
         default=10,
-        help="每次并发发送给 LLM 的注释块数量（默认 10）",
+        help="Number of comment blocks sent to the LLM per concurrent call (default 10)",
     )
     return p
 
 
 # ---------------------------------------------------------------------------
-# 2. 延迟导入重量级依赖（tree-sitter / neo4j 驱动）
+# 2. Lazy-import heavy dependencies (tree-sitter / neo4j driver)
 # ---------------------------------------------------------------------------
 
 
@@ -138,7 +139,7 @@ def _import_neo4j():
         return GraphDatabase
     except ImportError:
         print(
-            "错误: 缺少 neo4j 包，请运行: pip install neo4j",
+            "Error: missing neo4j package, please run: pip install neo4j",
             file=sys.stderr,
         )
         sys.exit(4)
@@ -146,14 +147,15 @@ def _import_neo4j():
 
 def _import_tree_sitter_parsers(languages: list[str]):
     """
-    返回 {lang: Parser} 字典。
-    若 tree_sitter 或对应 grammar 包未安装，打印提示并 exit(4)。
+    Return a {lang: Parser} dict.
+    If tree_sitter or the corresponding grammar package is not installed,
+    print an error and exit(4).
     """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
         print(
-            "错误: 缺少 tree-sitter 包，请运行: pip install tree-sitter "
+            "Error: missing tree-sitter package, please run: pip install tree-sitter "
             "tree-sitter-java tree-sitter-cpp tree-sitter-python",
             file=sys.stderr,
         )
@@ -170,7 +172,7 @@ def _import_tree_sitter_parsers(languages: list[str]):
     for lang in languages:
         pkg, lang_name = lang_pkg_map.get(lang, (None, None))
         if pkg is None:
-            print(f"警告: 不支持的语言 '{lang}'，跳过", file=sys.stderr)
+            print(f"Warning: unsupported language '{lang}', skipping", file=sys.stderr)
             continue
         try:
             mod = __import__(pkg)
@@ -178,12 +180,12 @@ def _import_tree_sitter_parsers(languages: list[str]):
             parser = Parser(language)
             parsers[lang] = parser
         except (ImportError, Exception) as exc:
-            print(f"警告: 无法加载 {lang} 语法包 ({exc})，跳过", file=sys.stderr)
+            print(f"Warning: failed to load {lang} grammar package ({exc}), skipping", file=sys.stderr)
     return parsers
 
 
 # ---------------------------------------------------------------------------
-# 3. 文件扩展名 → 语言映射
+# 3. File extension -> language mapping
 # ---------------------------------------------------------------------------
 
 EXT_TO_LANG: dict[str, str] = {
@@ -200,7 +202,7 @@ EXT_TO_LANG: dict[str, str] = {
 def _collect_files(
     source_root: str, languages: list[str], max_files: int | None
 ) -> list[tuple[str, str]]:
-    """返回 [(文件绝对路径, 语言)] 列表"""
+    """Return a list of [(absolute_file_path, language)]."""
     results: list[tuple[str, str]] = []
     lang_set = set(languages)
     for dirpath, _, filenames in os.walk(source_root):
@@ -215,7 +217,7 @@ def _collect_files(
 
 
 # ---------------------------------------------------------------------------
-# 4. tree-sitter 解析：提取节点与边
+# 4. tree-sitter parsing: extract nodes and edges
 # ---------------------------------------------------------------------------
 
 
@@ -230,24 +232,24 @@ def _derive_repo_and_path(
     repo_name: str | None = None,
 ) -> tuple[str, str, str]:
     """
-    计算结构化索引身份中的 repo/path。
+    Compute the repo/path for the structural index identity.
 
-    返回 (repo, repo_relative_path, repo_mode):
-      - repo_mode=explicit: 来自 --repo-name
-      - repo_mode=derived: 从默认约定推导（frameworks/* 或 packages/*/*）
-      - repo_mode=project_root: 无法推导时使用 synthetic repo（project）
+    Returns (repo, repo_relative_path, repo_mode):
+      - repo_mode=explicit: from --repo-name
+      - repo_mode=derived: inferred from default conventions (frameworks/* or packages/*/*)
+      - repo_mode=project_root: synthetic repo (project) used when conventions do not apply
     """
     abs_root = os.path.abspath(source_root)
     abs_file = os.path.abspath(file_path)
     rel = _normalize_rel_path(os.path.relpath(abs_file, abs_root))
 
     if rel == "." or rel.startswith("../"):
-        raise ValueError(f"文件不在 source_root 下: file={file_path}, source_root={source_root}")
+        raise ValueError(f"File is not under source_root: file={file_path}, source_root={source_root}")
 
     if repo_name:
         return repo_name, rel, "explicit"
 
-    # 默认 whole-project 模式：优先按 frameworks/* 与 packages/*/* 推导 repo 边界
+    # Default whole-project mode: prefer deriving repo boundary from frameworks/* and packages/*/*
     parts = rel.split("/")
     if len(parts) >= 3 and parts[0] == "frameworks":
         repo = f"frameworks/{parts[1]}"
@@ -256,14 +258,14 @@ def _derive_repo_and_path(
         repo = f"packages/{parts[1]}/{parts[2]}"
         return repo, "/".join(parts[3:]), "derived"
 
-    # 若 source_root 本身就是 frameworks/<repo> 或 packages/<org>/<repo>，也做兼容推导
+    # If source_root itself is frameworks/<repo> or packages/<org>/<repo>, also derive compatibly
     root_parts = _normalize_rel_path(abs_root).strip("/").split("/")
     if len(root_parts) >= 2 and root_parts[-2] == "frameworks":
         return f"frameworks/{root_parts[-1]}", rel, "derived"
     if len(root_parts) >= 3 and root_parts[-3] == "packages":
         return f"packages/{root_parts[-2]}/{root_parts[-1]}", rel, "derived"
 
-    # synthetic project-root 模式（用于无法按约定切 repo 的文件）
+    # Synthetic project-root mode (for files that cannot be split into repos by convention)
     return project, rel, "project_root"
 
 
@@ -276,10 +278,10 @@ def _extract_nodes_edges(
     repo_name: str | None = None,
 ) -> tuple[dict, list]:
     """
-    返回:
+    Returns:
         nodes: {"file": {...}, "classes": [...], "methods": [...]}
         edges: [{"type": "DEFINED_IN"|"MEMBER_OF"|"INHERITS"|"CALLS", ...}]
-    解析失败时返回 (None, None)。
+    Returns (None, None) on parse failure.
     """
     try:
         with open(file_path, "rb") as f:
@@ -315,7 +317,7 @@ def _extract_nodes_edges(
 
     root = tree.root_node
 
-    # --- 通用 AST 遍历 ---
+    # --- Generic AST traversal ---
     def node_text(n) -> str:
         return source[n.start_byte : n.end_byte].decode("utf-8", errors="replace")
 
@@ -346,7 +348,7 @@ def _extract_nodes_edges(
                         "project": project,
                     }
                 )
-                # 继承关系（Java: superclass / C++: base_class_clause）
+                # Inheritance (Java: superclass / C++: base_class_clause)
                 for child in n.children:
                     if child.type in ("superclass", "base_class_clause"):
                         for sc in child.children:
@@ -363,7 +365,7 @@ def _extract_nodes_edges(
                                         "project": project,
                                     }
                                 )
-                # 递归处理类体
+                # Recurse into class body
                 for child in n.children:
                     walk(child, current_class=cname)
                 return
@@ -378,7 +380,7 @@ def _extract_nodes_edges(
             name_node = n.child_by_field_name("name") or n.child_by_field_name("declarator")
             if name_node:
                 mname = node_text(name_node)
-                # 提取签名（函数名 + 参数）
+                # Extract signature (function name + parameters)
                 params_node = n.child_by_field_name("parameters")
                 sig = mname + (node_text(params_node) if params_node else "()")
                 method = {
@@ -420,7 +422,7 @@ def _extract_nodes_edges(
                             "project": project,
                         }
                     )
-                # CALLS 边：扫描方法体中的调用表达式（best-effort）
+                # CALLS edges: scan call expressions in method body (best-effort)
                 body = n.child_by_field_name("body")
                 if body:
                     _extract_calls(body, mname, sig, source, edges)
@@ -429,7 +431,7 @@ def _extract_nodes_edges(
             walk(child, current_class=current_class)
 
     def _extract_calls(body_node, caller: str, caller_sig: str, src: bytes, out_edges: list):
-        """递归提取 call_expression 中被调用的方法名"""
+        """Recursively extract callee method names from call_expression nodes."""
         for child in body_node.children:
             if child.type in ("call_expression", "method_invocation"):
                 fn_node = child.child_by_field_name("function") or child.child_by_field_name("name")
@@ -437,7 +439,7 @@ def _extract_nodes_edges(
                     callee_text = src[fn_node.start_byte : fn_node.end_byte].decode(
                         "utf-8", errors="replace"
                     )
-                    # 取最后一段（去掉 obj. 前缀）
+                    # Take the last segment (strip obj. prefix)
                     callee = callee_text.rsplit(".", 1)[-1]
                     out_edges.append(
                         {
@@ -459,7 +461,7 @@ def _extract_nodes_edges(
 
 
 # ---------------------------------------------------------------------------
-# 5. Neo4j 操作
+# 5. Neo4j operations
 # ---------------------------------------------------------------------------
 
 SCHEMA_CYPHER = [
@@ -477,15 +479,15 @@ DOC_ENTITY_INDEX_NAME = "doc_entity_idx"
 
 def _preflight_file_identity_constraints(session):
     """
-    迁移前检查并确保 File 唯一性从 path 升级到 (project, repo, path)。
+    Pre-migration check: ensure File uniqueness is upgraded from path to (project, repo, path).
 
-    流程：
-      1) 检查现有 File 节点是否具备 project/repo/path（非空）
-      2) 检查 (project, repo, path) 是否存在重复
-      3) 创建 composite 唯一约束
-      4) 删除旧 File.path 单字段唯一约束（若存在）
+    Steps:
+      1) Verify existing File nodes have non-empty project/repo/path
+      2) Check for (project, repo, path) duplicates
+      3) Create composite unique constraint
+      4) Drop the old File.path single-field unique constraint (if present)
 
-    若检查失败，抛出 RuntimeError 并附带 remediation 提示。
+    Raises RuntimeError with remediation hints on check failure.
     """
     missing = session.run(
         "MATCH (f:File) "
@@ -497,8 +499,8 @@ def _preflight_file_identity_constraints(session):
     ).single()["cnt"]
     if missing > 0:
         raise RuntimeError(
-            "File 节点缺少 project/repo/path，无法安全迁移到复合唯一约束。"
-            "请先执行 --reset 重建，或先补齐历史数据再重试。"
+            "File nodes are missing project/repo/path; cannot safely migrate to composite "
+            "unique constraint. Run --reset to rebuild, or backfill historical data first."
         )
 
     dup = session.run(
@@ -511,9 +513,9 @@ def _preflight_file_identity_constraints(session):
     if dup:
         sample = "; ".join(f"({d['project']}, {d['repo']}, {d['path']}) x{d['c']}" for d in dup)
         raise RuntimeError(
-            "检测到 File 复合键重复，无法安全创建 (project,repo,path) 唯一约束。"
-            f"样例: {sample}. "
-            "请先执行 --reset 重建，或手动清理重复数据后重试。"
+            "Detected duplicate File composite keys; cannot safely create (project,repo,path) "
+            f"unique constraint. Samples: {sample}. "
+            "Run --reset to rebuild, or manually deduplicate before retrying."
         )
 
     session.run(
@@ -535,7 +537,7 @@ def _bootstrap_schema(session):
     _preflight_file_identity_constraints(session)
     for stmt in SCHEMA_CYPHER:
         session.run(stmt)
-    # 仅在不存在时创建全文索引（SHOW INDEXES 检查）
+    # Create fulltext indexes only if they do not already exist (checked via SHOW INDEXES)
     existing = {rec["name"] for rec in session.run("SHOW INDEXES YIELD name")}
     if FULLTEXT_INDEX_NAME not in existing:
         session.run(
@@ -562,8 +564,8 @@ def _reset_structural(session, project=None):
 
 
 def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
-    """批量写入文件/类/方法节点及边"""
-    # File 节点
+    """Batch-write File/Class/Method nodes and their edges."""
+    # File nodes
     files = [n["file"] for n in nodes_batch]
     session.run(
         "UNWIND $files AS f "
@@ -571,7 +573,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
         "SET node.language = f.language, node.structural_repo_mode = f.structural_repo_mode",
         files=files,
     )
-    # Class 节点
+    # Class nodes
     classes = [c for n in nodes_batch for c in n["classes"]]
     if classes:
         session.run(
@@ -580,7 +582,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
             "SET node.start_line = c.start_line, node.end_line = c.end_line",
             cls=classes,
         )
-    # Method 节点
+    # Method nodes
     methods = [m for n in nodes_batch for m in n["methods"]]
     if methods:
         session.run(
@@ -593,7 +595,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
             mth=methods,
         )
 
-    # 边：DEFINED_IN (Class/Method → File)
+    # Edges: DEFINED_IN (Class/Method -> File)
     defined_in = [e for e in edges_batch if e["type"] == "DEFINED_IN"]
     if defined_in:
         for e in defined_in:
@@ -628,7 +630,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
                     to_path=e["to_path"],
                     project=e.get("project"),
                 )
-    # 边：MEMBER_OF (Method → Class)
+    # Edges: MEMBER_OF (Method -> Class)
     member_of = [e for e in edges_batch if e["type"] == "MEMBER_OF"]
     if member_of:
         for e in member_of:
@@ -647,7 +649,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
                 cpath=e["to_path"],
                 project=e.get("project"),
             )
-    # 边：INHERITS (Class → Class)
+    # Edges: INHERITS (Class -> Class)
     inherits = [e for e in edges_batch if e["type"] == "INHERITS"]
     if inherits:
         for e in inherits:
@@ -667,7 +669,7 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
                 parent=e["to"],
                 project=e.get("project"),
             )
-    # 边：CALLS (Method → Method, best-effort)
+    # Edges: CALLS (Method -> Method, best-effort)
     calls = [e for e in edges_batch if e["type"] == "CALLS"]
     if calls:
         for e in calls:
@@ -692,26 +694,27 @@ def _upsert_batch(session, nodes_batch: list[dict], edges_batch: list[dict]):
 
 
 # ---------------------------------------------------------------------------
-# 7. Pass 2 — DocEntity LLM 提取（仅在 --extract-doc-entities 时运行）
+# 7. Pass 2 — DocEntity LLM extraction (runs only with --extract-doc-entities)
 # ---------------------------------------------------------------------------
 
-# Javadoc / block comment 正则（用于无 tree-sitter 时的回退）
+# Javadoc / block comment regex (fallback when tree-sitter is unavailable)
 _BLOCK_COMMENT_RE = _re.compile(
     r"/\*\*?.*?\*/|\'\'\'.*?\'\'\'",
     _re.DOTALL,
 )
 
 _DOC_ENTITY_PROMPT = (
-    "请从以下代码注释中提取 1-3 词的领域概念名词短语（英文或中文均可）。"
-    '只输出严格 JSON，格式：[{{"name":"概念名","concept_text":"注释原文片段"}}]。'
-    "最多提取 5 个。\n\n注释内容：\n{comment}"
+    "Extract 1-3 word domain concept noun phrases from the following code comments "
+    "(English or Chinese). "
+    'Output strict JSON only, format: [{{"name":"concept_name","concept_text":"original comment snippet"}}]. '
+    "Extract at most 5.\n\nComment content:\n{comment}"
 )
 
 
 def _extract_comments_from_file(file_path: str, lang: str, parser) -> list[dict]:
     """
-    提取文件中的注释块，返回 [{"text": str, "line": int}]。
-    优先用 tree-sitter `comment` 节点；失败则用正则回退。
+    Extract comment blocks from a file, returning [{"text": str, "line": int}].
+    Prefers tree-sitter `comment` nodes; falls back to regex on failure.
     """
     try:
         with open(file_path, "rb") as f:
@@ -721,7 +724,7 @@ def _extract_comments_from_file(file_path: str, lang: str, parser) -> list[dict]
 
     comments: list[dict] = []
 
-    # tree-sitter 方式
+    # tree-sitter approach
     if parser is not None:
         try:
             tree = parser.parse(source)
@@ -731,7 +734,7 @@ def _extract_comments_from_file(file_path: str, lang: str, parser) -> list[dict]
                     text = (
                         source[n.start_byte : n.end_byte].decode("utf-8", errors="replace").strip()
                     )
-                    if len(text) > 20:  # 过滤单行短注释
+                    if len(text) > 20:  # Filter out short single-line comments
                         comments.append({"text": text, "line": n.start_point[0] + 1})
                 for child in n.children:
                     _walk(child)
@@ -741,7 +744,7 @@ def _extract_comments_from_file(file_path: str, lang: str, parser) -> list[dict]
         except Exception:
             pass
 
-    # 正则回退
+    # Regex fallback
     try:
         text_str = source.decode("utf-8", errors="replace")
         for m in _BLOCK_COMMENT_RE.finditer(text_str):
@@ -762,8 +765,8 @@ def _call_llm_for_entities(
     timeout: float = 15.0,
 ) -> list[dict]:
     """
-    同步调用 LLM，返回 [{"name": str, "concept_text": str}]。
-    失败时静默返回 []。
+    Synchronously call the LLM, returning [{"name": str, "concept_text": str}].
+    Silently returns [] on failure.
     """
     import json as _json
 
@@ -787,7 +790,7 @@ def _call_llm_for_entities(
             )
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"].strip()
-            # 兼容 ```json ... ``` 包裹
+            # Handle ```json ... ``` wrapping
             if "```" in content:
                 for part in content.split("```"):
                     part = part.strip().lstrip("json").strip()
@@ -803,10 +806,10 @@ def _call_llm_for_entities(
 
 
 def _upsert_doc_entities(session, doc_entities: list[dict]):
-    """批量写入 DocEntity 节点及其边"""
+    """Batch-write DocEntity nodes and their edges."""
     if not doc_entities:
         return
-    # 节点
+    # Nodes
     session.run(
         "UNWIND $ents AS e "
         "MERGE (d:DocEntity {"
@@ -816,7 +819,7 @@ def _upsert_doc_entities(session, doc_entities: list[dict]):
         "SET d.concept_text = e.concept_text, d.source_line = e.source_line",
         ents=doc_entities,
     )
-    # MENTIONED_IN → File
+    # MENTIONED_IN -> File
     session.run(
         "UNWIND $ents AS e "
         "MATCH (d:DocEntity {"
@@ -827,7 +830,7 @@ def _upsert_doc_entities(session, doc_entities: list[dict]):
         "MERGE (d)-[:MENTIONED_IN]->(f)",
         ents=doc_entities,
     )
-    # RELATED_TO → Class/Method（name 完全匹配同文件内符号，best-effort）
+    # RELATED_TO -> Class/Method (exact name match within the same file, best-effort)
     session.run(
         "UNWIND $ents AS e "
         "MATCH (d:DocEntity {"
@@ -860,8 +863,8 @@ def _run_doc_entity_pass(
     repo_name: str | None,
 ):
     """
-    Pass 2: 从注释中提取 DocEntity 节点，直到达到 --max-doc-entities 上限。
-    返回 (llm_calls, total_entities)。
+    Pass 2: extract DocEntity nodes from comments until --max-doc-entities cap is reached.
+    Returns (llm_calls, total_entities).
     """
 
     api_key = os.environ.get("NL_API_KEY", "")
@@ -869,10 +872,10 @@ def _run_doc_entity_pass(
     model = args.doc_entity_llm_model or os.environ.get("NL_MODEL", "gpt-4o-mini")
 
     if not api_key:
-        print("警告: NL_API_KEY 未设置，跳过 DocEntity 提取", file=sys.stderr)
+        print("Warning: NL_API_KEY not set, skipping DocEntity extraction", file=sys.stderr)
         return 0, 0
 
-    # 按注释密度（注释字符数/文件大小）排序，优先高密度文件
+    # Sort by comment density (comment chars / file size), prioritizing high-density files
     def _comment_density(item: tuple[str, str]) -> float:
         fpath, lang = item
         parser = parsers.get(lang)
@@ -883,7 +886,7 @@ def _run_doc_entity_pass(
             fsize = 1
         return sum(len(c["text"]) for c in comments) / fsize
 
-    print("[Pass2] 计算注释密度排序中...", flush=True)
+    print("[Pass2] Computing comment density ranking...", flush=True)
     ranked = sorted(files, key=_comment_density, reverse=True)
 
     llm_calls = 0
@@ -899,7 +902,7 @@ def _run_doc_entity_pass(
         if not comments:
             continue
 
-        # 按 --doc-entity-batch-size 分批发给 LLM
+        # Send to LLM in batches of --doc-entity-batch-size
         for i in range(0, len(comments), args.doc_entity_batch_size):
             if total_entities >= cap:
                 break
@@ -920,7 +923,7 @@ def _run_doc_entity_pass(
             for ent in entities:
                 if total_entities >= cap:
                     break
-                # 关联到最近注释块的行号
+                # Associate with the line number of the nearest comment block
                 source_line = batch[0]["line"] if batch else 0
                 entity_buf.append(
                     {
@@ -934,13 +937,13 @@ def _run_doc_entity_pass(
                 )
                 total_entities += 1
 
-            # 每 50 个实体写一次
+            # Flush every 50 entities
             if len(entity_buf) >= 50:
                 with driver.session() as session:
                     _upsert_doc_entities(session, entity_buf)
                 entity_buf.clear()
 
-    # 写入剩余
+    # Write remaining
     if entity_buf:
         with driver.session() as session:
             _upsert_doc_entities(session, entity_buf)
@@ -953,19 +956,19 @@ def _run_doc_entity_pass(
 
 
 # ---------------------------------------------------------------------------
-# 8. 主流程
+# 8. Main flow
 # ---------------------------------------------------------------------------
 
 
 def main():
     args = _build_parser().parse_args()
 
-    # 延迟导入（--help 不需要这些）
+    # Lazy imports (--help does not need these)
     GraphDatabase = _import_neo4j()
     languages = [lang.strip() for lang in args.languages.split(",") if lang.strip()]
     parsers = _import_tree_sitter_parsers(languages)
 
-    # 2. Preflight: 连通性检查
+    # 2. Preflight: connectivity check
     try:
         driver = GraphDatabase.driver(
             args.neo4j_uri,
@@ -974,22 +977,22 @@ def main():
         with driver.session() as session:
             session.run("RETURN 1")
     except Exception as exc:
-        print(f"错误: 无法连接 Neo4j ({args.neo4j_uri}): {exc}", file=sys.stderr)
+        print(f"Error: cannot connect to Neo4j ({args.neo4j_uri}): {exc}", file=sys.stderr)
         sys.exit(2)
 
     with driver.session() as session:
         if args.reset:
-            print("⚠️  --reset: 清空所有图节点...", file=sys.stderr)
+            print("WARNING: --reset: clearing all graph nodes...", file=sys.stderr)
             _reset_structural(session, project=args.project_name)
         _bootstrap_schema(session)
 
-    # 3. 收集文件
+    # 3. Collect files
     source_root = os.path.abspath(args.source_root)
     repo = os.path.basename(source_root)
     project = args.project_name if args.project_name else repo
     files = _collect_files(source_root, languages, args.max_files)
     total = len(files)
-    print(f"[0/{total}] 共发现 {total} 个源文件，开始解析...", flush=True)
+    print(f"[0/{total}] Found {total} source files, starting parse...", flush=True)
 
     nodes_buf: list[dict] = []
     edges_buf: list[dict] = []
@@ -1014,7 +1017,7 @@ def main():
         if nodes is None:
             import logging
 
-            logging.warning("解析失败: %s", fpath)
+            logging.warning("Parse failed: %s", fpath)
             parse_failures += 1
             continue
 
@@ -1036,7 +1039,7 @@ def main():
                 flush=True,
             )
 
-    # 写入剩余
+    # Write remaining
     if nodes_buf:
         with driver.session() as session:
             _upsert_batch(session, nodes_buf, edges_buf)
@@ -1047,18 +1050,18 @@ def main():
 
     failure_rate = parse_failures / total if total else 0.0
     print(
-        f"[完成] total={total} parse_failures={parse_failures} "
+        f"[Done] total={total} parse_failures={parse_failures} "
         f"failure_rate={failure_rate:.2%} nodes={total_nodes} edges={total_edges}",
         flush=True,
     )
 
     if args.strict and failure_rate > 0.2:
-        print(f"错误: 解析失败率 {failure_rate:.2%} 超过 20% 阈值（--strict）", file=sys.stderr)
+        print(f"Error: parse failure rate {failure_rate:.2%} exceeds 20% threshold (--strict)", file=sys.stderr)
         sys.exit(3)
 
-    # Pass 2: DocEntity LLM 提取（仅在 --extract-doc-entities 时运行）
+    # Pass 2: DocEntity LLM extraction (runs only with --extract-doc-entities)
     if args.extract_doc_entities:
-        # 重新打开 driver（Pass 1 已关闭）
+        # Reopen driver (Pass 1 already closed it)
         driver2 = GraphDatabase.driver(
             args.neo4j_uri,
             auth=(args.neo4j_user, args.neo4j_password),

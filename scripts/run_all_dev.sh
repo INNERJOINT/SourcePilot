@@ -1,50 +1,50 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────
-#  AOSP Code Search 开发模式启动脚本
+#  AOSP Code Search dev-mode startup script
 #
-#  基础设施（zoekt/qdrant/neo4j）通过 Docker 启动，
-#  应用服务（SourcePilot/MCP/sp-cockpit）以裸进程运行，
-#  修改代码后无需重建镜像即可验证。
+#  Infrastructure services (zoekt/qdrant/neo4j) run in Docker.
+#  Application services (SourcePilot/MCP/sp-cockpit) run as bare processes,
+#  so code changes can be verified without rebuilding images.
 #
-#  用法：
-#    ./run_all_dev.sh                           # 使用 .env 配置
-#    DENSE_ENABLED=true ./run_all_dev.sh        # 包含 Dense 检索栈
-#    STRUCTURAL_ENABLED=true ./run_all_dev.sh        # 包含 Neo4j 结构化检索
+#  Usage:
+#    ./run_all_dev.sh                           # Use .env configuration
+#    DENSE_ENABLED=true ./run_all_dev.sh        # Include dense retrieval stack
+#    STRUCTURAL_ENABLED=true ./run_all_dev.sh   # Include Neo4j structural retrieval
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 
-# 加载共享库
+# Load shared libraries
 source "$DIR/share/_common.sh"
 _common_parse_help "$@"
 source "$DIR/share/_env.sh"
 source "$DIR/share/_infra.sh"
 
-# ── 配置 ──────────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────
 ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
+SOURCEPILOT_PORT="${SOURCEPILOT_PORT:-9000}"
+SOURCEPILOT_URL="${SOURCEPILOT_URL:-http://localhost:${SOURCEPILOT_PORT}}"
 MCP_PORT="${MCP_PORT:-8888}"
 SP_COCKPIT_PORT="${SP_COCKPIT_PORT:-9100}"
 SP_COCKPIT_ENABLED="${SP_COCKPIT_ENABLED:-true}"
 
-# ── pyenv 虚拟环境 ────────────────────────────────────
-VENV_PYTHON="/home/slave/.pyenv/versions/sourcepilot_py3_env/bin/python3"
+# ── pyenv virtualenv ──────────────────────────────────
+VENV_PYTHON="${VENV_PYTHON:-/opt/pyenv/versions/dify_py3_env/bin/python3}"
 if [ ! -x "$VENV_PYTHON" ]; then
-  warn "$VENV_PYTHON not found, using system python3"
-  VENV_PYTHON="python3"
+  die "Python runtime not found or not executable: $VENV_PYTHON. Set VENV_PYTHON to the project Python interpreter."
 fi
 
-# ── 进程管理 ──────────────────────────────────────────
+# ── Process management ────────────────────────────────
 PIDS=()
-ZOEKT_PIDS=()
 ZOEKT_DOCKER=false
 SP_COCKPIT_RUNNING=false
 
 cleanup() {
   echo "" >&2
-  info "正在停止所有服务..."
-  # 1) 停止裸进程（SourcePilot / sp-cockpit）
+  info "Stopping all services..."
+  # 1) Stop bare processes (SourcePilot / MCP / sp-cockpit)
   for pid in "${PIDS[@]}"; do
     if kill -0 "$pid" 2> /dev/null; then
       kill "$pid" 2> /dev/null || true
@@ -58,11 +58,11 @@ cleanup() {
   done
   wait 2> /dev/null || true
 
-  # 2) 停止本脚本启动的 Docker 服务（zoekt / dense / structural / mcp）
+  # 2) Stop Docker services started by this script (zoekt / dense / structural)
   if [ "${STOP_DOCKER_ON_EXIT:-true}" = "true" ]; then
-    info "停止 Docker 基础设施容器..."
+    info "Stopping Docker infrastructure containers..."
     local _svcs=()
-    # zoekt: 关掉所有 sparse-index-zoekt* 服务
+    # zoekt: stop all sparse-index-zoekt* services
     # shellcheck disable=SC2207
     local _zoekt_svcs=($(docker compose -f "$COMPOSE_FILE" ps --services 2> /dev/null | grep '^sparse-index-zoekt' || true))
     _svcs+=("${_zoekt_svcs[@]}")
@@ -72,49 +72,54 @@ cleanup() {
     if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
       _svcs+=(neo4j)
     fi
-    docker compose -f "$COMPOSE_FILE" stop "${_svcs[@]}" > /dev/null 2>&1 || true
+    if [ "${#_svcs[@]}" -gt 0 ]; then
+      docker compose -f "$COMPOSE_FILE" stop "${_svcs[@]}" > /dev/null 2>&1 || true
+    fi
   fi
-  info "所有服务已停止。"
+  info "All services stopped."
 }
 trap cleanup EXIT INT TERM
 
-# ── 1a. 启动 sparse-index-zoekt（Docker，多项目） ──────
+# ── 1a. Start sparse-index-zoekt (Docker, multi-project) ─
 infra_start_zoekt
 
-# ── 1b. 启动 Dense / Structural 基础设施 (Docker) ─────────
+# ── 1b. Start Dense / Structural infrastructure (Docker) ─
 infra_start_dense
 infra_start_structural
 
-# ── 2. 启动 SourcePilot (裸进程, --reload) ───────────
+# ── 2. Start SourcePilot (bare process, --reload) ─────
 SP_PID=""
-if curl -sf http://localhost:9000/api/health > /dev/null 2>&1; then
-  info "检测到 SourcePilot 已在运行 (port 9000)，跳过启动"
+if curl -sf "$SOURCEPILOT_URL/api/health" > /dev/null 2>&1; then
+  info "Detected SourcePilot already running ($SOURCEPILOT_URL), skipping startup"
 else
   export AUDIT_LOG_FILE="${AUDIT_LOG_FILE:-$PROJ_ROOT/audit.log}"
-  info "启动 SourcePilot (bare, port 9000, --reload)..."
+  info "Starting SourcePilot (bare, port ${SOURCEPILOT_PORT}, --reload)..."
   env PYTHONPATH="$PROJ_ROOT/src" \
-    "$VENV_PYTHON" -m uvicorn app:app --host 0.0.0.0 --port 9000 --reload &
+    "$VENV_PYTHON" -m uvicorn app:app --host 0.0.0.0 --port "$SOURCEPILOT_PORT" --reload &
   PIDS+=($!)
   SP_PID=${PIDS[-1]}
 
   for i in $(seq 1 "$MAX_RETRIES"); do
-    if curl -sf http://localhost:9000/api/health > /dev/null 2>&1; then
-      info "SourcePilot 就绪 (PID $SP_PID, --reload)"
+    if curl -sf "$SOURCEPILOT_URL/api/health" > /dev/null 2>&1; then
+      info "SourcePilot ready (PID $SP_PID, --reload)"
       break
     fi
-    [ "$i" -eq "$MAX_RETRIES" ] && die "SourcePilot 启动超时 (${MAX_RETRIES}s)"
+    [ "$i" -eq "$MAX_RETRIES" ] && die "SourcePilot startup timed out (${MAX_RETRIES}s)"
     sleep 1
   done
 fi
 
-# ── 3. 启动 MCP Server (裸进程, streamable-http) ─────
-# MCP server 是纯 Python 应用代码（mcp+httpx+uvicorn），改代码即生效，无需重建容器。
-export SOURCEPILOT_URL="http://localhost:9000"
+# ── 3. Start MCP Server (bare process, streamable-http) ─
+# The MCP server is pure Python application code (mcp+httpx+uvicorn),
+# so code changes take effect without rebuilding the container.
+export SOURCEPILOT_URL
+MCP_RUNNING=false
 MCP_PID=""
 if curl -sf "http://localhost:${MCP_PORT}/health" > /dev/null 2>&1; then
-  info "检测到 MCP Server 已在运行 (port ${MCP_PORT})，跳过启动"
+  info "Detected MCP Server already running (port ${MCP_PORT}), skipping startup"
+  MCP_RUNNING=true
 else
-  info "启动 MCP Server (bare, streamable-http, port ${MCP_PORT})..."
+  info "Starting MCP Server (bare, streamable-http, port ${MCP_PORT})..."
   env PYTHONPATH="$PROJ_ROOT/mcp-server" \
     "$VENV_PYTHON" -m mcp_server --transport streamable-http \
     --host 0.0.0.0 --port "$MCP_PORT" &
@@ -123,19 +128,20 @@ else
 
   for i in $(seq 1 "$MAX_RETRIES"); do
     if curl -sf "http://localhost:${MCP_PORT}/health" > /dev/null 2>&1; then
-      info "MCP Server 就绪 (PID $MCP_PID)"
+      info "MCP Server ready (PID $MCP_PID)"
+      MCP_RUNNING=true
       break
     fi
-    [ "$i" -eq "$MAX_RETRIES" ] && warn "MCP Server 启动超时 (${MAX_RETRIES}s)"
+    [ "$i" -eq "$MAX_RETRIES" ] && die "MCP Server startup timed out (${MAX_RETRIES}s)"
     sleep 1
   done
 fi
 
-# ── 4. 启动 sp-cockpit (裸进程) ──────────────────────
+# ── 4. Start sp-cockpit (bare process) ────────────────
 SP_COCKPIT_PID=""
 if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
   if curl -sf "http://localhost:${SP_COCKPIT_PORT}/api/health" > /dev/null 2>&1; then
-    info "检测到 sp-cockpit 已在运行 (port ${SP_COCKPIT_PORT})，跳过启动"
+    info "Detected sp-cockpit already running (port ${SP_COCKPIT_PORT}), skipping startup"
     SP_COCKPIT_RUNNING=true
   else
     export SP_COCKPIT_AUDIT_LOG_PATH="${SP_COCKPIT_AUDIT_LOG_PATH:-$PROJ_ROOT/audit.log}"
@@ -147,7 +153,7 @@ if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
     [ -f "$SP_COCKPIT_AUDIT_LOG_PATH" ] || touch "$SP_COCKPIT_AUDIT_LOG_PATH"
     mkdir -p "$(dirname "$SP_COCKPIT_AUDIT_DB_PATH")"
 
-    info "启动 sp-cockpit (bare, port ${SP_COCKPIT_PORT})..."
+    info "Starting sp-cockpit (bare, port ${SP_COCKPIT_PORT})..."
     (cd "$PROJ_ROOT/sp-cockpit" && env PYTHONPATH="$PROJ_ROOT/sp-cockpit" \
       "$VENV_PYTHON" -m sp_cockpit.main) &
     PIDS+=($!)
@@ -155,36 +161,42 @@ if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
 
     for i in $(seq 1 "$MAX_RETRIES"); do
       if curl -sf "http://localhost:${SP_COCKPIT_PORT}/api/health" > /dev/null 2>&1; then
-        info "sp-cockpit 就绪 (PID $SP_COCKPIT_PID)"
+        info "sp-cockpit ready (PID $SP_COCKPIT_PID)"
         SP_COCKPIT_RUNNING=true
         break
       fi
-      [ "$i" -eq "$MAX_RETRIES" ] && warn "sp-cockpit 启动超时 (${MAX_RETRIES}s)，继续运行其他服务"
+      [ "$i" -eq "$MAX_RETRIES" ] && warn "sp-cockpit startup timed out (${MAX_RETRIES}s), continuing with other services"
       sleep 1
     done
   fi
 fi
 
-# ── 启动完成 ──────────────────────────────────────────
+# ── Startup summary ───────────────────────────────────
 echo "" >&2
 echo "════════════════════════════════════════════" >&2
-echo "  开发模式 — 所有服务已启动：" >&2
-echo "    sparse-index-zoekt  (Docker, 多项目)   ($ZOEKT_URL ...)" >&2
+echo "  Dev mode — all services started:" >&2
+if [ "$ZOEKT_DOCKER" = true ]; then
+  echo "    sparse-index-zoekt  (Docker)          ($ZOEKT_URL ...)" >&2
+else
+  echo "    sparse-index-zoekt  (native)          ($ZOEKT_URL)" >&2
+fi
 if [ "${DENSE_ENABLED:-false}" = "true" ]; then
-  echo "    Dense 检索栈     (Docker)          (Qdrant :6333)" >&2
+  echo "    Dense retrieval    (Docker)          (Qdrant :6333)" >&2
 fi
 if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
   echo "    Neo4j            (Docker)          (bolt://localhost:7687)" >&2
 fi
 if [ -n "$SP_PID" ]; then
-  echo "    SourcePilot      PID $SP_PID (bare, --reload)  (http://localhost:9000)" >&2
+  echo "    SourcePilot      PID $SP_PID (bare, --reload)  ($SOURCEPILOT_URL)" >&2
 else
-  echo "    SourcePilot      (already running)              (http://localhost:9000)" >&2
+  echo "    SourcePilot      (already running)              ($SOURCEPILOT_URL)" >&2
 fi
 if [ -n "$MCP_PID" ]; then
   echo "    MCP Server       PID $MCP_PID (bare, streamable-http) (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
-else
+elif [ "$MCP_RUNNING" = true ]; then
   echo "    MCP Server       (already running)              (http://0.0.0.0:${MCP_PORT}/mcp)" >&2
+else
+  echo "    MCP Server       (startup failed/timed out)" >&2
 fi
 if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
   if [ -n "$SP_COCKPIT_PID" ]; then
@@ -192,20 +204,21 @@ if [ "$SP_COCKPIT_ENABLED" = "true" ]; then
   elif [ "$SP_COCKPIT_RUNNING" = true ]; then
     echo "    sp-cockpit       (already running)              (http://localhost:${SP_COCKPIT_PORT})" >&2
   else
-    echo "    sp-cockpit       (启动失败/超时)" >&2
+    echo "    sp-cockpit       (startup failed/timed out)" >&2
   fi
 fi
 echo "" >&2
-echo "  SourcePilot 已启用 --reload，修改 src/ 代码会自动重载" >&2
-echo "  按 Ctrl+C 停止所有服务（Docker 基础设施会一并 stop）" >&2
+echo "  SourcePilot runs with --reload enabled; src/ code changes reload automatically" >&2
+echo "  Press Ctrl+C to stop all services (Docker infrastructure will be stopped too)" >&2
 echo "════════════════════════════════════════════" >&2
 
-# 等待裸进程退出；若没有任何裸进程（全部已在运行），保持前台直到 Ctrl+C
+# Wait for a bare process to exit; if every service was already running,
+# keep the script in the foreground until Ctrl+C.
 if [ "${#PIDS[@]}" -eq 0 ]; then
-  info "未启动新的裸进程（全部服务已在运行）。按 Ctrl+C 退出（不会停止 Docker 容器）。"
+  info "No new bare processes were started (all services already running). Press Ctrl+C to exit (Docker containers will not be stopped)."
   STOP_DOCKER_ON_EXIT=false
   while true; do sleep 3600; done
 else
   wait -n 2> /dev/null || true
-  info "某个裸进程退出，正在关闭所有服务..."
+  info "A bare process exited; shutting down all services..."
 fi

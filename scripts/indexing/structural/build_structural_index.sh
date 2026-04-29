@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# 结构化索引构建 — 通过 docker compose 调起 structural-indexer 容器
+# Structural index build — via docker compose to launch structural-indexer container
 #
-# 用法:
+# Usage:
 #   ./scripts/build_structural_index.sh [--source-root /src/frameworks/base] \
 #       [--repo-name frameworks/base] [--languages java,cpp,python] \
-#       [--max-files 500] [--reset] [--strict] [其他参数]
+#       [--max-files 500] [--reset] [--strict] [other args]
 #
-# 说明:
-#   - 若未传 --source-root，默认注入 --source-root /src（即挂进容器的 AOSP_SOURCE_ROOT 根）。
-#   - 若传入宿主机绝对路径并落在 $AOSP_SOURCE_ROOT 下，会自动翻译为 /src/<subpath>；
-#     否则保持原样（允许用户直接给 /src/... 的容器内路径）。
-#   - 调用方显式设置的关键环境变量优先于 .env。
+# Notes:
+#   - If not provided --source-root, defaults to injecting --source-root /src
+#     (i.e. mounted in container as the AOSP_SOURCE_ROOT root).
+#   - If a host absolute path under $AOSP_SOURCE_ROOT is given, it will be
+#     auto-translated to /src/<subpath>; otherwise kept as-is (allows user to
+#     pass container-internal paths like /src/...).
+#   - Caller-set env vars take precedence over .env.
 set -euo pipefail
 
-DIR=$(cd "$(dirname "$0")/../../.." && pwd) # 项目根
+DIR=$(cd "$(dirname "$0")/../../.." && pwd) # project root
 STRUCTURAL_DIR="$DIR/deploy/structural"
 COMPOSE_FILE="$DIR/deploy/docker-compose.yml"
 
@@ -52,14 +54,14 @@ translate_path() {
   local host_path="$1"
   host_path="${host_path%/}"
   if [[ "$host_path" == /src* ]]; then
-    # 已经是容器内路径
+    # already a container-internal path
     echo "$host_path"
   elif [[ "$host_path" == "$AOSP_SOURCE_ROOT" ]]; then
     echo "/src"
   elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
     echo "/src/${host_path#${AOSP_SOURCE_ROOT}/}"
   else
-    echo "ERROR: --source-root '$host_path' 不在 AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT' 之下" >&2
+    echo "ERROR: --source-root '$host_path' is not under AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT'" >&2
     return 2
   fi
 }
@@ -79,7 +81,7 @@ while ((i < n)); do
     --source-root)
       host_path="${argv[$((i + 1))]:-}"
       if [[ -z "$host_path" ]]; then
-        echo "ERROR: --source-root 需要一个参数" >&2
+        echo "ERROR: --source-root requires an argument" >&2
         exit 2
       fi
       container_path=$(translate_path "$host_path") || exit 2

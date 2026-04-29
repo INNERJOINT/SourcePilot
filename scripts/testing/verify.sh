@@ -6,8 +6,8 @@
 #   scripts/verify.sh indexer-containers
 #
 # Subcommands:
-#   structural-audit     — Structural 审计事件端到端验证
-#   indexer-containers   — 验证 dense/structural indexer 在 docker-compose.yml 中定义正确
+#   structural-audit     — Structural audit event end-to-end verification
+#   indexer-containers   — Verify dense/structural indexer definitions in docker-compose.yml
 set -euo pipefail
 source "$(dirname "$0")/../share/_common.sh"
 _common_parse_help "$@"
@@ -19,40 +19,40 @@ _run_structural_audit() {
   local SP_COCKPIT_URL="${SP_COCKPIT_URL:-http://localhost:9100}"
   local AUDIT_DB="${AUDIT_DB:-/opt/aosp/aosp_project2/Dify/sp-cockpit/data/audit.db}"
 
-  info "检查 sp-cockpit 健康状态..."
+  info "Checking sp-cockpit health..."
   if ! curl -sf "${SP_COCKPIT_URL}/api/health" > /dev/null 2>&1; then
-    log ERROR "sp-cockpit 未响应 (${SP_COCKPIT_URL}/api/health)"
+    log ERROR "sp-cockpit not responding (${SP_COCKPIT_URL}/api/health)"
     echo ""
-    echo "请先启动 sp-cockpit:"
+    echo "Please start sp-cockpit first:"
     echo "  cd /opt/aosp/aosp_project2/Dify && bash scripts/run_all.sh"
-    echo "  # 或单独启动: cd sp-cockpit && uvicorn main:app --port 9100"
+    echo "  # Or start independently: cd sp-cockpit && uvicorn main:app --port 9100"
     return 1
   fi
-  info "sp-cockpit 响应正常"
+  info "sp-cockpit responding normally"
 
-  info "检查 SourcePilot 健康状态..."
+  info "Checking SourcePilot health..."
   if ! curl -sf "${SOURCEPILOT_URL}/health" > /dev/null 2>&1; then
-    log ERROR "SourcePilot 未响应 (${SOURCEPILOT_URL}/health)"
+    log ERROR "SourcePilot not responding (${SOURCEPILOT_URL}/health)"
     return 1
   fi
-  info "SourcePilot 响应正常"
+  info "SourcePilot responding normally"
 
-  info "检查 STRUCTURAL_ENABLED 环境变量..."
+  info "Checking STRUCTURAL_ENABLED environment variable..."
   local STRUCTURAL_ENABLED_STATUS
   STRUCTURAL_ENABLED_STATUS=$(curl -sf "${SOURCEPILOT_URL}/health" | grep -o '"structural":[^,}]*' || echo "unknown")
-  info "structural 状态: ${STRUCTURAL_ENABLED_STATUS}"
+  info "structural status: ${STRUCTURAL_ENABLED_STATUS}"
 
-  info "检查 audit.db..."
+  info "Checking audit.db..."
   if [ ! -f "${AUDIT_DB}" ]; then
-    log ERROR "audit.db 不存在: ${AUDIT_DB}"
-    echo "sp-cockpit 尚未摄取日志，请等待 30s 后重试"
+    log ERROR "audit.db does not exist: ${AUDIT_DB}"
+    echo "sp-cockpit has not yet ingested logs, please retry after 30s"
     return 1
   fi
-  info "audit.db 存在"
+  info "audit.db exists"
 
-  # ─── 发送测试查询 ─────────────────────────────────────────────────────────
+  # ─── Send test queries ─────────────────────────────────────────────────────────
 
-  info "发送 3 条测试查询..."
+  info "Sending 3 test queries..."
 
   local TRACE_PREFIX="trace-structural-verify-$$"
   local i TRACE_ID QUERY HTTP_STATUS
@@ -73,43 +73,43 @@ _run_structural_audit() {
       2> /dev/null || echo "000")
 
     if [ "${HTTP_STATUS}" = "200" ]; then
-      info "查询 ${i} 成功 (trace: ${TRACE_ID})"
+      info "Query ${i} succeeded (trace: ${TRACE_ID})"
     else
-      log ERROR "查询 ${i} 失败 (HTTP ${HTTP_STATUS}, trace: ${TRACE_ID})"
+      log ERROR "Query ${i} failed (HTTP ${HTTP_STATUS}, trace: ${TRACE_ID})"
     fi
   done
 
-  # ─── 等待摄取 ─────────────────────────────────────────────────────────────
+  # ─── Wait for ingestion ─────────────────────────────────────────────────────────────
 
-  info "等待 sp-cockpit 摄取日志 (3s)..."
+  info "Waiting for sp-cockpit to ingest logs (3s)..."
   sleep 3
 
-  # ─── 验证 structural_search 事件 ──────────────────────────────────────────────
+  # ─── Verify structural_search events ──────────────────────────────────────────────
 
-  info "查询 audit.db 中的 structural_search 事件..."
+  info "Querying structural_search events in audit.db..."
 
   local STRUCTURAL_COUNT
   STRUCTURAL_COUNT=$(sqlite3 "${AUDIT_DB}" \
     "SELECT count(*) FROM events WHERE json_extract(data, '\$.stage') = 'structural_search'" \
     2> /dev/null || echo "0")
 
-  echo "structural_search 事件数: ${STRUCTURAL_COUNT}"
+  echo "structural_search event count: ${STRUCTURAL_COUNT}"
 
   if [ "${STRUCTURAL_COUNT}" -gt 0 ]; then
-    info "structural_search 事件已记录 (共 ${STRUCTURAL_COUNT} 条)"
+    info "structural_search events recorded (total: ${STRUCTURAL_COUNT})"
   else
-    log ERROR "未找到 structural_search 事件 (STRUCTURAL_ENABLED 是否为 true?)"
+    log ERROR "No structural_search events found (is STRUCTURAL_ENABLED set to true?)"
     echo ""
-    echo "调试步骤:"
-    echo "  1. 确认 STRUCTURAL_ENABLED=true 已设置"
-    echo "  2. 确认 Neo4j 可访问且结构化索引已建索引"
-    echo "  3. 查看 audit.log: tail -50 /opt/aosp/aosp_project2/Dify/audit.log | grep structural_search"
+    echo "Debug steps:"
+    echo "  1. Confirm STRUCTURAL_ENABLED=true is set"
+    echo "  2. Confirm Neo4j is accessible and structural index has been built"
+    echo "  3. Check audit.log: tail -50 /opt/aosp/aosp_project2/Dify/audit.log | grep structural_search"
   fi
 
-  # ─── 延迟对比报告 ────────────────────────────────────────────────────────
+  # ─── Latency comparison report ────────────────────────────────────────────────────────
 
   echo ""
-  info "各 lane 延迟对比 (最近 30 条, 按 duration_ms 降序):"
+  info "Lane latency comparison (last 30 entries, by duration_ms descending):"
   echo "────────────────────────────────────────────────────"
   sqlite3 "${AUDIT_DB}" \
     "SELECT json_extract(data, '\$.stage') AS stage,
@@ -118,17 +118,17 @@ _run_structural_audit() {
          WHERE json_extract(data, '\$.stage') IN ('zoekt_search','dense_search','structural_search')
          ORDER BY CAST(json_extract(data, '\$.duration_ms') AS REAL) DESC
          LIMIT 30" \
-    2> /dev/null | column -t -s '|' || echo "(无数据)"
+    2> /dev/null | column -t -s '|' || echo "(no data)"
   echo "────────────────────────────────────────────────────"
 
-  # ─── 汇总 ────────────────────────────────────────────────────────────────
+  # ─── Summary ────────────────────────────────────────────────────────────────
 
   echo ""
   if [ "${STRUCTURAL_COUNT}" -gt 0 ]; then
-    info "Structural 审计验证通过：structural_search 事件端到端正常"
+    info "Structural audit verification passed: structural_search events end-to-end OK"
     return 0
   else
-    log ERROR "Structural 审计验证失败：未找到 structural_search 事件"
+    log ERROR "Structural audit verification failed: no structural_search events found"
     return 1
   fi
 }
@@ -157,13 +157,13 @@ _run_indexer_containers() {
   }
 
   if ! command -v docker > /dev/null 2>&1; then
-    echo "docker 未安装；跳过验证。"
+    echo "docker not installed; skipping verification."
     return 0
   fi
 
   _check "deploy compose config (profile=indexer)" \
     docker compose -f "$COMPOSE" --profile indexer config -q
-  _check "deploy compose config (default profile — 不应含 dense-indexer/structural-indexer)" \
+  _check "deploy compose config (default profile — should not contain dense-indexer/structural-indexer)" \
     bash -c "svc=\$(docker compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^structural-indexer\$'"
   _check "deploy compose project name = sourcepilot" \
     bash -c "docker compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'sourcepilot'"

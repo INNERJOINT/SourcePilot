@@ -1,64 +1,89 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────
-#  共享 .env 加载器 — 被所有 run_*.sh 脚本 source 引用
+#  Shared .env loader — sourced by all run_*.sh scripts
 #
-#  从项目根目录加载 .env 文件（如果存在）。
-#  仅设置当前环境中 *尚未定义* 的变量，
-#  因此命令行传入的环境变量始终优先。
+#  Loads .env file from the project root (if it exists).
+#  Only sets variables not already defined in the environment,
+#  so CLI environment variables always take precedence.
 #
-#  支持的 .env 语法：
+#  Supported .env syntax:
 #    KEY=VALUE
 #    export KEY=VALUE
-#    # 注释行
+#    # comment lines
 #    KEY="quoted value"
 #    KEY='quoted value'
-#    KEY=value  # 行内注释
+#    KEY=value  # inline comments
 #
-#  不支持：
-#    多行值、变量插值（$VAR）、转义序列
+#  Not supported:
+#    multi-line values, variable interpolation ($VAR), escape sequences
+#
+#  Toggles:
+#    SOURCEPILOT_ENV_NO_AUTOLOAD=1  — define load_env_file() only, skip auto-load
+#    SOURCEPILOT_ENV_QUIET=1        — suppress "Loaded config from..." message
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
 
-# Use PROJ_ROOT from _common.sh (must be sourced first)
-if [ -f "$PROJ_ROOT/.env" ]; then
+# Source guard — safe to source multiple times
+if [ "${_ENV_LIB_LOADED:-}" = "1" ]; then
+  return 0 2> /dev/null || true
+fi
+_ENV_LIB_LOADED=1
+
+# Load a .env file. Only sets variables not already defined in the environment.
+# Usage: load_env_file [path]   (defaults to $PROJ_ROOT/.env)
+load_env_file() {
+  local env_file="${1:-$PROJ_ROOT/.env}"
+
+  if [ ! -f "$env_file" ]; then
+    return 0
+  fi
+
   while IFS= read -r line || [ -n "$line" ]; do
-    # 跳过空行和注释行
+    # Skip blank lines and comments
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-    # 去除 export 前缀
+    # Strip export prefix
     line="${line#export }"
     line="${line#export	}"
 
-    # 分割 key=value（仅在第一个 = 处分割）
+    # Split key=value (split at first =)
     key="${line%%=*}"
     value="${line#*=}"
 
-    # 去除 key 两端空白
+    # Trim whitespace from key
     key="${key#"${key%%[![:space:]]*}"}"
     key="${key%"${key##*[![:space:]]}"}"
 
-    # 跳过无效的 key
+    # Skip invalid keys
     [[ -z "$key" || "$key" =~ [^a-zA-Z0-9_] ]] && continue
 
-    # 去除 value 的行内注释（仅对非引号值生效）
+    # Strip inline comments from value (only for unquoted values)
     case "$value" in
       \"*\" | \'*\')
-        # 引号值：去除首尾引号
+        # Quoted value: strip surrounding quotes
         value="${value:1:${#value}-2}"
         ;;
       *)
-        # 非引号值：去除行内注释（ # 之后的内容）
+        # Unquoted value: strip inline comments (after #)
         value="${value%%[[:space:]]#*}"
-        # 去除尾部空白
+        # Trim trailing whitespace
         value="${value%"${value##*[![:space:]]}"}"
         ;;
     esac
 
-    # 仅设置当前环境中未定义的变量
+    # Only set if not already defined
     if [ -z "${!key+x}" ]; then
       export "$key=$value"
     fi
-  done < "$PROJ_ROOT/.env"
-  echo "Loaded config from $PROJ_ROOT/.env" >&2
+  done < "$env_file"
+
+  if [ "${SOURCEPILOT_ENV_QUIET:-}" != "1" ]; then
+    echo "Loaded config from $env_file" >&2
+  fi
+}
+
+# Auto-load unless suppressed
+if [ "${SOURCEPILOT_ENV_NO_AUTOLOAD:-}" != "1" ]; then
+  load_env_file
 fi

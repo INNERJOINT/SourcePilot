@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 批量构建 dense 向量索引 — 支持多项目配置与后端范围控制
+# Batch build dense vector index — supports multi-project config and backend scope control
 #
-# 用法:
+# Usage:
 #   ./scripts/build_dense_index_batch.sh [--skip-existing]
 #
-# 新数据追加到已有 Qdrant collection，不影响已索引的仓库。
+# New data appends to existing Qdrant collection, does not affect already-indexed repos.
 #
 # NOTE: -e intentionally omitted — batch-continue contract: single repo failure
 # must not abort remaining repos.
@@ -118,14 +118,14 @@ while ((line_index < ${#CONFIG_LINES[@]})); do
       continue
       ;;
     default)
-      # frameworks/* — 每个子目录作为一个 repo
+      # frameworks/* — each subdirectory as a repo
       for dir in "$AOSP_ROOT"/frameworks/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
         REPOS+=("$dir|frameworks/$name")
       done
 
-      # packages/*/* — 按二级目录索引 (packages/apps/Settings 等)
+      # packages/*/* — index by second-level directories (packages/apps/Settings etc)
       for category in "$AOSP_ROOT"/packages/*/; do
         [[ -d "$category" ]] || continue
         cat_name=$(basename "$category")
@@ -156,7 +156,7 @@ while ((line_index < ${#CONFIG_LINES[@]})); do
     source_dir="${entry%%|*}"
     repo_name="${entry##*|}"
 
-    # 快速检查：目录下有没有源码文件
+    # Quick check: whether directory contains source files
     file_count=$(find "$source_dir" -maxdepth 5 -type f \( -name "*.java" -o -name "*.kt" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.aidl" -o -name "*.go" -o -name "*.rs" -o -name "*.py" \) -print -quit 2> /dev/null | wc -l)
     if [[ "$file_count" -eq 0 ]]; then
       echo "SKIP  $repo_name (no source files)"

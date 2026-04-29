@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-build_feishu_index.py — Feishu Lurk 知识库向量索引构建脚本
+build_feishu_index.py — Feishu Lurk knowledge base vector index build script
 
-从 JSONL 文件读取 Feishu 文档，按字符滑动窗口切分后
-通过 embedding 服务写入 Qdrant 向量数据库。
+Read from JSONL file containing Feishu documents, split by character sliding window,
+then write via embedding service to Qdrant vector database.
 
 Usage:
     PYTHONPATH=src python scripts/indexing/feishu/build_feishu_index.py --jsonl-path docs.jsonl
@@ -30,16 +30,16 @@ def text_sliding_window_chunks(
     window_size: int = 500,
     overlap: int = 100,
 ) -> list[dict]:
-    """将文档内容按字符滑动窗口切分为 chunks。
+    """Split document content into chunks by character sliding window.
 
     Args:
-        content: 文档正文
-        title: 文档标题
-        url: 文档 URL
-        space_id: 空间 ID
-        node_token: 节点 token
-        window_size: 窗口大小（字符数）
-        overlap: 重叠字符数
+        content: document body
+        title: document title
+        url: document URL
+        space_id: space ID
+        node_token: node token
+        window_size: window size (in characters)
+        overlap: overlap characters
 
     Returns:
         list of chunk dicts with metadata
@@ -78,7 +78,7 @@ def text_sliding_window_chunks(
 
 
 def load_documents(jsonl_path: str) -> list[dict]:
-    """从 JSONL 文件加载文档列表。"""
+    """Load document list from JSONL file."""
     docs = []
     with open(jsonl_path, encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
@@ -94,13 +94,13 @@ def load_documents(jsonl_path: str) -> list[dict]:
 
 
 async def build_index(args, collection_name: str, embedding_model: str | None = None):
-    """主索引构建流程。"""
+    """Main index build flow."""
     from adapters.embedding import EmbeddingClient
     from config import DENSE_EMBEDDING_DIM, DENSE_EMBEDDING_MODEL, DENSE_EMBEDDING_URL, DENSE_VECTOR_DB_URL
 
     embedding = EmbeddingClient(base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL)
 
-    # 1. 加载文档
+    # 1. Load documents
     logger.info("Loading documents from %s ...", args.jsonl_path)
     docs = load_documents(args.jsonl_path)
     logger.info("Loaded %d documents", len(docs))
@@ -108,7 +108,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         logger.error("No documents found in %s", args.jsonl_path)
         return
 
-    # 2. 切分 chunks
+    # 2. Split into chunks
     logger.info("Chunking documents (window=%d, overlap=%d) ...", args.window_size, args.overlap)
     all_chunks = []
     for doc in docs:
@@ -128,7 +128,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         logger.error("No chunks generated. Check document content.")
         return
 
-    # 3. 批量 embedding（并发）
+    # 3. Batch embedding (concurrent)
     logger.info("Generating embeddings (batch_size=%d, concurrency=%d) ...", args.batch_size, args.concurrency)
     all_vectors: list = [None] * len(all_chunks)
     texts = [c["content"] for c in all_chunks]
@@ -178,14 +178,14 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     if failed_ranges:
         logger.warning("Failed batch ranges (first 20): %s", failed_ranges[:20])
 
-    # 4. 写入 Qdrant
+    # 4. Write to Qdrant
     logger.info("Writing to Qdrant (collection=%s) ...", collection_name)
     import uuid
     from qdrant_client import QdrantClient, models
 
     client = QdrantClient(url=DENSE_VECTOR_DB_URL)
 
-    # 创建 collection（如果不存在）
+    # Create collection (if not exists)
     if not client.collection_exists(collection_name):
         client.create_collection(
             collection_name=collection_name,
@@ -193,7 +193,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         )
         logger.info("Created collection '%s' with HNSW index (cosine)", collection_name)
 
-    # 批量插入（跳过 embedding 失败的 chunk）
+    # Batch insert (skip chunks with failed embeddings)
     insert_batch_size = 1000
     total_inserted = 0
     total_skipped = 0

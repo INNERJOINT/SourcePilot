@@ -5,7 +5,12 @@
 #   source "$DIR/_common.sh"
 #   source "$DIR/_infra.sh"
 #
-# Functions:
+# Helpers (internal):
+#   _infra_require_cmd       — die if a command is missing (with install hint)
+#   _infra_wait_http         — poll a URL until healthy or retries exhausted
+#   _infra_wait_tcp          — poll a host:port until open or retries exhausted
+#
+# Functions (public):
 #   infra_start_zoekt        — detect Docker/native zoekt, start + healthcheck
 #   infra_start_dense        — docker compose up dense stack (qdrant + dense-index-coderankembed)
 #   infra_start_structural  — docker compose up neo4j
@@ -17,6 +22,7 @@
 #   - Each function sets state variables (e.g. ZOEKT_DOCKER) in the caller's scope.
 #   - COMPOSE_FILE is the canonical docker-compose path.
 #   - MAX_RETRIES controls healthcheck timeout (default 30).
+#   - INFRA_SLEEP_SECONDS controls sleep between retries (default 1; set 0 in tests).
 
 set -euo pipefail
 
@@ -30,6 +36,62 @@ _INFRA_LIB_LOADED=1
 _INFRA_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../../deploy/docker-compose.yml}"
 MAX_RETRIES="${MAX_RETRIES:-30}"
+INFRA_SLEEP_SECONDS="${INFRA_SLEEP_SECONDS:-1}"
+
+# ── shared helpers ───────────────────────────────────────────
+
+# _infra_require_cmd <cmd> [install_hint]
+# Die with actionable message if <cmd> is not on PATH.
+_infra_require_cmd() {
+  local cmd="$1"
+  local hint="${2:-}"
+  if ! command -v "$cmd" > /dev/null 2>&1; then
+    local msg="required command not found: $cmd"
+    [ -n "$hint" ] && msg="$msg — $hint"
+    die "$msg"
+  fi
+}
+
+# _infra_wait_http <url> <label> [max_retries] [die_on_fail]
+# Poll <url> with curl until success or retries exhausted.
+# die_on_fail: "die" (default) or "warn".
+_infra_wait_http() {
+  local url="$1" label="$2"
+  local retries="${3:-$MAX_RETRIES}"
+  local on_fail="${4:-die}"
+  local i
+  for i in $(seq 1 "$retries"); do
+    if curl -sf "$url" > /dev/null 2>&1; then
+      info "$label ready"
+      return 0
+    fi
+    if [ "$i" -eq "$retries" ]; then
+      if [ "$on_fail" = "die" ]; then
+        die "$label startup timed out (${retries}s)"
+      else
+        warn "$label startup timed out (${retries}s)"
+        return 1
+      fi
+    fi
+    sleep "$INFRA_SLEEP_SECONDS"
+  done
+}
+
+# _infra_wait_tcp <host> <port> <label> [max_retries]
+# Poll <host>:<port> with nc until open or retries exhausted.
+_infra_wait_tcp() {
+  local host="$1" port="$2" label="$3"
+  local retries="${4:-$MAX_RETRIES}"
+  _infra_require_cmd nc
+  local i
+  for i in $(seq 1 "$retries"); do
+    if nc -z "$host" "$port" 2> /dev/null; then
+      return 0
+    fi
+    [ "$i" -eq "$retries" ] && return 1
+    sleep "$INFRA_SLEEP_SECONDS"
+  done
+}
 
 # ── zoekt ─────────────────────────────────────────────────
 # Multi-project Docker mode (run_all.sh): for each project in
@@ -44,6 +106,7 @@ infra_start_zoekt() {
 
   if [ -f "$projects_cfg" ]; then
     # Parse (name, zoekt_url) pairs from YAML.
+    _infra_require_cmd python3 "install python3 or set PROJECTS_CONFIG_PATH to skip YAML parsing"
     local entries
     entries=$(
       python3 - "$projects_cfg" << 'EOF'
@@ -75,6 +138,8 @@ EOF
     )
 
     if [ -n "$entries" ]; then
+      _infra_require_cmd curl
+      _infra_require_cmd docker "install Docker or use native zoekt mode"
       local idx=0
       while IFS='|' read -r _name _url _port; do
         [ -z "$_name" ] && continue
@@ -87,60 +152,47 @@ EOF
         idx=$((idx + 1))
 
         if curl -sf "$_url/" > /dev/null 2>&1; then
-          info "检测到 ${svc} 已在运行 (${_url})，跳过启动"
+          info "Detected ${svc} already running (${_url}), skipping startup"
           ZOEKT_DOCKER=true
           continue
         fi
 
-        info "启动 ${svc} (project=${_name}, url=${_url})..."
+        info "Starting ${svc} (project=${_name}, url=${_url})..."
         docker compose -f "$COMPOSE_FILE" up -d "$svc"
         ZOEKT_DOCKER=true
 
-        local i
-        for i in $(seq 1 "$MAX_RETRIES"); do
-          if curl -sf "$_url/" > /dev/null 2>&1; then
-            info "  ${svc} 就绪"
-            break
-          fi
-          [ "$i" -eq "$MAX_RETRIES" ] && warn "  ${svc} 启动超时 (${MAX_RETRIES}s)"
-          sleep 1
-        done
+        _infra_wait_http "$_url/" "  ${svc}" "$MAX_RETRIES" warn
       done <<< "$entries"
       return
     fi
   fi
 
   # ── Native fallback (no projects.yaml) ─────────────────
+  _infra_require_cmd curl
   local zoekt_url="${ZOEKT_URL:-http://localhost:6070}"
   ZOEKT_DOCKER=false
 
   if curl -sf "$zoekt_url/" > /dev/null 2>&1; then
-    info "检测到 sparse-index-zoekt 已在运行 ($zoekt_url)，跳过启动"
+    info "Detected sparse-index-zoekt already running ($zoekt_url), skipping startup"
     ZOEKT_DOCKER=true
     return
   fi
 
   local index_path="${ZOEKT_INDEX_PATH:-}"
   if [ -z "$index_path" ]; then
-    die "ZOEKT_INDEX_PATH 未设置。请在 .env 中设置或通过环境变量传入。"
+    die "ZOEKT_INDEX_PATH not set. Set it in .env or pass via environment variable."
   fi
   if [ ! -d "$index_path" ]; then
-    die "ZOEKT_INDEX_PATH 目录不存在: $index_path"
+    die "ZOEKT_INDEX_PATH directory does not exist: $index_path"
   fi
 
-  info "启动 sparse-index-zoekt (index: $index_path)..."
+  _infra_require_cmd zoekt-webserver "install zoekt or use Docker mode"
+  info "Starting sparse-index-zoekt (index: $index_path)..."
   zoekt-webserver -index "$index_path" &
   PIDS+=($!)
   local pid=${PIDS[-1]}
 
-  for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf "$zoekt_url/" > /dev/null 2>&1; then
-      info "sparse-index-zoekt 就绪 (PID $pid)"
-      return
-    fi
-    [ "$i" -eq "$MAX_RETRIES" ] && die "sparse-index-zoekt 启动超时 (${MAX_RETRIES}s)"
-    sleep 1
-  done
+  _infra_wait_http "$zoekt_url/" "sparse-index-zoekt ready (PID $pid)" "$MAX_RETRIES" die
 }
 
 # ── dense stack (qdrant + dense-index-coderankembed) ──
@@ -149,19 +201,14 @@ infra_start_dense() {
     return
   fi
 
-  info "启动 Dense 检索栈 (qdrant + dense-index-coderankembed)..."
+  _infra_require_cmd docker "install Docker to run the dense stack"
+  _infra_require_cmd curl
+  info "Starting dense retrieval stack (qdrant + dense-index-coderankembed)..."
   docker compose -f "$COMPOSE_FILE" up -d qdrant dense-index-coderankembed
 
-  # 等待 Qdrant 健康检查
-  info "等待 Qdrant 就绪..."
-  for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf "http://localhost:${QDRANT_PORT:-6333}/healthz" > /dev/null 2>&1; then
-      info "Qdrant 就绪"
-      return
-    fi
-    [ "$i" -eq "$MAX_RETRIES" ] && warn "Qdrant 健康检查超时 (${MAX_RETRIES}s)，Dense 检索可能不可用"
-    sleep 1
-  done
+  info "Waiting for Qdrant to be ready..."
+  _infra_wait_http "http://localhost:${QDRANT_PORT:-6333}/healthz" "Qdrant" "$MAX_RETRIES" warn ||
+    warn "dense retrieval may be unavailable"
 }
 
 # ── structural (neo4j) ──────────────────────────────────────────
@@ -176,60 +223,51 @@ infra_start_structural() {
   local neo4j_user="${STRUCTURAL_NEO4J_USER:-neo4j}"
   local neo4j_pass="${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}"
 
-  if nc -z localhost "$neo4j_port" 2> /dev/null; then
-    info "检测到 Neo4j 已在运行 (port $neo4j_port)，跳过启动"
+  if _infra_wait_tcp localhost "$neo4j_port" "Neo4j" 1 2> /dev/null; then
+    info "Detected Neo4j already running (port $neo4j_port), skipping startup"
     return
   fi
 
-  info "启动 Neo4j (docker compose)..."
+  _infra_require_cmd docker "install Docker to run Neo4j"
+  info "Starting Neo4j (docker compose)..."
   docker compose -f "$COMPOSE_FILE" up -d neo4j
 
-  for i in $(seq 1 $MAX_RETRIES); do
+  for i in $(seq 1 "$MAX_RETRIES"); do
     if docker compose -f "$COMPOSE_FILE" exec -T neo4j \
       cypher-shell -u "$neo4j_user" -p "$neo4j_pass" 'RETURN 1' > /dev/null 2>&1; then
-      info "Neo4j 就绪"
+      info "Neo4j ready"
       return
     fi
-    [ "$i" -eq "$MAX_RETRIES" ] && warn "Neo4j 启动超时 (${MAX_RETRIES}s)，结构化检索可能不可用"
-    sleep 1
+    [ "$i" -eq "$MAX_RETRIES" ] && warn "Neo4j startup timed out (${MAX_RETRIES}s), structural retrieval may be unavailable"
+    sleep "$INFRA_SLEEP_SECONDS"
   done
 }
 
 # ── sourcepilot-gateway ───────────────────────────────────
 infra_start_sourcepilot() {
+  _infra_require_cmd curl
   if curl -sf http://localhost:9000/api/health > /dev/null 2>&1; then
-    info "检测到 SourcePilot 已在运行 (port 9000)，跳过启动"
+    info "Detected SourcePilot already running (port 9000), skipping startup"
     return
   fi
-  info "启动 sourcepilot-gateway (Docker)..."
+  _infra_require_cmd docker "install Docker to run sourcepilot-gateway"
+  info "Starting sourcepilot-gateway (Docker)..."
   docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
-  for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf http://localhost:9000/api/health > /dev/null 2>&1; then
-      info "sourcepilot-gateway 就绪 (Docker)"
-      return
-    fi
-    [ "$i" -eq "$MAX_RETRIES" ] && die "sourcepilot-gateway 启动超时 (${MAX_RETRIES}s)"
-    sleep 1
-  done
+  _infra_wait_http "http://localhost:9000/api/health" "sourcepilot-gateway ready (Docker)" "$MAX_RETRIES" die
 }
 
 # ── mcp-server ────────────────────────────────────────────
 infra_start_mcp() {
+  _infra_require_cmd curl
   local mcp_port="${MCP_PORT:-8888}"
   if curl -sf "http://localhost:${mcp_port}/health" > /dev/null 2>&1; then
-    info "检测到 MCP Server 已在运行 (port ${mcp_port})，跳过启动"
+    info "Detected MCP Server already running (port ${mcp_port}), skipping startup"
     return
   fi
-  info "启动 mcp-server (Docker)..."
+  _infra_require_cmd docker "install Docker to run mcp-server"
+  info "Starting mcp-server (Docker)..."
   docker compose -f "$COMPOSE_FILE" up -d mcp-server
-  for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf "http://localhost:${mcp_port}/health" > /dev/null 2>&1; then
-      info "mcp-server 就绪 (Docker)"
-      return
-    fi
-    [ "$i" -eq "$MAX_RETRIES" ] && die "mcp-server 启动超时 (${MAX_RETRIES}s)"
-    sleep 1
-  done
+  _infra_wait_http "http://localhost:${mcp_port}/health" "mcp-server ready (Docker)" "$MAX_RETRIES" die
 }
 
 # ── sp-cockpit ────────────────────────────────────────────
@@ -237,20 +275,18 @@ infra_start_cockpit() {
   local cockpit_port="${SP_COCKPIT_PORT:-9100}"
   local cockpit_enabled="${SP_COCKPIT_ENABLED:-true}"
   if [ "$cockpit_enabled" != "true" ]; then return; fi
+  _infra_require_cmd curl
   if curl -sf "http://localhost:${cockpit_port}/api/health" > /dev/null 2>&1; then
-    info "检测到 sp-cockpit 已在运行 (port ${cockpit_port})，跳过启动"
+    info "Detected sp-cockpit already running (port ${cockpit_port}), skipping startup"
     SP_COCKPIT_RUNNING=true
     return
   fi
-  info "启动 sp-cockpit (Docker, port ${cockpit_port})..."
+  _infra_require_cmd docker "install Docker to run sp-cockpit"
+  info "Starting sp-cockpit (Docker, port ${cockpit_port})..."
   docker compose -f "$COMPOSE_FILE" up -d sp-cockpit
-  for i in $(seq 1 $MAX_RETRIES); do
-    if curl -sf "http://localhost:${cockpit_port}/api/health" > /dev/null 2>&1; then
-      info "sp-cockpit 就绪 (Docker)"
-      SP_COCKPIT_RUNNING=true
-      return
-    fi
-    [ "$i" -eq "$MAX_RETRIES" ] && warn "sp-cockpit 启动超时 (${MAX_RETRIES}s)，继续运行其他服务"
-    sleep 1
-  done
+  if _infra_wait_http "http://localhost:${cockpit_port}/api/health" "sp-cockpit ready (Docker)" "$MAX_RETRIES" warn; then
+    SP_COCKPIT_RUNNING=true
+  else
+    warn "continuing with other services"
+  fi
 }
