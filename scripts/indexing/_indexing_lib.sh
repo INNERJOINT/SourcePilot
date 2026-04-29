@@ -132,7 +132,7 @@ _get_project_config() {
       SHARED_INDEX_DIR) SHARED_INDEX_DIR="$val" ;;
       *) echo "[indexing-lib] WARN: Unknown config key: $key" >&2 ;;
     esac
-  done < <(python3 "$_INDEXING_PYHELPER" --project "$1")
+  done < <("$_INDEXING_PYTHON" "$_INDEXING_PYHELPER" --project "$1")
 }
 
 # ---------------------------------------------------------------------------

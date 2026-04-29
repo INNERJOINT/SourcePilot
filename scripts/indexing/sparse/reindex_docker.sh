@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# _index_one_sub  source_root  index_dir  sub_path  counter  total
+# _index_one_sub  source_root  index_dir  sub_path  project_name  counter  total  status_dir
 #   Runs zoekt-git-index in Docker for one sub-project.
 #   Designed to run as a background job — writes status to a temp dir.
 # ---------------------------------------------------------------------------
@@ -73,19 +73,22 @@ _index_one_sub() {
   # subshells don't call finish_indexing_job on exit.
   trap - EXIT
 
-  local source_root="$1" index_dir="$2" sub_path="$3"
-  local counter="$4" total="$5" status_dir="$6"
+  local source_root="$1" index_dir="$2" sub_path="$3" project_name="$4"
+  local counter="$5" total="$6" status_dir="$7"
   local worktree="${source_root}/${sub_path}"
 
+  local sub_slug="${sub_path//\//_}"
+  local shard_prefix="${project_name}_${sub_slug}"
+
   if [[ ! -d "$worktree" ]] || [[ ! -e "${worktree}/.git" ]]; then
-    echo "[${counter}/${total}] SKIP ${sub_path}" >&2
+    echo "[${project_name}][${counter}/${total}] SKIP ${sub_path}" >&2
     return 0
   fi
 
-  echo "[${counter}/${total}] Indexing ${sub_path}" >&2
+  echo "[${project_name}][${counter}/${total}] Indexing ${sub_path}" >&2
 
   if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
-    echo "[dry-run] docker run --rm -v ${source_root}:/src:ro -v ${index_dir}:/idx ${_DOCKER_IMAGE} zoekt-git-index -index /idx /src/${sub_path}" >&2
+    echo "[dry-run] docker run --rm -v ${source_root}:/src:ro -v ${index_dir}:/idx ${_DOCKER_IMAGE} zoekt-git-index -index /idx -shard_prefix_override ${shard_prefix} /src/${sub_path}" >&2
     return 0
   fi
 
@@ -93,8 +96,8 @@ _index_one_sub() {
     -v "${source_root}:/src:ro" \
     -v "${index_dir}:/idx" \
     "${_DOCKER_IMAGE}" \
-    zoekt-git-index -index /idx "/src/${sub_path}" 2>&1; then
-    echo "[${counter}/${total}] FAILED ${sub_path}" >&2
+    zoekt-git-index -index /idx -shard_prefix_override "$shard_prefix" "/src/${sub_path}" 2>&1; then
+    echo "[${project_name}][${counter}/${total}] FAILED ${sub_path}" >&2
     touch "${status_dir}/fail.${counter}"
     return 1
   fi
@@ -140,10 +143,10 @@ _index_project() {
     counter=$((counter + 1))
 
     if [[ "$_PARALLELISM" -le 1 ]]; then
-      _index_one_sub "$source_root" "$INDEX_DIR" "$sub_path" "$counter" "$total" "$status_dir" || true
+      _index_one_sub "$source_root" "$INDEX_DIR" "$sub_path" "$NAME" "$counter" "$total" "$status_dir" || true
     else
       _wait_for_slot "$_PARALLELISM"
-      _index_one_sub "$source_root" "$INDEX_DIR" "$sub_path" "$counter" "$total" "$status_dir" &
+      _index_one_sub "$source_root" "$INDEX_DIR" "$sub_path" "$NAME" "$counter" "$total" "$status_dir" &
     fi
   done < "$project_list"
 
@@ -175,7 +178,7 @@ _index_project() {
 if [[ "$_MODE" == "single" ]]; then
   _index_project "$_PROJECT_NAME"
 else
-  _names=$(python3 "$_INDEXING_PYHELPER" --list)
+  _names=$("$_INDEXING_PYTHON" "$_INDEXING_PYHELPER" --list)
   _overall=0
   while IFS= read -r name; do
     [[ -z "$name" ]] && continue
