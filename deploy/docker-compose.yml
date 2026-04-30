@@ -169,6 +169,7 @@ services:
       dockerfile: deploy/mcp/Dockerfile
     environment:
       SOURCEPILOT_URL: ${SOURCEPILOT_URL:-http://sourcepilot-gateway:9000}
+      # REQUIRED for streamable_http transport (process exits 1 if empty)
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
     ports:
       - "${MCP_PORT:-8888}:8888"

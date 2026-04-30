@@ -1,13 +1,13 @@
 """MCP Server — Streamable HTTP transport mode."""
 
-import asyncio
 import contextlib
 import logging
 import os
+import sys
 
 from starlette.applications import Starlette
-from starlette.routing import Mount, Route
 from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from entry.handlers import server
@@ -60,11 +60,11 @@ async def main_streamable_http(host: str, port: int):
     logger.info("Starting AOSP Code Search MCP Server (streamable-http)")
     logger.info("Listening on http://%s:%d/mcp", host, port)
 
-    auth_token = os.getenv("MCP_AUTH_TOKEN", "")
-    if auth_token:
-        logger.info("Bearer token authentication ENABLED")
-    else:
-        logger.warning("Bearer token authentication DISABLED (set MCP_AUTH_TOKEN to enable)")
+    auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+    if not auth_token:
+        logger.error("MCP_AUTH_TOKEN required for streamable_http transport")
+        sys.exit(1)
+    logger.info("Bearer token authentication ENABLED")
 
     session_manager = StreamableHTTPSessionManager(
         app=server,
@@ -89,12 +89,10 @@ async def main_streamable_http(host: str, port: int):
         routes=[
             Route("/health", health, methods=["GET"]),
             Mount("/mcp", app=handle_mcp),
-            Mount("/mcp/", app=handle_mcp),
         ],
     )
 
-    if auth_token:
-        app = BearerTokenMiddleware(app, auth_token)
+    app = BearerTokenMiddleware(app, auth_token)
 
     uvicorn_config = uvicorn.Config(
         app=app,
