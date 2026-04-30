@@ -36,6 +36,7 @@ _PROJECT_NAME=""
 _MODE="all"
 _PARALLELISM=4
 _DOCKER_IMAGE="${ZOEKT_DOCKER_IMAGE:-dify-sparse-index-zoekt:latest}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -77,8 +78,8 @@ _index_one_sub() {
   local counter="$5" total="$6" status_dir="$7"
   local worktree="${source_root}/${sub_path}"
 
-  local sub_slug="${sub_path//\//_}"
-  local shard_prefix="${project_name}_${sub_slug}"
+  local shard_prefix
+  shard_prefix="$(_compute_shard_prefix "$project_name" "$sub_path")"
 
   if [[ ! -d "$worktree" ]] || [[ ! -e "${worktree}/.git" ]]; then
     echo "[${project_name}][${counter}/${total}] SKIP ${sub_path}" >&2
@@ -88,11 +89,11 @@ _index_one_sub() {
   echo "[${project_name}][${counter}/${total}] Indexing ${sub_path}" >&2
 
   if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
-    echo "[dry-run] docker run --rm -v ${source_root}:/src:ro -v ${index_dir}:/idx ${_DOCKER_IMAGE} zoekt-git-index -index /idx -shard_prefix_override ${shard_prefix} /src/${sub_path}" >&2
+    echo "[dry-run] $DOCKER_BIN run --rm -v ${source_root}:/src:ro -v ${index_dir}:/idx ${_DOCKER_IMAGE} zoekt-git-index -index /idx -shard_prefix_override ${shard_prefix} /src/${sub_path}" >&2
     return 0
   fi
 
-  if ! docker run --rm \
+  if ! "$DOCKER_BIN" run --rm \
     -v "${source_root}:/src:ro" \
     -v "${index_dir}:/idx" \
     "${_DOCKER_IMAGE}" \

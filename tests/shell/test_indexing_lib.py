@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from tests.shell.conftest import PROJ_ROOT, _run_bash
 
-
 INDEXING_LIB = PROJ_ROOT / "scripts" / "indexing" / "_indexing_lib.sh"
 COMMON_SH = PROJ_ROOT / "scripts" / "share" / "_common.sh"
 

@@ -7,6 +7,9 @@
 # Functions:
 #   start_indexing_job  repo_path backend   — registers job, sets JOB_ID + LOG_PATH, arms trap
 #   finish_indexing_job status [exit_code]  — reports completion, disarms trap
+#
+# Environment variables:
+#   INDEXING_LOG_DIR   Override log directory (default: $_INDEXING_PROJECT_ROOT/.omc/indexing-logs)
 
 # Guard against double-sourcing
 if [[ -n "${_INDEXING_LIB_LOADED:-}" ]]; then
@@ -44,7 +47,8 @@ start_indexing_job() {
   # Build a deterministic log path
   local safe_repo
   safe_repo="$(echo "$repo_path" | tr '/' '_')"
-  LOG_PATH="$_INDEXING_PROJECT_ROOT/.omc/indexing-logs/${backend}-${safe_repo}-$(date +%s).log"
+  local _log_root="${INDEXING_LOG_DIR:-$_INDEXING_PROJECT_ROOT/.omc/indexing-logs}"
+  LOG_PATH="$_log_root/${backend}-${safe_repo}-$(date +%s).log"
   mkdir -p "$(dirname "$LOG_PATH")"
 
   # Call CLI — capture stdout to extract JOB_ID=<id>
@@ -133,6 +137,19 @@ _get_project_config() {
       *) echo "[indexing-lib] WARN: Unknown config key: $key" >&2 ;;
     esac
   done < <("$_INDEXING_PYTHON" "$_INDEXING_PYHELPER" --project "$1")
+}
+
+# ---------------------------------------------------------------------------
+# _compute_shard_prefix project_name sub_path
+#   Returns "<project_name>_<sub_path with / -> _>" — the value passed to
+#   zoekt-git-index -shard_prefix_override so multi-AOSP/multi-sub-repo
+#   shards don't collide in the shared index dir. Pure: no I/O.
+# ---------------------------------------------------------------------------
+_compute_shard_prefix() {
+  local project_name="$1"
+  local sub_path="$2"
+  local sub_slug="${sub_path//\//_}"
+  echo "${project_name}_${sub_slug}"
 }
 
 # ---------------------------------------------------------------------------

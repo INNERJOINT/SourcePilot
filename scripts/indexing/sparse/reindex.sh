@@ -104,8 +104,8 @@ _index_one_sub() {
   # -shard_prefix_override REPLACES the entire prefix (it doesn't prepend),
   # so we must encode the sub-repo identity here too — otherwise every
   # sub-repo writes to the same filename and overwrites the previous one.
-  local sub_slug="${sub_path//\//_}"
-  local shard_prefix="${project_name}_${sub_slug}"
+  local shard_prefix
+  shard_prefix="$(_compute_shard_prefix "$project_name" "$sub_path")"
 
   if [[ "${INDEXING_DRY_RUN:-0}" == "1" ]]; then
     echo "[dry-run] $_ZOEKT_BIN -index ${index_dir} -shard_prefix_override ${shard_prefix} ${worktree}" >&2

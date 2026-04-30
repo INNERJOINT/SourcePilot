@@ -15,7 +15,6 @@ import stat
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -39,12 +38,26 @@ def _run_bash(
     cwd: Path | None = None,
     timeout: int = 10,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a bash snippet and return the CompletedProcess."""
+    """Run a bash snippet and return the CompletedProcess.
+
+    Default environment includes isolation vars so tests never write to the
+    real .omc/indexing-logs/ directory and never scan the real AOSP source tree:
+      INDEXING_LOG_DIR      — per-call temp dir under /tmp (overridable via env)
+      INDEXING_SKIP_SOURCE_SCAN=1  — skip find(1) source-file probe in batch scripts
+    """
+    import tempfile
+
+    default_log_dir = tempfile.mkdtemp(prefix="test-indexing-logs-")
     full_env: dict[str, str] = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": os.environ.get("HOME", "/tmp"),
         "TERM": "dumb",
         "NO_COLOR": "1",
+        # Isolation defaults — prevent writes to real .omc/indexing-logs/
+        "INDEXING_LOG_DIR": default_log_dir,
+        "INDEXING_SKIP_SOURCE_SCAN": "1",
+        # Use a fast-fail URL so indexing CLI calls fail immediately (no hang)
+        "INDEXING_API_URL": "http://127.0.0.1:1",
     }
     if env:
         full_env.update(env)

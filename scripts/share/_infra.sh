@@ -32,6 +32,12 @@ if [[ -n "${_INFRA_LIB_LOADED:-}" ]]; then
 fi
 _INFRA_LIB_LOADED=1
 
+# Injectable command paths (override for testing)
+CURL_BIN="${CURL_BIN:-curl}"
+NC_BIN="${NC_BIN:-nc}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
 # Canonical paths
 _INFRA_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../../deploy/docker-compose.yml}"
@@ -61,7 +67,7 @@ _infra_wait_http() {
   local on_fail="${4:-die}"
   local i
   for i in $(seq 1 "$retries"); do
-    if curl -sf "$url" > /dev/null 2>&1; then
+    if "$CURL_BIN" -sf "$url" > /dev/null 2>&1; then
       info "$label ready"
       return 0
     fi
@@ -85,7 +91,7 @@ _infra_wait_tcp() {
   _infra_require_cmd nc
   local i
   for i in $(seq 1 "$retries"); do
-    if nc -z "$host" "$port" 2> /dev/null; then
+    if "$NC_BIN" -z "$host" "$port" 2> /dev/null; then
       return 0
     fi
     [ "$i" -eq "$retries" ] && return 1

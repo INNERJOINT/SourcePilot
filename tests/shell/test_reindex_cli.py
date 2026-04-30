@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import os
-import stat
 
 from tests.shell.conftest import PROJ_ROOT, _run_bash
 
@@ -49,14 +48,13 @@ def _make_fake_projects_config(tmp_path, projects):
 
     projects: list of dicts with keys: name, repo_path, index_dir
     """
-    import textwrap
 
     lines = ["projects:\n"]
     for p in projects:
         lines.append(f"  - name: {p['name']}\n")
         lines.append(f"    repo_path: {p['repo_path']}\n")
         lines.append(f"    index_dir: {p['index_dir']}\n")
-        lines.append(f"    zoekt_url: http://localhost:6070\n")
+        lines.append("    zoekt_url: http://localhost:6070\n")
     cfg = tmp_path / "projects.yaml"
     cfg.write_text("".join(lines))
     return cfg
@@ -142,7 +140,9 @@ def test_reindex_project_invokes_zoekt_with_shard_prefix(tmp_path, mock_command)
     for sp in sub_paths:
         slug = sp.replace("/", "_")
         expected = f"testproj_{slug}"
-        assert expected in prefixes_seen, f"Expected prefix '{expected}' not found in {prefixes_seen}"
+        assert expected in prefixes_seen, (
+            f"Expected prefix '{expected}' not found in {prefixes_seen}"
+        )
 
 
 def test_reindex_all_iterates_projects(tmp_path, mock_command):

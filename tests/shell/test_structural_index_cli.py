@@ -47,22 +47,22 @@ def test_translate_path_keeps_src_prefix():
         source "{STRUCTURAL_SH}" 2>/dev/null || true
     """)
     # Test translate_path directly by sourcing just enough context
-    r = _run_bash(f"""\
+    r = _run_bash("""\
         AOSP_SOURCE_ROOT="/opt/aosp"
-        translate_path() {{
+        translate_path() {
             local host_path="$1"
-            host_path="${{host_path%/}}"
+            host_path="${host_path%/}"
             if [[ "$host_path" == /src* ]]; then
                 echo "$host_path"
             elif [[ "$host_path" == "$AOSP_SOURCE_ROOT" ]]; then
                 echo "/src"
             elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
-                echo "/src/${{host_path#${{AOSP_SOURCE_ROOT}}/}}"
+                echo "/src/${host_path#${AOSP_SOURCE_ROOT}/}"
             else
                 echo "ERROR" >&2
                 return 2
             fi
-        }}
+        }
         translate_path "/src/frameworks/base"
         translate_path "/opt/aosp/frameworks/base"
         translate_path "/opt/aosp"

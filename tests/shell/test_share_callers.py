@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 
 def test_run_mcp_venv_fallback(run_bash, proj_root):
     """run_mcp.sh falls back to system python3 when VENV_PYTHON is missing."""
@@ -11,7 +9,7 @@ def test_run_mcp_venv_fallback(run_bash, proj_root):
     # fallback logic by sourcing up to the VENV_PYTHON assignment.
     # The stdio-mode section (lines ~86-90) sets VENV_PYTHON and checks -x.
     r = run_bash(
-        f"""
+        """
         set -euo pipefail
         VENV_PYTHON="/nonexistent/python3"
         if [ ! -x "$VENV_PYTHON" ]; then
@@ -28,7 +26,7 @@ def test_run_mcp_venv_fallback(run_bash, proj_root):
 def test_run_sp_cockpit_venv_fallback(run_bash, proj_root):
     """run_sp_cockpit.sh --bare falls back to system python3."""
     r = run_bash(
-        f"""
+        """
         set -euo pipefail
         VENV_PYTHON="/nonexistent/python3"
         if [ ! -x "$VENV_PYTHON" ]; then
