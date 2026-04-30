@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      die "Unknown option: $1"
+      die "Unknown option: $1" "$EXIT_USAGE"
       ;;
   esac
 done

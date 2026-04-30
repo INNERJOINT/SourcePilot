@@ -136,7 +136,7 @@ main() {
         ;;
       *)
         echo "Unknown option: $1"
-        exit 1
+        exit "$EXIT_USAGE"
         ;;
     esac
   done

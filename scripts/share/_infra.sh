@@ -47,15 +47,9 @@ INFRA_SLEEP_SECONDS="${INFRA_SLEEP_SECONDS:-1}"
 # ── shared helpers ───────────────────────────────────────────
 
 # _infra_require_cmd <cmd> [install_hint]
-# Die with actionable message if <cmd> is not on PATH.
+# Backward-compat wrapper around _common_require_cmd (now exits EXIT_DEPS=3).
 _infra_require_cmd() {
-  local cmd="$1"
-  local hint="${2:-}"
-  if ! command -v "$cmd" > /dev/null 2>&1; then
-    local msg="required command not found: $cmd"
-    [ -n "$hint" ] && msg="$msg — $hint"
-    die "$msg"
-  fi
+  _common_require_cmd "$@"
 }
 
 # _infra_wait_http <url> <label> [max_retries] [die_on_fail]

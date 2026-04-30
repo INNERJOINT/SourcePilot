@@ -9,8 +9,11 @@
 #   structural-audit     — Structural audit event end-to-end verification
 #   indexer-containers   — Verify dense/structural indexer definitions in docker-compose.yml
 set -euo pipefail
-source "$(dirname "$0")/../share/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../share/_common.sh"
 _common_parse_help "$@"
+
+CURL_BIN="${CURL_BIN:-curl}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
 
 # ─── structural-audit ──────────────────────────────────────────────────────────
 
@@ -20,7 +23,7 @@ _run_structural_audit() {
   local AUDIT_DB="${AUDIT_DB:-${PROJ_ROOT}/sp-cockpit/data/audit.db}"
 
   info "Checking sp-cockpit health..."
-  if ! curl -sf "${SP_COCKPIT_URL}/api/health" > /dev/null 2>&1; then
+  if ! "$CURL_BIN" -sf "${SP_COCKPIT_URL}/api/health" > /dev/null 2>&1; then
     log ERROR "sp-cockpit not responding (${SP_COCKPIT_URL}/api/health)"
     echo ""
     echo "Please start sp-cockpit first:"
@@ -31,7 +34,7 @@ _run_structural_audit() {
   info "sp-cockpit responding normally"
 
   info "Checking SourcePilot health..."
-  if ! curl -sf "${SOURCEPILOT_URL}/health" > /dev/null 2>&1; then
+  if ! "$CURL_BIN" -sf "${SOURCEPILOT_URL}/health" > /dev/null 2>&1; then
     log ERROR "SourcePilot not responding (${SOURCEPILOT_URL}/health)"
     return 1
   fi
@@ -39,7 +42,7 @@ _run_structural_audit() {
 
   info "Checking STRUCTURAL_ENABLED environment variable..."
   local STRUCTURAL_ENABLED_STATUS
-  STRUCTURAL_ENABLED_STATUS=$(curl -sf "${SOURCEPILOT_URL}/health" | grep -o '"structural":[^,}]*' || echo "unknown")
+  STRUCTURAL_ENABLED_STATUS=$("$CURL_BIN" -sf "${SOURCEPILOT_URL}/health" | grep -o '"structural":[^,}]*' || echo "unknown")
   info "structural status: ${STRUCTURAL_ENABLED_STATUS}"
 
   info "Checking audit.db..."
@@ -65,7 +68,7 @@ _run_structural_audit() {
       3) QUERY="WindowManagerService token window" ;;
     esac
 
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    HTTP_STATUS=$("$CURL_BIN" -s -o /dev/null -w "%{http_code}" \
       -X POST "${SOURCEPILOT_URL}/api/search" \
       -H "Content-Type: application/json" \
       -H "X-Trace-Id: ${TRACE_ID}" \
@@ -156,25 +159,25 @@ _run_indexer_containers() {
     fi
   }
 
-  if ! command -v docker > /dev/null 2>&1; then
+  if ! command -v "$DOCKER_BIN" > /dev/null 2>&1; then
     echo "docker not installed; skipping verification."
     return 0
   fi
 
   _check "deploy compose config (profile=indexer)" \
-    docker compose -f "$COMPOSE" --profile indexer config -q
+    "$DOCKER_BIN" compose -f "$COMPOSE" --profile indexer config -q
   _check "deploy compose config (default profile — should not contain dense-indexer/structural-indexer)" \
-    bash -c "svc=\$(docker compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^structural-indexer\$'"
+    bash -c "svc=\$(\"$DOCKER_BIN\" compose -f '$COMPOSE' config --services); echo \"\$svc\" | grep -vq '^dense-indexer\$' && echo \"\$svc\" | grep -vq '^structural-indexer\$'"
   _check "deploy compose project name = sourcepilot" \
-    bash -c "docker compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'sourcepilot'"
+    bash -c "\"$DOCKER_BIN\" compose -f '$COMPOSE' config | grep -E '^name:' | grep -q 'sourcepilot'"
   _check "root shim resolves to deploy compose" \
-    docker compose -f "$DIR/docker-compose.yml" config -q
+    "$DOCKER_BIN" compose -f "$DIR/docker-compose.yml" config -q
 
   if [[ "${INDEXER_RUN_HELP:-0}" = "1" ]]; then
     _check "dense-indexer --help" \
-      docker compose -f "$COMPOSE" --profile indexer run --rm dense-indexer --help
+      "$DOCKER_BIN" compose -f "$COMPOSE" --profile indexer run --rm dense-indexer --help
     _check "structural-indexer --help" \
-      docker compose -f "$COMPOSE" --profile indexer run --rm structural-indexer --help
+      "$DOCKER_BIN" compose -f "$COMPOSE" --profile indexer run --rm structural-indexer --help
   fi
 
   return "$fail"
@@ -182,14 +185,20 @@ _run_indexer_containers() {
 
 # ─── dispatch ────────────────────────────────────────────────────────────────
 
-case "${1:-}" in
-  structural-audit)
-    shift
-    _run_structural_audit "$@"
-    ;;
-  indexer-containers)
-    shift
-    _run_indexer_containers "$@"
-    ;;
-  *) die "Usage: verify.sh <structural-audit|indexer-containers>" ;;
-esac
+main() {
+  case "${1:-}" in
+    structural-audit)
+      shift
+      _run_structural_audit "$@"
+      ;;
+    indexer-containers)
+      shift
+      _run_indexer_containers "$@"
+      ;;
+    *) die "Usage: verify.sh <structural-audit|indexer-containers>" ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

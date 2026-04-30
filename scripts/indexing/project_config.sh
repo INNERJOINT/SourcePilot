@@ -27,7 +27,7 @@ load_projects() {
     return
   fi
 
-  python3 - "${_PC_CONFIG}" << 'PYEOF'
+  "${PYTHON_BIN:-python3}" - "${_PC_CONFIG}" << 'PYEOF'
 import sys, yaml, re, os
 from pathlib import Path
 

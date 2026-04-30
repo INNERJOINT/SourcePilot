@@ -179,7 +179,7 @@ main() {
   have=$("$SQLITE3_BIN" "$AUDIT_DB" "SELECT DISTINCT stage FROM events WHERE trace_id IN ($ids_csv) AND stage IS NOT NULL" 2> /dev/null || true)
   for s in "${required_stages[@]}"; do
     if ! grep -qx "$s" <<< "$have"; then
-      echo "[FAIL] stage missing: $s"
+      echo "[FAIL] stage missing: $s" >&2
       AUDIT_FAIL=$((AUDIT_FAIL + 1))
     fi
   done
@@ -187,20 +187,20 @@ main() {
   in_tid="${TRACE_IDS[nl_inscope_dense]}"
   in_hits=$("$SQLITE3_BIN" "$AUDIT_DB" 'SELECT COALESCE(json_extract(payload_json,"$.stage_result.records_count"),0) FROM events WHERE trace_id='"'$in_tid'"' AND stage='"'dense_search'"' LIMIT 1' 2> /dev/null || echo "")
   if [[ -z "$in_hits" || "$in_hits" -le 0 ]]; then
-    echo "[FAIL] in-scope dense records_count not >0 (got: '$in_hits')"
+    echo "[FAIL] in-scope dense records_count not >0 (got: '$in_hits')" >&2
     AUDIT_FAIL=$((AUDIT_FAIL + 1))
   fi
 
   out_tid="${TRACE_IDS[nl_outscope_dense]}"
   out_dense=$("$SQLITE3_BIN" "$AUDIT_DB" 'SELECT COALESCE(json_extract(payload_json,"$.stage_result.records_count"),0) FROM events WHERE trace_id='"'$out_tid'"' AND stage='"'dense_search'"' LIMIT 1' 2> /dev/null || echo "0")
   [[ "$out_dense" -ne 0 ]] && {
-    echo "[FAIL] out-of-scope dense records_count expected 0 (got: '$out_dense')"
+    echo "[FAIL] out-of-scope dense records_count expected 0 (got: '$out_dense')" >&2
     AUDIT_FAIL=$((AUDIT_FAIL + 1))
   }
 
   out_zoekt=$("$SQLITE3_BIN" "$AUDIT_DB" 'SELECT COALESCE(json_extract(payload_json,"$.stage_result.zoekt_routes_succeeded"),0) FROM events WHERE trace_id='"'$out_tid'"' AND stage='"'nl_parallel_search'"' LIMIT 1' 2> /dev/null || echo "0")
   [[ "$out_zoekt" -le 0 ]] && {
-    echo "[FAIL] out-of-scope zoekt_routes_succeeded expected >0 (got: '$out_zoekt')"
+    echo "[FAIL] out-of-scope zoekt_routes_succeeded expected >0 (got: '$out_zoekt')" >&2
     AUDIT_FAIL=$((AUDIT_FAIL + 1))
   }
 

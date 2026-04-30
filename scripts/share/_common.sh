@@ -21,6 +21,16 @@ if [[ -n "${_COMMON_LIB_LOADED:-}" ]]; then
 fi
 _COMMON_LIB_LOADED=1
 
+# ---------------------------------------------------------------------------
+# Exit-code contract (frozen — do not change values)
+# ---------------------------------------------------------------------------
+readonly EXIT_OK=0
+readonly EXIT_GENERAL=1
+readonly EXIT_USAGE=2
+readonly EXIT_DEPS=3
+readonly EXIT_CONFIG=4
+readonly EXIT_EXTERNAL=5
+
 # Canonical project root — all scripts should use this instead of computing relative paths
 PROJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -96,3 +106,53 @@ _common_parse_help() {
       ;;
   esac
 }
+
+# ---------------------------------------------------------------------------
+# Dependency / config guards (idempotent — guarded with declare -f)
+# ---------------------------------------------------------------------------
+
+if ! declare -f _common_require_cmd > /dev/null 2>&1; then
+  # _common_require_cmd CMD [hint]
+  # Exit EXIT_DEPS if CMD is not on PATH.
+  _common_require_cmd() {
+    local cmd="$1"
+    local hint="${2:-}"
+    if ! command -v "$cmd" > /dev/null 2>&1; then
+      local msg="required command not found: $cmd"
+      [[ -n "$hint" ]] && msg="$msg — $hint"
+      printf '[ERR] %s\n' "$msg" >&2
+      exit "$EXIT_DEPS"
+    fi
+  }
+fi
+
+if ! declare -f _common_require_env > /dev/null 2>&1; then
+  # _common_require_env VAR [hint]
+  # Exit EXIT_CONFIG if the named variable is unset or empty.
+  _common_require_env() {
+    local var="$1"
+    local hint="${2:-}"
+    if [[ -z "${!var:-}" ]]; then
+      local msg="required environment variable not set: $var"
+      [[ -n "$hint" ]] && msg="$msg — $hint"
+      printf '[ERR] %s\n' "$msg" >&2
+      exit "$EXIT_CONFIG"
+    fi
+  }
+fi
+
+# ---------------------------------------------------------------------------
+# Structured log helpers (all to stderr; lays groundwork for Task #6)
+# ---------------------------------------------------------------------------
+
+if ! declare -f _common_log_info > /dev/null 2>&1; then
+  _common_log_info() { printf '[INFO] %s\n' "$*" >&2; }
+fi
+
+if ! declare -f _common_log_warn > /dev/null 2>&1; then
+  _common_log_warn() { printf '[WARN] %s\n' "$*" >&2; }
+fi
+
+if ! declare -f _common_log_error > /dev/null 2>&1; then
+  _common_log_error() { printf '[ERR] %s\n' "$*" >&2; }
+fi
