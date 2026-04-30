@@ -107,3 +107,33 @@ def test_invalid_token_has_www_authenticate_header():
     """token 错误时，响应包含 WWW-Authenticate 头"""
     resp = client.get("/test", headers={"Authorization": "Bearer bad"})
     assert "www-authenticate" in resp.headers or "WWW-Authenticate" in resp.headers
+
+
+# ─── /health 健康检查绕过鉴权 ─────────────────────────────
+
+async def health(request):
+    return JSONResponse({"status": "ok"})
+
+
+_health_inner = Starlette(routes=[Route("/health", health), Route("/test", hello)])
+_health_wrapped = BearerTokenMiddleware(_health_inner, TEST_TOKEN)
+_health_client = TestClient(_health_wrapped)
+
+
+def test_health_endpoint_bypasses_auth():
+    """/health 健康检查不需要 Bearer token（供 docker/k8s 探针使用）"""
+    resp = _health_client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+def test_health_endpoint_works_with_invalid_token():
+    """/health 即使带错误 token 也能通过"""
+    resp = _health_client.get("/health", headers={"Authorization": "Bearer wrong"})
+    assert resp.status_code == 200
+
+
+def test_non_health_still_requires_auth():
+    """非 /health 路径仍然需要鉴权"""
+    resp = _health_client.get("/test")
+    assert resp.status_code == 401

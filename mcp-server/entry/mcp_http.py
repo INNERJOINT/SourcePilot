@@ -29,6 +29,11 @@ class BearerTokenMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # 健康检查无需鉴权（供 docker/k8s 探针使用）
+        if scope.get("path") == "/health":
+            await self.app(scope, receive, send)
+            return
+
         headers = dict(scope.get("headers", []))
         auth_header = headers.get(b"authorization", b"").decode()
 
