@@ -5,12 +5,13 @@ import logging
 import os
 import sys
 
+import httpx
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from entry.handlers import server
+from entry.handlers import _set_http_client, server
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +81,14 @@ async def main_streamable_http(host: str, port: int):
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
-        async with session_manager.run():
-            logger.info("MCP Session Manager running")
-            yield
+        client = httpx.AsyncClient(timeout=30.0)
+        _set_http_client(client)
+        try:
+            async with session_manager.run():
+                logger.info("MCP Session Manager running")
+                yield
+        finally:
+            await client.aclose()
 
     app = Starlette(
         lifespan=lifespan,

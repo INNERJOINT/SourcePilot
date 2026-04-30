@@ -6,6 +6,7 @@ MCP 层单元测试配置
 import os
 import sys
 
+import httpx
 import pytest
 
 # 将 mcp-server/ 加入 Python 路径
@@ -17,3 +18,20 @@ if _mcp_dir not in sys.path:
 @pytest.fixture(autouse=True)
 def _set_sourcepilot_url(monkeypatch):
     monkeypatch.setenv("SOURCEPILOT_URL", "http://mock-sourcepilot:9000")
+
+
+@pytest.fixture(autouse=True)
+def _http_client_fixture():
+    """Provide a real httpx.AsyncClient via ContextVar so handlers can use _get_http_client()."""
+    import asyncio
+
+    from entry.handlers import _set_http_client
+
+    client = httpx.AsyncClient(timeout=30.0)
+    _set_http_client(client)
+    yield client
+    try:
+        asyncio.get_event_loop().run_until_complete(client.aclose())
+    except RuntimeError:
+        # No running event loop in sync teardown — client will be GC'd
+        pass

@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import uuid
+from contextvars import ContextVar
 
 import httpx
 from mcp.server import Server
@@ -34,8 +35,16 @@ logger = logging.getLogger(__name__)
 
 SOURCEPILOT_URL = os.getenv("SOURCEPILOT_URL", "http://localhost:9000")
 
-# module-level httpx.AsyncClient singleton
-_http_client = httpx.AsyncClient(timeout=30.0)
+# ContextVar-based HTTP client (set by lifespan in mcp_http.py and mcp_stdio.py)
+_http_client_ctx: ContextVar[httpx.AsyncClient] = ContextVar("_http_client_ctx")
+
+
+def _set_http_client(client: httpx.AsyncClient) -> None:
+    _http_client_ctx.set(client)
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    return _http_client_ctx.get()
 
 # ─── 多项目探测状态 ────────────────────────────────────
 _multi_project: bool | None = None
@@ -57,7 +66,7 @@ async def _probe_projects() -> None:
     global _multi_project, _project_names
     for attempt in range(2):
         try:
-            resp = await _http_client.get(
+            resp = await _get_http_client().get(
                 f"{SOURCEPILOT_URL}/api/projects",
                 headers={"X-Trace-Id": str(uuid.uuid4())},
                 timeout=2.0,
@@ -115,7 +124,7 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
 
     trace_id = str(uuid.uuid4())
     try:
-        resp = await _http_client.post(
+        resp = await _get_http_client().post(
             f"{SOURCEPILOT_URL}/api/get_file_content",
             json={"repo": repo, "filepath": filepath},
             headers={"X-Trace-Id": trace_id},
@@ -129,7 +138,9 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
     except httpx.HTTPStatusError as e:
         raise ValueError(f"SourcePilot error: {e.response.status_code}") from e
 
-    content = f"# {repo}/{filepath}  (共 {result['total_lines']} 行)\n\n{result['content']}"
+    total_lines = result.get("total_lines", 0)
+    file_content = result.get("content", "")
+    content = f"# {repo}/{filepath}  (共 {total_lines} 行)\n\n{file_content}"
 
     return ReadResourceResult(
         contents=[
@@ -472,7 +483,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
     """向 SourcePilot 发送 POST 请求，统一处理连接错误。"""
     try:
-        resp = await _http_client.post(
+        resp = await _get_http_client().post(
             f"{SOURCEPILOT_URL}{endpoint}",
             json=body,
             headers={"X-Trace-Id": trace_id},
@@ -493,7 +504,7 @@ async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
 async def _get(endpoint: str, trace_id: str) -> dict | list:
     """向 SourcePilot 发送 GET 请求，统一处理连接错误。"""
     try:
-        resp = await _http_client.get(
+        resp = await _get_http_client().get(
             f"{SOURCEPILOT_URL}{endpoint}",
             headers={"X-Trace-Id": trace_id},
         )
@@ -635,12 +646,15 @@ async def _handle_get_file_content(args: dict, trace_id: str) -> list[TextConten
     }
     result = await _post("/api/get_file_content", body, trace_id)
 
-    total = result["total_lines"]
-    s = result["start_line"]
-    e = result["end_line"]
+    total = result.get("total_lines")
+    s = result.get("start_line")
+    e = result.get("end_line")
+    content = result.get("content")
+    if total is None or s is None or e is None or content is None:
+        return [TextContent(type="text", text="SourcePilot returned malformed response (status N/A)")]  # noqa: E501
     header = f"# {repo}/{filepath}  (L{s}-L{e} / 共 {total} 行)\n"
 
-    return [TextContent(type="text", text=header + "```\n" + result["content"] + "\n```")]
+    return [TextContent(type="text", text=header + "```\n" + content + "\n```")]
 
 
 # ─── 结果格式化 ────────────────────────────────────────
