@@ -375,6 +375,8 @@ async def list_tools() -> list[Tool]:
                         "default": 10,
                     },
                     "lang": common_filter_props["lang"],
+                    "branch": common_filter_props["branch"],
+                    "case_sensitive": common_filter_props["case_sensitive"],
                     "project": project_prop,
                 },
                 "required": regex_required,
@@ -604,8 +606,7 @@ async def _handle_search_regex(args: dict, trace_id: str) -> list[TextContent]:
         "pattern": pattern,
         "repos": args.get("repo", "") or None,
         "top_k": args.get("top_k", 10),
-        "lang": args.get("lang") or None,
-        "project": args.get("project") or None,
+        **_extract_filters(args),
     }
     results = await _post("/api/search_regex", body, trace_id)
     return [TextContent(type="text", text=_format_results(f"/{pattern}/", results))]
