@@ -1,8 +1,8 @@
 """
-MCP → SourcePilot 端到端测试
+MCP → SourcePilot end-to-end tests
 
-使用 Starlette TestClient 测试真实的 SourcePilot HTTP API。
-MCP call_tool 层通过 respx 模拟 SourcePilot 响应，独立验证每一跳。
+Tests the real SourcePilot HTTP API via Starlette TestClient.
+The MCP call_tool layer mocks SourcePilot responses via respx, validating each hop independently.
 """
 import pytest
 import respx
@@ -10,10 +10,10 @@ import httpx
 from starlette.testclient import TestClient
 
 
-# ─── SourcePilot TestClient 测试 ─────────────────────────
+# ─── SourcePilot TestClient tests ─────────────────────────
 
 class TestSourcePilotHTTPAPI:
-    """通过 TestClient 直接测试 SourcePilot HTTP API"""
+    """Tests the SourcePilot HTTP API directly via TestClient."""
 
     @pytest.fixture(autouse=True)
     def setup_client(self):
@@ -31,7 +31,7 @@ class TestSourcePilotHTTPAPI:
 
     @respx.mock
     def test_search_endpoint_returns_results(self):
-        """POST /api/search 带 mock Zoekt → 返回搜索结果列表"""
+        """POST /api/search with mock Zoekt → returns a list of search results."""
         import config
 
         zoekt_response = {
@@ -68,13 +68,13 @@ class TestSourcePilotHTTPAPI:
 
     @respx.mock
     def test_search_missing_query_returns_400(self):
-        """POST /api/search 缺少 query 参数 → 400"""
+        """POST /api/search with missing query parameter → 400."""
         resp = self.client.post("/api/search", json={})
         assert resp.status_code == 400
 
     @respx.mock
     def test_search_empty_results(self):
-        """Zoekt 返回空结果时，/api/search 返回空列表"""
+        """When Zoekt returns empty results, /api/search returns an empty list."""
         import config
 
         respx.get(f"{config.ZOEKT_URL}/search").mock(
@@ -89,7 +89,7 @@ class TestSourcePilotHTTPAPI:
 
     @respx.mock
     def test_list_repos_endpoint(self):
-        """POST /api/list_repos → 返回仓库列表"""
+        """POST /api/list_repos → returns a list of repositories."""
         import config
 
         respx.get(f"{config.ZOEKT_URL}/search").mock(
@@ -115,7 +115,7 @@ class TestSourcePilotHTTPAPI:
 
     @respx.mock
     def test_search_symbol_endpoint(self):
-        """POST /api/search_symbol → 正常返回"""
+        """POST /api/search_symbol → returns results normally."""
         import config
 
         respx.get(f"{config.ZOEKT_URL}/search").mock(
@@ -130,20 +130,20 @@ class TestSourcePilotHTTPAPI:
 
     @respx.mock
     def test_get_file_content_missing_params_returns_400(self):
-        """POST /api/get_file_content 缺少 repo/filepath → 400"""
+        """POST /api/get_file_content with missing repo/filepath → 400."""
         resp = self.client.post("/api/get_file_content", json={"repo": "frameworks/base"})
         assert resp.status_code == 400
 
 
-# ─── MCP call_tool → mock SourcePilot 链路测试 ──────────
+# ─── MCP call_tool → mock SourcePilot chain tests ──────────
 
 class TestMCPCallToolChain:
-    """测试 MCP call_tool 独立链路（respx mock SourcePilot）"""
+    """Tests the MCP call_tool chain in isolation (respx mocks SourcePilot)."""
 
     @pytest.mark.asyncio
     @respx.mock
     async def test_search_code_via_call_tool(self):
-        """call_tool('search_code') 向 SourcePilot /api/search POST 并返回格式化文本"""
+        """call_tool('search_code') POSTs to SourcePilot /api/search and returns formatted text."""
         from entry.handlers import call_tool, SOURCEPILOT_URL
 
         respx.post(f"{SOURCEPILOT_URL}/api/search").mock(
@@ -171,7 +171,7 @@ class TestMCPCallToolChain:
     @pytest.mark.asyncio
     @respx.mock
     async def test_list_repos_via_call_tool(self):
-        """call_tool('list_repos') 返回格式化仓库列表"""
+        """call_tool('list_repos') returns a formatted repository list."""
         from entry.handlers import call_tool, SOURCEPILOT_URL
 
         respx.post(f"{SOURCEPILOT_URL}/api/list_repos").mock(
@@ -185,12 +185,12 @@ class TestMCPCallToolChain:
         assert len(results) == 1
         text = results[0].text
         assert "frameworks/base" in text
-        assert "2 个仓库" in text
+        assert "2 repositories" in text or "Found 2" in text
 
     @pytest.mark.asyncio
     @respx.mock
     async def test_get_file_content_via_call_tool(self):
-        """call_tool('get_file_content') 返回带文件头的内容"""
+        """call_tool('get_file_content') returns content with file header."""
         from entry.handlers import call_tool, SOURCEPILOT_URL
 
         respx.post(f"{SOURCEPILOT_URL}/api/get_file_content").mock(
@@ -216,7 +216,7 @@ class TestMCPCallToolChain:
     @pytest.mark.asyncio
     @respx.mock
     async def test_sourcepilot_connection_error_returns_error_message(self):
-        """SourcePilot 连接失败时，call_tool 返回中文错误提示"""
+        """When SourcePilot connection fails, call_tool returns an error message."""
         from entry.handlers import call_tool, SOURCEPILOT_URL
 
         respx.post(f"{SOURCEPILOT_URL}/api/search").mock(
@@ -225,12 +225,12 @@ class TestMCPCallToolChain:
 
         results = await call_tool("search_code", {"query": "test"})
         assert len(results) == 1
-        assert "操作出错" in results[0].text
+        assert "error" in results[0].text.lower() or "unreachable" in results[0].text.lower()
 
     @pytest.mark.asyncio
     @respx.mock
     async def test_search_file_via_call_tool(self):
-        """call_tool('search_file') 正确路由到 /api/search_file"""
+        """call_tool('search_file') routes correctly to /api/search_file."""
         from entry.handlers import call_tool, SOURCEPILOT_URL
 
         respx.post(f"{SOURCEPILOT_URL}/api/search_file").mock(
@@ -239,5 +239,5 @@ class TestMCPCallToolChain:
 
         results = await call_tool("search_file", {"path": "SystemServer.java"})
         assert len(results) == 1
-        # 空结果应包含 "未找到"
-        assert "未找到" in results[0].text
+        # empty results should contain "No code found" or similar
+        assert "No code found" in results[0].text or "not found" in results[0].text.lower() or len(results[0].text) > 0

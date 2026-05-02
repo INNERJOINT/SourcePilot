@@ -2,9 +2,10 @@
 
 
 def structural_result_to_dict(hit: dict) -> dict:
-    """Structural 检索 hit 转换为 RRF dict 格式。
+    """Convert a Structural retrieval hit into an RRF-compatible dict format.
 
-    使用子文件粒度 (repo/path:start-end) 避免与 Zoekt/Dense 同文件 chunk dedup 折叠。
+    Uses sub-file granularity (repo/path:start-end) to avoid dedup collapsing
+    same-file chunks from Zoekt/Dense.
     """
     repo = hit.get("repo", "")
     path = hit.get("path", "")
@@ -26,7 +27,7 @@ def structural_result_to_dict(hit: dict) -> dict:
 
 
 def feishu_result_to_dict(hit: dict) -> dict:
-    """将 Feishu dense hit 转换为 RRF-compatible dict 格式。"""
+    """Convert a Feishu dense hit into an RRF-compatible dict format."""
     meta = hit.get("metadata", {})
     title = meta.get("title", "")
     url = meta.get("url", "")
@@ -45,19 +46,19 @@ def feishu_result_to_dict(hit: dict) -> dict:
 
 
 def dense_result_to_dict(hit: dict) -> dict:
-    """将向量数据库返回的 hit 转换为与 Zoekt 相同的 dict 格式。
+    """Convert a vector-database hit into the same dict format used by Zoekt.
 
-    输入 hit 格式（来自 Qdrant）:
+    Input hit format (from Qdrant):
         {"id": "...", "score": 0.85, "metadata": {"repo": "frameworks/base",
          "path": "core/java/...", "start_line": 1, "end_line": 100,
          "content": "..."}}
 
-    输出 dict 格式（与 ZoektAdapter._convert_results 一致）:
+    Output dict format (consistent with ZoektAdapter._convert_results):
         {"title": "frameworks/base/core/java/...", "content": "...",
          "score": 0.85, "metadata": {"repo": "...", "path": "..."}}
 
-    关键：rrf_merge (fusion.py:23-27) 用 (metadata.repo, metadata.path, title)
-    作为 dedup key，所以必须填充这三个字段且格式与 Zoekt 一致。
+    Key: rrf_merge (fusion.py:23-27) uses (metadata.repo, metadata.path, title)
+    as the dedup key, so all three fields must be populated in the same format as Zoekt.
     """
     meta = hit.get("metadata", {})
     repo = meta.get("repo", "")

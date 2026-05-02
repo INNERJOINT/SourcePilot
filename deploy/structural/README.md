@@ -1,34 +1,35 @@
-# Structural Deploy — Neo4j 结構化数据库
+# Structural Deploy — Neo4j Graph Database
 
-Docker 单节点部署，为 SourcePilot 的结構化检索功能（Structural Lane）提供 Neo4j 后端。
+Docker single-node deployment providing the Neo4j backend for SourcePilot's structural retrieval
+feature (Structural Lane).
 
-## 快速启动
+## Quick Start
 
 ```bash
 cd deploy/structural
 
-# 1. 启动 Neo4j（首次拉取镜像需要一点时间）
+# 1. Start Neo4j (first-time image pull may take a moment)
 docker compose up -d
 
-# 2. 验证服务健康
+# 2. Verify service health
 docker compose ps
 docker compose logs neo4j | tail -20
 
-# 3. 浏览器访问 Neo4j Browser（可选）
+# 3. Open Neo4j Browser (optional)
 open http://localhost:7474
-# 用户名: neo4j  密码: sourcepilot
+# Username: neo4j  Password: sourcepilot
 ```
 
-## 服务组件
+## Service Components
 
-| 服务   | 端口       | 说明                         |
-|--------|------------|------------------------------|
-| Neo4j  | 7474 (HTTP) | Neo4j Browser / REST API     |
-| Neo4j  | 7687 (Bolt) | Bolt 协议（驱动连接）        |
+| Service | Port        | Description                        |
+|---------|-------------|------------------------------------|
+| Neo4j   | 7474 (HTTP) | Neo4j Browser / REST API           |
+| Neo4j   | 7687 (Bolt) | Bolt protocol (driver connections) |
 
-## 连接信息
+## Connection Details
 
-与 `.env` 默认值对应：
+Matching the `.env` defaults:
 
 ```
 NEO4J_URI=bolt://localhost:7687
@@ -36,23 +37,24 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=sourcepilot
 ```
 
-## 内存说明
+## Memory Notes
 
-默认配置适合开发/测试环境：
+The default configuration is suitable for development/testing environments:
 
-- Heap 初始: 512M，最大: 2G
+- Heap initial: 512M, max: 2G
 - Page Cache: 512M
-- **建议宿主机 4GB+ 系统内存**
-- 索引 `frameworks/base` 子集（`build_structural_index.py`）约消耗 1–2GB Neo4j heap
+- **Recommended host memory: 4GB+**
+- Indexing the `frameworks/base` subset (`build_structural_index.py`) consumes approximately 1–2GB Neo4j heap
 
-如需调整，修改 `docker-compose.yml` 中的 `NEO4J_server_memory_*` 变量后重启服务。
+To adjust, modify the `NEO4J_server_memory_*` variables in `docker-compose.yml` and restart the service.
 
-## 构建图谱索引
+## Building the Graph Index
 
-自 2026-04 起，索引构建通过容器化的 `structural-indexer` service（同 compose 的 `indexer` profile）完成：
+Since 2026-04, index builds are performed via the containerized `structural-indexer` service
+(the `indexer` profile in the same Compose file):
 
 ```bash
-# 前置：neo4j 健康；AOSP 源码通过 $AOSP_SOURCE_ROOT 挂入容器 /src
+# Prerequisites: neo4j healthy; AOSP source mounted into container /src via $AOSP_SOURCE_ROOT
 cd /opt/aosp/aosp_project2/Dify
 AOSP_SOURCE_ROOT=/opt/aosp/aosp_project ./scripts/build_structural_index.sh \
     --source-root /opt/aosp/aosp_project/frameworks/base \
@@ -60,7 +62,7 @@ AOSP_SOURCE_ROOT=/opt/aosp/aosp_project ./scripts/build_structural_index.sh \
     --max-files 500
 ```
 
-wrapper 会把宿主机路径翻译为 `/src/<subpath>` 后调用：
+The wrapper translates host paths to `/src/<subpath>` before invoking:
 
 ```bash
 docker compose -f deploy/docker-compose.yml --profile indexer \
@@ -69,31 +71,33 @@ docker compose -f deploy/docker-compose.yml --profile indexer \
     --languages java
 ```
 
-默认情况下 `docker compose up -d` 只启动 `neo4j`；`indexer` profile 是按需触发的一次性 Job，跑完即退出。
-宿主机上不再需要安装 `neo4j` / `tree-sitter-*`。
+By default `docker compose up -d` starts only `neo4j`; the `indexer` profile is a one-shot job
+triggered on demand that exits after completion. `neo4j` / `tree-sitter-*` no longer need to be
+installed on the host.
 
-## 备份
+## Backup
 
 ```bash
-# 导出数据库快照
+# Export a database snapshot
 docker compose exec neo4j neo4j-admin database dump neo4j --to-path=/backups
 ```
 
-## 重建索引
+## Rebuilding the Index
 
 ```bash
-# 1. 停服务，清除数据卷
+# 1. Stop services and clear data volumes
 docker compose down -v
 
-# 2. 重新启动
+# 2. Restart
 docker compose up -d
 
-# 3. 等待健康检查通过后重新索引
+# 3. Wait for health checks to pass, then re-index
 cd /opt/aosp/aosp_project2/Dify
 AOSP_SOURCE_ROOT=/opt/aosp/aosp_project ./scripts/build_structural_index.sh \
     --source-root /opt/aosp/aosp_project/frameworks/base --languages java,cpp,python
 ```
 
-## APOC 插件
+## APOC Plugin
 
-已通过 `NEO4J_PLUGINS='["apoc"]'` 自动安装 APOC 插件，支持图算法、批量导入等高级操作。
+APOC is automatically installed via `NEO4J_PLUGINS='["apoc"]'`, enabling graph algorithms,
+bulk imports, and other advanced operations.

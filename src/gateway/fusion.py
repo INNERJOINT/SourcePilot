@@ -5,14 +5,14 @@ from collections import defaultdict
 
 def rrf_merge(result_lists: list[list[dict]], k: int = 60) -> list[dict]:
     """
-    Reciprocal Rank Fusion。
+    Reciprocal Rank Fusion.
 
     Args:
-        result_lists: 多路搜索结果，每路是一个 record 列表
-        k: RRF 平滑常数（默认 60）
+        result_lists: Multi-lane search results; each lane is a list of records.
+        k: RRF smoothing constant (default 60).
 
     Returns:
-        融合并按分数降序排列的结果列表
+        Merged result list sorted by score in descending order.
     """
     scores: dict[tuple, float] = defaultdict(float)
     docs: dict[tuple, dict] = {}
@@ -26,11 +26,11 @@ def rrf_merge(result_lists: list[list[dict]], k: int = 60) -> list[dict]:
                 doc.get("title", ""),
             )
             scores[doc_id] += 1.0 / (k + rank + 1)
-            # 保留分数最高的版本
+            # Keep the highest-scoring version
             if doc_id not in docs:
                 docs[doc_id] = doc
 
-    # 按 RRF 分数降序排列
+    # Sort by RRF score descending
     sorted_ids = sorted(scores, key=scores.get, reverse=True)
 
     merged = []

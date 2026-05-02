@@ -1,8 +1,9 @@
 """
-StructuralAdapter — Neo4j 结构化检索适配器（完整实现）
+StructuralAdapter — Neo4j structural retrieval adapter (full implementation)
 
-封装 Neo4j 异步驱动，实现 SearchAdapter 接口。
-neo4j 驱动采用懒加载，仅在实际调用时导入，避免未安装时启动失败。
+Wraps the Neo4j async driver, implementing the SearchAdapter interface.
+The neo4j driver is lazily loaded — imported only on first use to avoid startup
+failures when the package is not installed.
 """
 
 import logging
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class StructuralAdapter(SearchAdapter):
-    """Neo4j 结构化检索适配器"""
+    """Neo4j structural retrieval adapter."""
 
     def __init__(
         self,
@@ -46,18 +47,18 @@ class StructuralAdapter(SearchAdapter):
         self._neo4j_user = neo4j_user
         self._neo4j_password = neo4j_password
         self._lane_timeout_ms = lane_timeout_ms
-        self._driver = None  # 懒加载
+        self._driver = None  # lazily initialized
 
     async def _get_driver(self):
-        """懒加载 Neo4j 异步驱动，首次调用时导入并初始化，执行 RETURN 1 预热。"""
+        """Lazily initialize the Neo4j async driver on first call; warm up with RETURN 1."""
         if self._driver is None:
-            from neo4j import AsyncGraphDatabase  # 懒加载：避免未安装时启动失败
+            from neo4j import AsyncGraphDatabase  # lazy import: avoid failure when package not installed
 
             driver = AsyncGraphDatabase.driver(
                 self._neo4j_uri,
                 auth=(self._neo4j_user, self._neo4j_password),
             )
-            # 预热连接，验证可用性
+            # Warm up the connection to verify availability
             async with driver.session() as session:
                 await session.run("RETURN 1")
             self._driver = driver
@@ -72,7 +73,7 @@ class StructuralAdapter(SearchAdapter):
         return [ContentType.CODE]
 
     async def search(self, query: BackendQuery) -> BackendResponse:
-        """执行结构化检索，委托给 search_by_structural()，统一封装计时和错误处理。"""
+        """Execute structural search, delegating to search_by_structural() with unified timing and error handling."""
         start = time.perf_counter()
         try:
             top_k = query.options.max_results
@@ -112,7 +113,7 @@ class StructuralAdapter(SearchAdapter):
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - start) * 1000
-            logger.warning("structural search 失败: %s", exc)
+            logger.warning("structural search failed: %s", exc)
             return BackendResponse(
                 backend="structural",
                 status="error",
@@ -129,13 +130,13 @@ class StructuralAdapter(SearchAdapter):
         repos: list[str] | None = None,
         project: str | None = None,
     ) -> list[dict]:
-        """基于结构化索引的关系检索。
+        """Relationship-based retrieval using the structural index.
 
-        流程：
-        1. 从查询字符串提取实体词元
-        2. 全文检索匹配节点
-        3. 从匹配节点扩展邻居 File 节点
-        4. 计算结构化得分，返回 top_k 结果
+        Steps:
+        1. Extract entity tokens from the query string.
+        2. Full-text search to match nodes.
+        3. Expand matched nodes to neighbouring File nodes.
+        4. Compute structural scores and return top_k results.
         """
         terms = extract_query_entities(query)
         if not terms:
@@ -143,20 +144,20 @@ class StructuralAdapter(SearchAdapter):
 
         driver = await self._get_driver()
 
-        # 第一步：全文检索种子节点
+        # Step 1: full-text search for seed nodes
         seed_nodes = await fulltext_search_nodes(driver, terms, limit=20, project=project)
         if not seed_nodes:
             return []
 
         seed_ids = [n["nid"] for n in seed_nodes]
 
-        # 第二步：扩展到 File 节点
+        # Step 2: expand to File nodes
         neighbor_results = await expand_neighbors(driver, seed_ids, max_hops=2, project=project)
 
         if not neighbor_results:
             return []
 
-        # 计算最大匹配数（用于归一化）
+        # Compute max match count (used for normalization)
         max_match_count = (
             max(len(r["anchor_nids"]) for r in neighbor_results) if neighbor_results else 1
         )
@@ -167,13 +168,13 @@ class StructuralAdapter(SearchAdapter):
             path_length = result["path_length"]
             anchor_nids = result["anchor_nids"]
 
-            # 过滤仓库
+            # Filter by repo
             if repos:
                 file_repo = file_props.get("repo", "")
                 if file_repo not in repos:
                     continue
 
-            # 计算结构化得分
+            # Compute structural score
             score = compute_structural_score(
                 path_length=path_length,
                 match_count=len(anchor_nids),
@@ -184,19 +185,19 @@ class StructuralAdapter(SearchAdapter):
             hit["score"] = score
             hits.append(hit)
 
-        # 按得分降序排列，返回 top_k
+        # Sort by score descending and return top_k
         hits.sort(key=lambda h: h["score"], reverse=True)
         return hits[:top_k]
 
     async def get_content(self, item_id: str) -> dict:
-        """不支持：内容获取由 gateway.get_file_content() + ZoektAdapter 统一处理。"""
+        """Not supported: content retrieval is handled centrally by gateway.get_file_content() + ZoektAdapter."""
         raise NotImplementedError(
-            "StructuralAdapter 不支持 get_content()，"
-            "请通过 gateway.get_file_content() 获取文件内容（委托给 ZoektAdapter）"
+            "StructuralAdapter does not support get_content(). "
+            "Use gateway.get_file_content() to fetch file content (delegates to ZoektAdapter)."
         )
 
     async def health_check(self) -> bool:
-        """健康检查：验证驱动连接正常且全文索引存在。"""
+        """Health check: verify driver connection is healthy and the full-text index exists."""
         try:
             driver = await self._get_driver()
             async with driver.session() as session:
@@ -208,5 +209,5 @@ class StructuralAdapter(SearchAdapter):
                 has_indexes = "symbol_name_idx" in index_names or "doc_entity_idx" in index_names
                 return has_indexes
         except Exception as exc:
-            logger.debug("structural health_check 失败: %s", exc)
+            logger.debug("structural health_check failed: %s", exc)
             return False

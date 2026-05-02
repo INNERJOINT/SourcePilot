@@ -117,7 +117,7 @@ not require sp-cockpit.
 > dense hits. That's not a bug; `nl_outscope_dense` in `smoke_queries.sh`
 > is the case that asserts this behavior.
 
-## MCP transport mismatch (`无法获取 Session ID`)
+## MCP transport mismatch (`Unable to obtain Session ID`)
 
 **Cause.** `tests/test_mcp_endpoints.sh` only works against the
 **streamable-HTTP** transport. If MCP was started in `stdio` mode, there's

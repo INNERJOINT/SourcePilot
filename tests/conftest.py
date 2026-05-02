@@ -1,13 +1,13 @@
 """
-全局测试配置
+Global test configuration
 
-设置环境变量、注册 pytest markers、提供共享 fixtures。
+Sets environment variables, registers pytest markers, and provides shared fixtures.
 """
 import os
 
 import pytest
 
-# 环境变量必须在所有应用模块 import 之前设置
+# Environment variables must be set before any application module imports
 os.environ.setdefault("ZOEKT_URL", "http://mock-zoekt:6070")
 _TEST_PROJECTS_CONFIG = "/tmp/sourcepilot-test-projects.yaml"
 os.environ.setdefault("PROJECTS_CONFIG_PATH", _TEST_PROJECTS_CONFIG)
@@ -29,7 +29,7 @@ os.environ.setdefault("AUDIT_ENABLED", "false")
 
 @pytest.fixture
 def mock_zoekt_search_response():
-    """Zoekt 搜索 API 的标准 mock 响应"""
+    """Standard mock response for the Zoekt search API."""
     from tests.fixtures.mock_zoekt_responses import MOCK_SEARCH_RESPONSE
 
     return MOCK_SEARCH_RESPONSE.copy()
@@ -37,7 +37,7 @@ def mock_zoekt_search_response():
 
 @pytest.fixture
 def mock_empty_response():
-    """Zoekt 空结果响应"""
+    """Zoekt empty-results response."""
     from tests.fixtures.mock_zoekt_responses import MOCK_EMPTY_SEARCH_RESPONSE
 
     return MOCK_EMPTY_SEARCH_RESPONSE.copy()
@@ -45,7 +45,7 @@ def mock_empty_response():
 
 @pytest.fixture
 def mock_sourcepilot_results():
-    """SourcePilot API 的标准 mock 响应"""
+    """Standard mock response for the SourcePilot API."""
     from tests.fixtures.mock_sourcepilot_responses import MOCK_SP_SEARCH_RESULTS
 
     return [item.copy() for item in MOCK_SP_SEARCH_RESULTS]

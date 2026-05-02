@@ -62,31 +62,31 @@ class BackendResponse:
 
 
 class SearchAdapter(ABC):
-    """检索后端统一适配器接口"""
+    """Unified adapter interface for search backends."""
 
     @abstractmethod
     async def search(self, query: BackendQuery) -> BackendResponse:
-        """执行检索，返回统一格式结果"""
+        """Execute a search and return results in the unified format."""
         ...
 
     @abstractmethod
     async def get_content(self, item_id: str) -> dict:
-        """获取单条内容的完整内容"""
+        """Fetch the full content of a single item."""
         ...
 
     @abstractmethod
     async def health_check(self) -> bool:
-        """后端健康检查"""
+        """Check whether the backend is healthy."""
         ...
 
     @property
     @abstractmethod
     def backend_name(self) -> str:
-        """后端标识名"""
+        """Identifier name for this backend."""
         ...
 
     @property
     @abstractmethod
     def supported_content_types(self) -> list[ContentType]:
-        """该后端支持的内容类型"""
+        """Content types supported by this backend."""
         ...

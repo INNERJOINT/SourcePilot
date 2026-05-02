@@ -1,8 +1,8 @@
 """
-ZoektAdapter — Zoekt 搜索引擎适配器
+ZoektAdapter — Zoekt search engine adapter
 
-封装 Zoekt webserver 的 JSON API，实现 SearchAdapter 接口。
-将搜索结果转换为标准 records 格式。
+Wraps the Zoekt webserver JSON API, implementing the SearchAdapter interface.
+Converts search results into the standard records format.
 """
 
 import html as html_module
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class ZoektAdapter(SearchAdapter):
-    """Zoekt 搜索引擎适配器"""
+    """Zoekt search engine adapter."""
 
     def __init__(self, zoekt_url: str = ZOEKT_URL, timeout: float = 30.0):
         self._zoekt_url = zoekt_url
@@ -36,7 +36,7 @@ class ZoektAdapter(SearchAdapter):
         return [ContentType.CODE, ContentType.CONFIG]
 
     async def search(self, query: BackendQuery) -> BackendResponse:
-        """实现 SearchAdapter.search — 统一接口搜索"""
+        """Implement SearchAdapter.search — unified interface search."""
         import time
         start = time.perf_counter()
         try:
@@ -63,7 +63,7 @@ class ZoektAdapter(SearchAdapter):
             )
 
     async def get_content(self, item_id: str) -> dict:
-        """实现 SearchAdapter.get_content — 获取文件内容"""
+        """Implement SearchAdapter.get_content — fetch file content."""
         # item_id format: "zoekt:repo/filepath"
         if item_id.startswith("zoekt:"):
             item_id = item_id[6:]
@@ -73,7 +73,7 @@ class ZoektAdapter(SearchAdapter):
         return await self.fetch_file_content(repo=parts[0], filepath=parts[1])
 
     async def health_check(self) -> bool:
-        """实现 SearchAdapter.health_check"""
+        """Implement SearchAdapter.health_check."""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"{self._zoekt_url}/")
@@ -94,18 +94,18 @@ class ZoektAdapter(SearchAdapter):
         case_sensitive: str = "auto",
     ) -> list[dict[str, Any]]:
         """
-        调用 Zoekt 搜索接口，返回标准 records 列表。
+        Call the Zoekt search endpoint and return a standard records list.
 
         Args:
-            query: 搜索查询字符串
-            top_k: 返回结果数量
-            score_threshold: 分数阈值
-            repos: 可选，repo 名称过滤（如 frameworks/base）
-            lang: 可选，编程语言过滤（如 java, python）
-            branch: 可选，分支过滤（如 main）
-            case_sensitive: 大小写敏感模式：auto/yes/no
+            query: Search query string.
+            top_k: Number of results to return.
+            score_threshold: Minimum score threshold.
+            repos: Optional repo name filter (e.g. frameworks/base).
+            lang: Optional programming language filter (e.g. java, python).
+            branch: Optional branch filter (e.g. main).
+            case_sensitive: Case-sensitivity mode: auto/yes/no.
         """
-        # 构造 Zoekt 查询字符串
+        # Build the Zoekt query string
         zoekt_query = query
         if repos:
             zoekt_query = f"r:{repos} {zoekt_query}"
@@ -122,7 +122,7 @@ class ZoektAdapter(SearchAdapter):
             "format": "json",
         }
 
-        # 上下文行数
+        # Number of context lines
         if NUM_CONTEXT_LINES > 0:
             params["ctx"] = NUM_CONTEXT_LINES
 
@@ -130,7 +130,7 @@ class ZoektAdapter(SearchAdapter):
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.get(f"{self._zoekt_url}/search", params=params)
 
-                # Zoekt 对无结果的查询返回 418 "I'm a teapot"
+                # Zoekt returns 418 "I'm a teapot" for queries with no results
                 if resp.status_code == 418:
                     logger.info("Zoekt returned 418 (no results) for query: %s", params.get("q"))
                     return []
@@ -140,7 +140,7 @@ class ZoektAdapter(SearchAdapter):
                 raw_text = resp.text
                 logger.debug("Zoekt raw response (first 500 chars): %s", raw_text[:500])
 
-                # 检测是否返回了 HTML（说明 format=json 不被支持）
+                # Detect if HTML was returned (indicates format=json is not supported)
                 if raw_text.strip().startswith("<"):
                     logger.error("Zoekt returned HTML instead of JSON. Endpoint may not support JSON format.")
                     raise ValueError("Zoekt does not support JSON output on /search endpoint")
@@ -165,14 +165,14 @@ class ZoektAdapter(SearchAdapter):
         lang: str | None = None,
     ) -> list[dict[str, Any]]:
         """
-        使用正则表达式搜索代码。
+        Search code using a regular expression.
 
         Args:
-            pattern: 正则表达式模式
-            top_k: 返回结果数量
-            score_threshold: 分数阈值
-            repos: 可选，repo 过滤
-            lang: 可选，语言过滤
+            pattern: Regular expression pattern.
+            top_k: Number of results to return.
+            score_threshold: Minimum score threshold.
+            repos: Optional repo filter.
+            lang: Optional language filter.
         """
         query = f"content:/{pattern}/"
         return await self.search_zoekt(
@@ -189,11 +189,11 @@ class ZoektAdapter(SearchAdapter):
         top_k: int = 50,
     ) -> list[dict[str, Any]]:
         """
-        列出匹配的仓库列表。
+        List matching repositories.
 
         Args:
-            query: 可选，仓库名过滤关键词
-            top_k: 返回仓库数量上限
+            query: Optional keyword to filter repository names.
+            top_k: Maximum number of repositories to return.
         """
         zoekt_query = "type:repo"
         if query:
@@ -237,16 +237,16 @@ class ZoektAdapter(SearchAdapter):
         end_line: int | None = None,
     ) -> dict:
         """
-        从 Zoekt /print 端点获取文件完整内容。
+        Fetch the full content of a file from the Zoekt /print endpoint.
 
         Args:
-            repo: 仓库名（如 'frameworks/base'）
-            filepath: 文件路径（如 'core/java/android/os/Process.java'）
-            start_line: 起始行（从 1 开始，默认 1）
-            end_line: 结束行（默认读取全部）
+            repo: Repository name (e.g. 'frameworks/base').
+            filepath: File path (e.g. 'core/java/android/os/Process.java').
+            start_line: First line to return (1-indexed, default 1).
+            end_line: Last line to return (default: read all).
 
         Returns:
-            dict with keys: content, total_lines, repo, filepath, start_line, end_line
+            dict with keys: content, total_lines, repo, filepath, start_line, end_line.
         """
         # Anchor repo regex to avoid matching multiple repos with a common prefix
         # (e.g. "NetworkStack" otherwise also matches "NetworkStackNext"), which
@@ -261,12 +261,12 @@ class ZoektAdapter(SearchAdapter):
                     body = (resp.text or "").strip()
                     if body.startswith("ambiguous result"):
                         raise ValueError(
-                            f"Zoekt 返回歧义结果: repo={repo!r}, filepath={filepath!r}。"
-                            f"原始响应: {body[:200]}"
+                            f"Zoekt returned ambiguous result: repo={repo!r}, filepath={filepath!r}. "
+                            f"Raw response: {body[:200]}"
                         )
                     raise FileNotFoundError(
-                        f"文件未找到: repo={repo!r}, filepath={filepath!r}。"
-                        "请用 search_file 工具确认正确的 repo 和文件路径。"
+                        f"File not found: repo={repo!r}, filepath={filepath!r}. "
+                        "Use the search_file tool to confirm the correct repo and file path."
                     )
                 resp.raise_for_status()
                 html_text = resp.text
@@ -278,11 +278,11 @@ class ZoektAdapter(SearchAdapter):
             logger.error("Zoekt /print request error: %s", e)
             raise
 
-        # 从所有 <pre> 标签提取文件内容
+        # Extract file content from all <pre> tags
         all_pres = re.findall(r"<pre[^>]*>(.*?)</pre>", html_text, re.DOTALL)
         if not all_pres:
             raise ValueError(
-                f"无法解析 Zoekt 响应，未找到 <pre> 标签: repo={repo!r}, filepath={filepath!r}"
+                f"Failed to parse Zoekt response — no <pre> tags found: repo={repo!r}, filepath={filepath!r}"
             )
 
         all_lines = []
@@ -322,7 +322,7 @@ class ZoektAdapter(SearchAdapter):
     # ─── Private helpers ──────────────────────────────────────
 
     def _extract_repos(self, data: dict[str, Any], top_k: int) -> list[dict[str, Any]]:
-        """从 Zoekt 响应中提取仓库列表。"""
+        """Extract the repository list from a Zoekt response."""
         repos = []
 
         result = data.get("Result") or data.get("result") or data
@@ -360,7 +360,7 @@ class ZoektAdapter(SearchAdapter):
         top_k: int,
         score_threshold: float,
     ) -> list[dict[str, Any]]:
-        """将 Zoekt 原始 JSON 响应转换为标准 records 格式。"""
+        """Convert raw Zoekt JSON response into the standard records format."""
         records = []
 
         result = data.get("Result") or data.get("result") or data
@@ -422,7 +422,7 @@ class ZoektAdapter(SearchAdapter):
         return records
 
     def _build_content_snippet(self, file_match: dict[str, Any]) -> str:
-        """从 Zoekt 文件匹配结果中提取代码片段。"""
+        """Extract a code snippet from a Zoekt file match result."""
         lines_output = []
 
         matches = file_match.get("Matches") or []

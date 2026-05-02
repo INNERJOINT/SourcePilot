@@ -1,9 +1,9 @@
 """
-API Contract 测试
+API Contract tests
 
-验证 SourcePilot gateway 函数返回值的 JSON 序列化/反序列化往返一致性。
-使用 respx 模拟 Zoekt HTTP 响应，直接调用 gateway 函数，
-然后对返回值做 json.dumps + json.loads 确认结构符合预期。
+Verifies round-trip JSON serialization/deserialization of SourcePilot gateway function return values.
+Uses respx to mock Zoekt HTTP responses, calls gateway functions directly,
+then does json.dumps + json.loads to confirm the structure matches expectations.
 """
 
 import json
@@ -14,7 +14,7 @@ import httpx
 from gateway import gateway
 import config
 
-# ─── Mock 数据 ────────────────────────────────────────
+# ─── Mock data ────────────────────────────────────────
 
 MOCK_SEARCH_RESPONSE = {
     "Result": {
@@ -55,14 +55,14 @@ MOCK_PRINT_RESPONSE_HTML = """
 """
 
 
-# ─── 搜索结果 contract 测试 ───────────────────────────
+# ─── Search result contract tests ───────────────────────────
 
 class TestSearchContract:
-    """验证 gateway.search() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.search() return values."""
 
     @pytest.mark.asyncio
     async def test_search_results_have_expected_keys(self):
-        """search 结果经 JSON 往返后包含 title, content, score, metadata"""
+        """search results round-tripped through JSON contain title, content, score, metadata."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -83,7 +83,7 @@ class TestSearchContract:
 
     @pytest.mark.asyncio
     async def test_search_empty_returns_empty_list(self):
-        """search 无结果时返回空列表"""
+        """search with no results returns an empty list."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_EMPTY_RESPONSE)
@@ -96,11 +96,11 @@ class TestSearchContract:
 
 
 class TestSearchSymbolContract:
-    """验证 gateway.search_symbol() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.search_symbol() return values."""
 
     @pytest.mark.asyncio
     async def test_search_symbol_results_have_expected_keys(self):
-        """search_symbol 结果经 JSON 往返后包含 title, content, score, metadata"""
+        """search_symbol results round-tripped through JSON contain title, content, score, metadata."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -120,11 +120,11 @@ class TestSearchSymbolContract:
 
 
 class TestSearchFileContract:
-    """验证 gateway.search_file() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.search_file() return values."""
 
     @pytest.mark.asyncio
     async def test_search_file_results_have_expected_keys(self):
-        """search_file 结果经 JSON 往返后包含 title, content, score, metadata"""
+        """search_file results round-tripped through JSON contain title, content, score, metadata."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -144,11 +144,11 @@ class TestSearchFileContract:
 
 
 class TestSearchRegexContract:
-    """验证 gateway.search_regex() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.search_regex() return values."""
 
     @pytest.mark.asyncio
     async def test_search_regex_results_have_expected_keys(self):
-        """search_regex 结果经 JSON 往返后包含 title, content, score, metadata"""
+        """search_regex results round-tripped through JSON contain title, content, score, metadata."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -167,14 +167,14 @@ class TestSearchRegexContract:
                 assert "metadata" in item
 
 
-# ─── list_repos contract 测试 ─────────────────────────
+# ─── list_repos contract tests ─────────────────────────
 
 class TestListReposContract:
-    """验证 gateway.list_repos() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.list_repos() return values."""
 
     @pytest.mark.asyncio
     async def test_list_repos_results_have_expected_keys(self):
-        """list_repos 结果经 JSON 往返后包含 name, url"""
+        """list_repos results round-tripped through JSON contain name, url."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -191,14 +191,14 @@ class TestListReposContract:
                 assert "url" in item
 
 
-# ─── get_file_content contract 测试 ───────────────────
+# ─── get_file_content contract tests ───────────────────
 
 class TestGetFileContentContract:
-    """验证 gateway.get_file_content() 返回值的 JSON 序列化结构"""
+    """Validates the JSON serialization structure of gateway.get_file_content() return values."""
 
     @pytest.mark.asyncio
     async def test_get_file_content_has_expected_keys(self):
-        """get_file_content 结果经 JSON 往返后包含 content, total_lines, repo, filepath, start_line, end_line"""
+        """get_file_content result round-tripped through JSON contains content, total_lines, repo, filepath, start_line, end_line."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)
@@ -220,7 +220,7 @@ class TestGetFileContentContract:
 
     @pytest.mark.asyncio
     async def test_get_file_content_end_line_none_serializes_as_null(self):
-        """get_file_content end_line=None 序列化为 null，反序列化回 None"""
+        """get_file_content end_line=None serializes as null and deserializes back to None."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)

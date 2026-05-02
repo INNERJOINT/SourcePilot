@@ -1,12 +1,12 @@
 """
-GraphRAG 评测套件
+GraphRAG evaluation suite
 
-默认跳过 (需要 RUN_EVAL=1 或 --run-eval 参数)。
-支持两种模式:
-  EVAL_BACKEND_MODE=live  — 连接真实 Zoekt/Dense/Structural 后端
-  EVAL_BACKEND_MODE=mock  — 跳过，无真实后端时安全运行
+Skipped by default (requires RUN_EVAL=1 or --run-eval argument).
+Supports two modes:
+  EVAL_BACKEND_MODE=live  — connect to real Zoekt/Dense/Structural backends
+  EVAL_BACKEND_MODE=mock  — skip; safe to run without real backends
 
-运行示例:
+Usage example:
   RUN_EVAL=1 EVAL_BACKEND_MODE=live PYTHONPATH=src pytest tests/eval/test_graphrag_eval.py -v
 """
 import json
@@ -14,7 +14,7 @@ import os
 import pathlib
 import pytest
 
-# ─── Eval 门控 ────────────────────────────────────────────────────────────────
+# ─── Eval gate ────────────────────────────────────────────────────────────────
 
 RUN_EVAL = os.getenv("RUN_EVAL", "0") == "1"
 EVAL_BACKEND_MODE = os.getenv("EVAL_BACKEND_MODE", "mock")
@@ -27,7 +27,7 @@ REL_JSONL = EVAL_DIR / "graphrag_relationship_queries.jsonl"
 
 
 def load_jsonl(path: pathlib.Path) -> list[dict]:
-    """加载 JSONL 文件，跳过 _meta 行。"""
+    """Load a JSONL file, skipping _meta rows."""
     rows = []
     with open(path) as f:
         for line in f:
@@ -42,7 +42,7 @@ def load_jsonl(path: pathlib.Path) -> list[dict]:
 
 
 def recall_at_k(results: list[dict], expected_paths: list[str], k: int = 10) -> float:
-    """计算 Recall@K：expected_paths 中至少一条在 top-k 结果中出现则得分 1.0。"""
+    """Compute Recall@K: score 1.0 if at least one expected_path appears in the top-k results."""
     top_k_paths = set()
     for r in results[:k]:
         meta = r.get("metadata", {})
@@ -52,7 +52,7 @@ def recall_at_k(results: list[dict], expected_paths: list[str], k: int = 10) -> 
         top_k_paths.add(r.get("title", ""))
 
     for ep in expected_paths:
-        # 支持部分匹配：expected_path 是 top-k 任一结果的子串
+        # Partial match: expected_path is a substring of any top-k candidate
         for candidate in top_k_paths:
             if ep in candidate or candidate in ep:
                 return 1.0
@@ -60,7 +60,7 @@ def recall_at_k(results: list[dict], expected_paths: list[str], k: int = 10) -> 
 
 
 def reciprocal_rank(results: list[dict], expected_paths: list[str]) -> float:
-    """计算 MRR 分量：返回首个命中位置的倒数。"""
+    """Compute MRR component: reciprocal rank of the first hit."""
     for rank, r in enumerate(results, start=1):
         meta = r.get("metadata", {})
         repo = meta.get("repo", "")
@@ -74,27 +74,27 @@ def reciprocal_rank(results: list[dict], expected_paths: list[str]) -> float:
 
 
 def _print_table(config_name: str, recall: float, mrr: float, n: int):
-    """打印评测结果表格行。"""
+    """Print one row of the evaluation results table."""
     print(f"\n{'─'*60}")
-    print(f"  配置: {config_name} | N={n}")
+    print(f"  Config: {config_name} | N={n}")
     print(f"  Recall@10 = {recall:.3f}  |  MRR = {mrr:.3f}")
     print(f"{'─'*60}")
 
 
-# ─── 主评测测试 ───────────────────────────────────────────────────────────────
+# ─── Main evaluation tests ───────────────────────────────────────────────────
 
-@pytest.mark.skipif(not RUN_EVAL, reason="设置 RUN_EVAL=1 运行评测 (需要真实后端)")
+@pytest.mark.skipif(not RUN_EVAL, reason="Set RUN_EVAL=1 to run evaluation (requires real backends)")
 @pytest.mark.asyncio
 async def test_eval_three_configs():
-    """对三种配置运行所有评测查询，打印 Recall@10 和 MRR 对比表。"""
+    """Run all evaluation queries under three configurations and print Recall@10 / MRR comparison."""
     if EVAL_BACKEND_MODE != "live":
-        pytest.skip("EVAL_BACKEND_MODE=mock，跳过真实后端评测")
+        pytest.skip("EVAL_BACKEND_MODE=mock, skipping real-backend evaluation")
 
     import config
     from gateway.gateway import search
 
     queries = load_jsonl(EVAL_JSONL)
-    assert len(queries) >= 20, f"评测集应有 >=20 条，实际: {len(queries)}"
+    assert len(queries) >= 20, f"Eval set should have >=20 entries, got: {len(queries)}"
 
     configs = [
         ("Zoekt only",          {"DENSE_ENABLED": False, "STRUCTURAL_ENABLED": False}),
@@ -103,7 +103,7 @@ async def test_eval_three_configs():
     ]
 
     for cfg_name, env_overrides in configs:
-        # 临时覆盖 config 属性
+        # Temporarily override config attributes
         original = {k: getattr(config, k) for k in env_overrides}
         for k, v in env_overrides.items():
             setattr(config, k, v)
@@ -127,14 +127,14 @@ async def test_eval_three_configs():
         _print_table(cfg_name, avg_recall, avg_mrr, len(queries))
 
 
-# ─── 关系查询测试 ─────────────────────────────────────────────────────────────
+# ─── Relationship query tests ─────────────────────────────────────────────────
 
-@pytest.mark.skipif(not RUN_EVAL, reason="设置 RUN_EVAL=1 运行评测 (需要真实后端)")
+@pytest.mark.skipif(not RUN_EVAL, reason="Set RUN_EVAL=1 to run evaluation (requires real backends)")
 @pytest.mark.asyncio
 async def test_relationship_queries():
-    """关系查询：>=8 条中 top-1 命中 expected_paths[0]（live 模式）。"""
+    """Relationship queries: >= 8 with top-1 hitting expected_paths[0] (live mode)."""
     if EVAL_BACKEND_MODE != "live":
-        pytest.skip("EVAL_BACKEND_MODE=mock，跳过真实后端评测")
+        pytest.skip("EVAL_BACKEND_MODE=mock, skipping real-backend evaluation")
 
     from gateway.gateway import search
 
@@ -147,30 +147,30 @@ async def test_relationship_queries():
         if recall_at_k(results, row["expected_paths"][:1]) == 1.0:
             hits += 1
 
-    print(f"\n关系查询命中: {hits}/{len(rel_queries)}")
+    print(f"\nRelationship query hits: {hits}/{len(rel_queries)}")
     assert hits >= len(rel_queries) * 0.5, (
-        f"关系查询命中率过低: {hits}/{len(rel_queries)}"
+        f"Relationship query hit rate too low: {hits}/{len(rel_queries)}"
     )
 
 
-# ─── 集合健全性测试（不依赖后端，始终运行） ──────────────────────────────────
+# ─── Dataset sanity tests (no backend required, always run) ──────────────────
 
 def test_eval_jsonl_structure():
-    """验证 graphrag_eval.jsonl 格式正确，条目数 >=20，包含必要字段。"""
+    """Verify graphrag_eval.jsonl is correctly formatted, has >=20 entries, and contains required fields."""
     queries = load_jsonl(EVAL_JSONL)
-    assert len(queries) >= 20, f"评测集应有 >=20 条，实际: {len(queries)}"
+    assert len(queries) >= 20, f"Eval set should have >=20 entries, got: {len(queries)}"
     required_fields = {"id", "query", "expected_paths", "category"}
     for row in queries:
         missing = required_fields - set(row.keys())
-        assert not missing, f"条目 {row.get('id')} 缺少字段: {missing}"
+        assert not missing, f"Entry {row.get('id')} missing fields: {missing}"
         assert isinstance(row["expected_paths"], list) and len(row["expected_paths"]) >= 1
         assert row["category"] in {"symbol", "concept", "relationship"}
 
 
 def test_relationship_jsonl_structure():
-    """验证 graphrag_relationship_queries.jsonl 格式正确，条目数 >=8。"""
+    """Verify graphrag_relationship_queries.jsonl is correctly formatted and has >=8 entries."""
     queries = load_jsonl(REL_JSONL)
-    assert len(queries) >= 8, f"关系查询集应有 >=8 条，实际: {len(queries)}"
+    assert len(queries) >= 8, f"Relationship query set should have >=8 entries, got: {len(queries)}"
     for row in queries:
         assert "query" in row
         assert "expected_paths" in row
@@ -178,34 +178,34 @@ def test_relationship_jsonl_structure():
 
 
 def test_package_diversity():
-    """验证评测集涵盖 >=5 个不同包路径（cut -d/ -f1-4，与验收命令一致）。"""
+    """Verify the eval set covers >=5 distinct package paths (first 4 path segments, matching the acceptance command)."""
     queries = load_jsonl(EVAL_JSONL)
     packages = set()
     for row in queries:
         for ep in row["expected_paths"]:
             parts = ep.split("/")
-            # 取前4段（等价于 cut -d/ -f1-4）
+            # Take first 4 segments (equivalent to cut -d/ -f1-4)
             pkg = "/".join(parts[:4]) if len(parts) >= 4 else ep
             packages.add(pkg)
-    assert len(packages) >= 5, f"包多样性不足：{len(packages)} 个 (需要 >=5): {packages}"
+    assert len(packages) >= 5, f"Insufficient package diversity: {len(packages)} (need >=5): {packages}"
 
 
-# ─── 基线延迟采集 ────────────────────────────────────────────────────────────
+# ─── Baseline latency capture ────────────────────────────────────────────────
 
-@pytest.mark.skipif(not RUN_EVAL, reason="设置 RUN_EVAL=1 运行基线延迟采集")
+@pytest.mark.skipif(not RUN_EVAL, reason="Set RUN_EVAL=1 to capture baseline latencies")
 def test_capture_baseline_latencies():
     """
-    采集基线延迟：从 audit.log 读取 zoekt_search 和 dense_search 的 P95。
+    Capture baseline latencies: read zoekt_search and dense_search P95 from audit.log.
 
-    输出写入 tests/eval/baseline_latencies.json。
-    见 tests/eval/README.md 了解用途。
+    Output is written to tests/eval/baseline_latencies.json.
+    See tests/eval/README.md for usage.
     """
     import json as _json
     import pathlib as _pathlib
 
     AUDIT_LOG = _pathlib.Path("/opt/aosp/aosp_project2/Dify/audit.log")
     if not AUDIT_LOG.exists():
-        pytest.skip("audit.log 不存在，跳过基线采集")
+        pytest.skip("audit.log does not exist, skipping baseline capture")
 
     latencies: dict[str, list[float]] = {"zoekt_search": [], "dense_search": [], "structural_search": []}
     with open(AUDIT_LOG) as f:
@@ -238,5 +238,5 @@ def test_capture_baseline_latencies():
 
     out_path = EVAL_DIR / "baseline_latencies.json"
     out_path.write_text(_json.dumps(result, indent=2, ensure_ascii=False))
-    print(f"\n基线延迟已写入: {out_path}")
+    print(f"\nBaseline latencies written to: {out_path}")
     print(_json.dumps(result, indent=2, ensure_ascii=False))

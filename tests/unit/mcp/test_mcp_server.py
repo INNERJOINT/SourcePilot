@@ -1,7 +1,7 @@
 """
-MCP Server 处理器测试 (FastMCP)
+MCP Server handler tests (FastMCP)
 
-使用 respx 模拟 SourcePilot HTTP API 响应，无需运行真实的 SourcePilot 服务。
+Uses respx to mock SourcePilot HTTP API responses; no real SourcePilot service required.
 Each test creates its own in-memory MCP session to avoid anyio cancel-scope issues.
 """
 
@@ -58,12 +58,12 @@ async def _mcp_session():
             yield session
 
 
-# ─── MCP Server 工具测试 ─────────────────────────────
+# ─── MCP Server tool tests ─────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_mcp_search_code():
-    """MCP search_code 工具调用 → POST /api/search"""
+    """MCP search_code tool call → POST /api/search"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/search").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
@@ -78,7 +78,7 @@ async def test_mcp_search_code():
 
 @pytest.mark.asyncio
 async def test_mcp_search_symbol():
-    """MCP search_symbol 工具調用 → POST /api/search_symbol"""
+    """MCP search_symbol tool call → POST /api/search_symbol"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/search_symbol").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
@@ -92,7 +92,7 @@ async def test_mcp_search_symbol():
 
 @pytest.mark.asyncio
 async def test_mcp_search_file():
-    """MCP search_file 工具調用 → POST /api/search_file"""
+    """MCP search_file tool call → POST /api/search_file"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/search_file").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
@@ -106,7 +106,7 @@ async def test_mcp_search_file():
 
 @pytest.mark.asyncio
 async def test_mcp_search_regex():
-    """MCP search_regex 工具調用 → POST /api/search_regex"""
+    """MCP search_regex tool call → POST /api/search_regex"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/search_regex").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
@@ -120,7 +120,7 @@ async def test_mcp_search_regex():
 
 @pytest.mark.asyncio
 async def test_mcp_list_repos():
-    """MCP list_repos 工具調用 → POST /api/list_repos"""
+    """MCP list_repos tool call → POST /api/list_repos"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/list_repos").mock(
             return_value=httpx.Response(200, json=MOCK_SP_LIST_REPOS)
@@ -132,7 +132,7 @@ async def test_mcp_list_repos():
 
 @pytest.mark.asyncio
 async def test_mcp_get_file_content():
-    """MCP get_file_content 工具調用 → POST /api/get_file_content"""
+    """MCP get_file_content tool call → POST /api/get_file_content"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/get_file_content").mock(
             return_value=httpx.Response(200, json=MOCK_SP_FILE_CONTENT)
@@ -147,7 +147,7 @@ async def test_mcp_get_file_content():
 
 @pytest.mark.asyncio
 async def test_mcp_empty_results():
-    """无结果时返回 total=0 / 空 hits"""
+    """When there are no results, returns total=0 / empty hits"""
     with respx.mock:
         respx.post(f"{SP_URL}/api/search").mock(
             return_value=httpx.Response(200, json=[])
@@ -160,19 +160,19 @@ async def test_mcp_empty_results():
         assert '"total": 0' in text or '"hits": []' in text
 
 
-# ─── MCP NL 搜索测试 ─────────────────────────────────
+# ─── MCP NL search tests ─────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_mcp_search_nl_query_hits_sourcepilot():
-    """自然语言查询正确转发到 SourcePilot /api/search"""
+    """Natural language query is correctly forwarded to SourcePilot /api/search"""
     with respx.mock:
         route = respx.post(f"{SP_URL}/api/search").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_code", {"inp": {"query": "Android 启动流程怎么初始化"}}
+                "search_code", {"inp": {"query": "How does the Android boot process initialize"}}
             )
         assert route.called
         assert result.content
@@ -180,7 +180,7 @@ async def test_mcp_search_nl_query_hits_sourcepilot():
 
 @pytest.mark.asyncio
 async def test_mcp_search_exact_query_hits_sourcepilot():
-    """精确查询同样转发到 SourcePilot /api/search"""
+    """Exact query is also forwarded to SourcePilot /api/search"""
     with respx.mock:
         route = respx.post(f"{SP_URL}/api/search").mock(
             return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)

@@ -1,32 +1,33 @@
 """
-config/base.py 单元测试
+Unit tests for config/base.py
 
-config 模块在 import 时从环境变量读取配置。
-全局 conftest.py 在 import 前设置了 ZOEKT_URL="http://mock-zoekt:6070"、
-NL_ENABLED="false"、AUDIT_ENABLED="false"，此处验证读取结果正确。
+The config module reads settings from environment variables at import time.
+The global conftest.py sets ZOEKT_URL="http://mock-zoekt:6070",
+NL_ENABLED="false", and AUDIT_ENABLED="false" before import; these tests verify
+those values are read correctly.
 """
 
 import config
 
 
 class TestConfigDefaults:
-    """验证 conftest 设置的环境变量被正确读入 config 模块。"""
+    """Verify that environment variables set by conftest are read correctly into the config module."""
 
     def test_zoekt_url(self):
-        # conftest 设置 ZOEKT_URL=http://mock-zoekt:6070
+        # conftest sets ZOEKT_URL=http://mock-zoekt:6070
         assert config.ZOEKT_URL == "http://mock-zoekt:6070"
 
     def test_nl_enabled_false(self):
-        # conftest 设置 NL_ENABLED=false → bool False
+        # conftest sets NL_ENABLED=false → bool False
         assert config.NL_ENABLED is False
 
     def test_audit_enabled_false(self):
-        # conftest 设置 AUDIT_ENABLED=false → bool False
+        # conftest sets AUDIT_ENABLED=false → bool False
         assert config.AUDIT_ENABLED is False
 
 
 class TestConfigTypes:
-    """验证各配置项的类型转换正确。"""
+    """Verify that each config value is converted to the correct type."""
 
     def test_default_context_lines_is_int(self):
         assert isinstance(config.DEFAULT_CONTEXT_LINES, int)
@@ -48,7 +49,7 @@ class TestConfigTypes:
 
 
 class TestConfigStringValues:
-    """验证字符串类型配置项存在且为 str。"""
+    """Verify that string config values exist and are of type str."""
 
     def test_nl_model_is_str(self):
         assert isinstance(config.NL_MODEL, str)
@@ -64,19 +65,19 @@ class TestConfigStringValues:
 
 
 class TestBooleanFalseParsing:
-    """验证 "false" 字符串被解析为 bool False。"""
+    """Verify that the string "false" is parsed as bool False."""
 
     def test_nl_enabled_false_parsing(self):
-        # conftest 设置 NL_ENABLED="false"，期望解析为 False
+        # conftest sets NL_ENABLED="false", expected to parse as False
         assert config.NL_ENABLED is False
 
     def test_audit_enabled_false_parsing(self):
-        # conftest 设置 AUDIT_ENABLED="false"，期望解析为 False
+        # conftest sets AUDIT_ENABLED="false", expected to parse as False
         assert config.AUDIT_ENABLED is False
 
 
 class TestConfigDefaultValues:
-    """验证未被 conftest 覆盖的配置项有合理的默认值。"""
+    """Verify that config values not overridden by conftest have sensible defaults."""
 
     def test_default_context_lines_positive(self):
         assert config.DEFAULT_CONTEXT_LINES > 0
@@ -88,7 +89,7 @@ class TestConfigDefaultValues:
         assert config.NL_CACHE_TTL > 0
 
     def test_nl_api_base_default(self):
-        # 未设置则用 deepseek 默认地址
+        # falls back to the deepseek default when not set
         assert config.NL_API_BASE == "https://api.deepseek.com/v1"
 
     def test_nl_model_default(self):

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-build_dense_index.py — 向量索引构建脚本
+build_dense_index.py — Vector index build script
 
-从 Zoekt 获取 frameworks/base 的文件列表，滑动窗口 chunk 分割后
-通过 embedding 服务写入 Qdrant 向量数据库。
+Fetches the file list for frameworks/base from Zoekt, splits files into
+sliding-window chunks, and writes embeddings to the Qdrant vector database
+via the embedding service.
 
 Usage:
     PYTHONPATH=src python scripts/build_dense_index.py [--repos frameworks/base] [--batch-size 32]
@@ -77,14 +78,14 @@ def sliding_window_chunks(
     window_size: int = 100,
     overlap: int = 50,
 ) -> list[dict]:
-    """将文件内容按滑动窗口切分为 chunks。
+    """Split file content into chunks using a sliding window.
 
     Args:
-        content: 文件全文
-        repo: 仓库名
-        path: 文件路径
-        window_size: 窗口大小（行数）
-        overlap: 重叠行数
+        content: Full file text
+        repo: Repository name
+        path: File path
+        window_size: Window size in lines
+        overlap: Number of overlapping lines
 
     Returns:
         list of chunk dicts with metadata
@@ -107,7 +108,7 @@ def sliding_window_chunks(
         if not chunk_text.strip():
             continue
 
-        # 推断语言
+        # Infer language
         lang = _infer_language(path)
 
         chunks.append({
@@ -127,7 +128,7 @@ def sliding_window_chunks(
 
 
 def _infer_language(path: str) -> str:
-    """从文件扩展名推断语言。"""
+    """Infer language from file extension."""
     ext_map = {
         ".java": "java",
         ".kt": "kotlin",
@@ -152,7 +153,7 @@ def _infer_language(path: str) -> str:
 
 
 def scan_source_files(source_dir: str, repo: str) -> list[dict]:
-    """扫描本地目录，返回源码文件列表。"""
+    """Scan local directory and return a list of source files."""
     files = []
     for root, _dirs, filenames in os.walk(source_dir):
         for fname in filenames:
@@ -166,7 +167,7 @@ def scan_source_files(source_dir: str, repo: str) -> list[dict]:
 
 
 def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dict]:
-    """读取本地文件并切分为 chunks。"""
+    """Read a local file and split it into chunks."""
     try:
         with open(entry["full_path"], encoding="utf-8", errors="replace") as f:
             content = f.read()
@@ -177,7 +178,7 @@ def read_and_chunk_file(entry: dict, window_size: int, overlap: int) -> list[dic
 
 
 async def build_index(args, collection_name: str, embedding_model: str | None = None):
-    """主索引构建流程。"""
+    """Main index build workflow."""
     from adapters.embedding import EmbeddingClient
     from config import (
         DENSE_EMBEDDING_DIM,
@@ -196,7 +197,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         base_url=DENSE_EMBEDDING_URL, model=embedding_model or DENSE_EMBEDDING_MODEL
     )
 
-    # 1. 扫描本地文件
+    # 1. Scan local files
     logger.info("Scanning source files in %s ...", args.source_dir)
     files = scan_source_files(args.source_dir, repo=args.repo_name)
     logger.info("Found %d source files", len(files))
@@ -204,7 +205,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         logger.error("No source files found in %s", args.source_dir)
         return
 
-    # 2. 切分 chunks
+    # 2. Split into chunks
     logger.info("Chunking files (window=%d, overlap=%d) ...", args.window_size, args.overlap)
     all_chunks = []
     for i, f in enumerate(files):
@@ -220,7 +221,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         logger.error("No chunks generated. Check file content retrieval.")
         return
 
-    # 3. 批量 embedding（并发）
+    # 3. Batch embedding (concurrent)
     logger.info(
         "Generating embeddings (batch_size=%d, concurrency=%d) ...",
         args.batch_size, args.concurrency,
@@ -254,7 +255,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         batch_end = min(batch_start + args.batch_size, len(texts))
         tasks.append(embed_batch(batch_start, batch_end))
 
-    # 分组执行并报告进度；return_exceptions 防止单任务异常冲掉整组
+    # Run groups and report progress; return_exceptions prevents one task failure from cancelling the group
     chunk_size = 500
     for group_start in range(0, len(tasks), chunk_size):
         group = tasks[group_start:group_start + chunk_size]
@@ -277,13 +278,13 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
     if failed_ranges:
         logger.warning("Failed batch ranges (first 20): %s", failed_ranges[:20])
 
-    # 4. 写入 Qdrant
+    # 4. Write to Qdrant
     logger.info("Writing to Qdrant (collection=%s) ...", DENSE_COLLECTION_NAME)
     from qdrant_client import QdrantClient, models
 
     client = QdrantClient(url=DENSE_VECTOR_DB_URL)
 
-    # 创建 collection（如果不存在）
+    # Create collection if it does not exist
     if not client.collection_exists(DENSE_COLLECTION_NAME):
         client.create_collection(
             collection_name=DENSE_COLLECTION_NAME,
@@ -296,7 +297,7 @@ async def build_index(args, collection_name: str, embedding_model: str | None = 
         )
         logger.info("Created collection '%s' with HNSW index (cosine)", DENSE_COLLECTION_NAME)
 
-    # 批量插入（跳过 embedding 失败的 chunk）
+    # Batch insert (skip chunks whose embedding failed)
     insert_batch_size = 1000
     total_inserted = 0
     total_skipped = 0

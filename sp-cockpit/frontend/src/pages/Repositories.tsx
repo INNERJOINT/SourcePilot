@@ -119,7 +119,7 @@ export default function Repositories() {
           data-testid="filter-backend"
         >
           {BACKENDS.map((b) => (
-            <option key={b} value={b}>{b === "all" ? "所有 backend" : b}</option>
+            <option key={b} value={b}>{b === "all" ? "All backends" : b}</option>
           ))}
         </select>
         <select
@@ -129,7 +129,7 @@ export default function Repositories() {
           data-testid="filter-status"
         >
           {STATUSES.map((s) => (
-            <option key={s} value={s}>{s === "all" ? "所有状态" : s}</option>
+            <option key={s} value={s}>{s === "all" ? "All statuses" : s}</option>
           ))}
         </select>
       </div>
@@ -140,19 +140,19 @@ export default function Repositories() {
         <table className="w-full text-sm">
           <thead className="bg-slate-100 text-left">
             <tr>
-              <th className="p-2">仓库路径</th>
+              <th className="p-2">Repo Path</th>
               <th className="p-2">Backend</th>
               <th
                 className="p-2 cursor-pointer select-none hover:bg-slate-200"
                 onClick={() => setSortAsc((v) => !v)}
                 data-testid="sort-last-finished"
               >
-                最近完成 {sortAsc ? "↑" : "↓"}
+                Last Finished {sortAsc ? "↑" : "↓"}
               </th>
-              <th className="p-2">耗时</th>
-              <th className="p-2">状态</th>
-              <th className="p-2">实体数</th>
-              <th className="p-2">操作</th>
+              <th className="p-2">Duration</th>
+              <th className="p-2">Status</th>
+              <th className="p-2">Entities</th>
+              <th className="p-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -172,7 +172,7 @@ export default function Repositories() {
                       onClick={() => navigate(`/repos/${repo.id}`)}
                       className="text-blue-600 hover:underline text-xs"
                     >
-                      详情
+                      Details
                     </button>
                     <DenseTriggerGuard
                       repoPath={repo.repo_path}
@@ -185,7 +185,7 @@ export default function Repositories() {
                           className="text-amber-600 hover:underline text-xs"
                           data-testid={`trigger-${repo.id}`}
                         >
-                          重新索引
+                          Re-index
                         </button>
                       )}
                     </DenseTriggerGuard>
@@ -194,7 +194,7 @@ export default function Repositories() {
                       className="text-red-600 hover:underline text-xs"
                       data-testid={`delete-${repo.id}`}
                     >
-                      删除
+                      Delete
                     </button>
                   </div>
                 </td>
@@ -212,8 +212,8 @@ export default function Repositories() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="确认删除"
-        message={deleteTarget ? `确认删除仓库 ${deleteTarget.repo_path} (${deleteTarget.backend})?` : ""}
+        title="Confirm Delete"
+        message={deleteTarget ? `Delete repository ${deleteTarget.repo_path} (${deleteTarget.backend})?` : ""}
         onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
         onCancel={() => setDeleteTarget(null)}
       />

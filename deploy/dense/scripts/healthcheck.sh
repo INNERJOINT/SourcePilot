@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 健康检查：Qdrant + Embedding 服务
+# Health check: Qdrant + Embedding service
 set -euo pipefail
 
 QDRANT_HOST="${QDRANT_HOST:-localhost}"
@@ -10,7 +10,7 @@ EMBEDDING_PORT="${EMBEDDING_PORT:-8080}"
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 ERRORS=0
 
-# 1. Qdrant 健康检查
+# 1. Qdrant health check
 echo "Checking Qdrant at ${QDRANT_HOST}:${QDRANT_PORT}..."
 if curl -sf "http://${QDRANT_HOST}:${QDRANT_PORT}/healthz" >/dev/null 2>&1; then
     echo "  ✓ Qdrant healthy"
@@ -19,7 +19,7 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-# 2. Embedding 服务健康检查（缓存响应供 MODEL_VERSION 校验复用）
+# 2. Embedding service health check (cache response for MODEL_VERSION cross-check)
 echo "Checking Embedding at ${EMBEDDING_HOST}:${EMBEDDING_PORT}..."
 HEALTH_JSON=$(curl -sf "http://${EMBEDDING_HOST}:${EMBEDDING_PORT}/health" 2>/dev/null || echo "")
 if [ -n "$HEALTH_JSON" ]; then
@@ -29,7 +29,7 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-# 3. MODEL_VERSION 交叉校验
+# 3. MODEL_VERSION cross-check
 if [ -f "$DIR/MODEL_VERSION" ] && [ -n "$HEALTH_JSON" ]; then
     EXPECTED_MODEL=$(grep -oP 'model=\K\S+' "$DIR/MODEL_VERSION")
     EXPECTED_DIM=$(grep -oP 'dim=\K\S+' "$DIR/MODEL_VERSION")

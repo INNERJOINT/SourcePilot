@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingClient:
-    """Embedding 服务 HTTP 客户端，兼容 OpenAI embedding API 格式。"""
+    """HTTP client for the embedding service, compatible with the OpenAI embedding API format."""
 
     def __init__(self, base_url: str, model: str, timeout: float = 120.0):
         self._base_url = base_url.rstrip("/")
@@ -28,13 +28,13 @@ class EmbeddingClient:
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """批量文本 embedding。
+        """Batch text embedding.
 
         Args:
-            texts: 待 embedding 的文本列表
+            texts: List of texts to embed.
 
         Returns:
-            每条文本对应的向量列表
+            List of vectors, one per input text.
         """
         payload: dict[str, Any] = {
             "input": texts,
@@ -61,6 +61,6 @@ class EmbeddingClient:
         return [item["embedding"] for item in items]
 
     async def embed_query(self, query: str) -> list[float]:
-        """单条查询 embedding（便捷方法）。"""
+        """Single-query embedding (convenience method)."""
         results = await self.embed([query])
         return results[0]

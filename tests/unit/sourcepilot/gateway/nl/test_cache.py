@@ -1,9 +1,9 @@
 """
-gateway/nl/cache.py 单元测试
+Unit tests for gateway/nl/cache.py
 
-覆盖概念映射表命中、LRU 缓存 miss/hit、TTL 过期、LRU 驱逐、hash key 规范化。
+Covers concept-map hits, LRU cache miss/hit, TTL expiry, LRU eviction, and hash key normalization.
 
-注意：_cache 和 _concept_map 是模块级全局变量，测试间必须清理以防串污。
+Note: _cache and _concept_map are module-level globals; tests must clean up between runs to prevent cross-contamination.
 """
 
 import time
@@ -16,7 +16,7 @@ from gateway.nl.cache import get_cached_rewrite, set_cached_rewrite
 
 @pytest.fixture(autouse=True)
 def clean_cache():
-    """每个测试前后清空 _cache，防止测试间串污。"""
+    """Clear _cache before and after each test to prevent cross-test contamination."""
     cache_module._cache.clear()
     yield
     cache_module._cache.clear()
@@ -24,7 +24,7 @@ def clean_cache():
 
 @pytest.fixture
 def concept_map_with_data():
-    """临时注入测试用概念映射数据，测试后恢复。"""
+    """Temporarily inject test concept-map data, then restore the original after the test."""
     original = dict(cache_module._concept_map)
     cache_module._concept_map["ActivityManager"] = [
         {"query": "ActivityManager", "rationale": "concept_map"},
@@ -35,38 +35,38 @@ def concept_map_with_data():
     cache_module._concept_map.update(original)
 
 
-# ─── 概念映射表测试 ───────────────────────────────────────────────────────────
+# ─── Concept-map tests ───────────────────────────────────────────────────────
 
 class TestConceptMap:
-    """concept_map 命中时直接返回映射结果，不走 LRU 缓存。"""
+    """When a concept-map key is hit, the mapped result is returned directly without touching the LRU cache."""
 
     def test_concept_map_hit(self, concept_map_with_data):
-        # query 中包含 "ActivityManager" → 命中概念映射
+        # query contains "ActivityManager" → concept-map hit
         result = get_cached_rewrite("ActivityManager是什么")
         assert result is not None
         queries = [q["query"] for q in result]
         assert "ActivityManager" in queries
 
     def test_concept_map_miss(self, concept_map_with_data):
-        # query 不包含任何 concept key → miss
+        # query contains no concept key → miss
         result = get_cached_rewrite("完全不相关的查询xyz123")
         assert result is None
 
     def test_concept_map_substring_match(self, concept_map_with_data):
-        # "ActivityManager" 是 query 的子串即可命中
+        # "ActivityManager" only needs to be a substring of the query to hit
         result = get_cached_rewrite("关于ActivityManager的启动流程")
         assert result is not None
 
     def test_concept_map_exact_key(self, concept_map_with_data):
-        # query 与 concept key 完全相同也能命中
+        # query identical to the concept key also hits
         result = get_cached_rewrite("ActivityManager")
         assert result is not None
 
 
-# ─── LRU 缓存 miss ────────────────────────────────────────────────────────────
+# ─── LRU cache miss ────────────────────────────────────────────────────────────
 
 class TestCacheMiss:
-    """空缓存或未设置的 query → 返回 None。"""
+    """Empty cache or unset query → returns None."""
 
     def test_empty_cache_returns_none(self):
         assert get_cached_rewrite("some query") is None
@@ -76,10 +76,10 @@ class TestCacheMiss:
         assert get_cached_rewrite("query B") is None
 
 
-# ─── set + get 往返测试 ────────────────────────────────────────────────────────
+# ─── set + get round-trip tests ──────────────────────────────────────────────
 
 class TestSetGet:
-    """set_cached_rewrite 后能通过 get_cached_rewrite 取回相同结果。"""
+    """After set_cached_rewrite, get_cached_rewrite returns the same data."""
 
     def test_set_then_get(self):
         data = [{"query": "SystemServer", "rationale": "test"}]
@@ -88,7 +88,7 @@ class TestSetGet:
         assert result == data
 
     def test_overwrite_same_query(self):
-        # 对同一 query 两次 set，取最后一次
+        # two sets for the same query; get returns the second
         data1 = [{"query": "foo", "rationale": "first"}]
         data2 = [{"query": "bar", "rationale": "second"}]
         set_cached_rewrite("my query", data1)
@@ -97,17 +97,17 @@ class TestSetGet:
         assert result == data2
 
 
-# ─── TTL 过期测试 ─────────────────────────────────────────────────────────────
+# ─── TTL expiry tests ─────────────────────────────────────────────────────────
 
 class TestTTLExpiry:
-    """缓存条目超过 NL_CACHE_TTL 后应返回 None 并删除条目。"""
+    """Cache entries older than NL_CACHE_TTL should return None and be deleted."""
 
     def test_ttl_expiry(self, monkeypatch):
-        # 使用不在 concept_map 中的查询键（避免 concept_map 命中干扰）
+        # use a key not in concept_map (to avoid concept_map hit interference)
         data = [{"query": "CustomClassXyz", "rationale": "test"}]
         set_cached_rewrite("CustomClassXyz唯一测试查询", data)
 
-        # 将 cache_module.time.time 伪造到 TTL 之后
+        # fake cache_module.time.time to be past the TTL
         from config import NL_CACHE_TTL
         future_time = time.time() + NL_CACHE_TTL + 1
         monkeypatch.setattr(cache_module.time, "time", lambda: future_time)
@@ -116,8 +116,8 @@ class TestTTLExpiry:
         assert result is None
 
     def test_entry_deleted_after_ttl(self, monkeypatch):
-        # TTL 过期后 _cache 中对应条目被删除
-        # 使用不在 concept_map 中的查询键
+        # after TTL expiry the corresponding entry is removed from _cache
+        # use a key not in concept_map
         data = [{"query": "UniqueTestToken999", "rationale": "test"}]
         set_cached_rewrite("UniqueTestToken999初始化", data)
 
@@ -133,11 +133,11 @@ class TestTTLExpiry:
         assert key not in cache_module._cache
 
     def test_within_ttl_not_expired(self, monkeypatch):
-        # 使用不在 concept_map 中的查询键
+        # use a key not in concept_map
         data = [{"query": "PackageManagerXyz", "rationale": "test"}]
         set_cached_rewrite("PackageManagerXyz安装测试", data)
 
-        # 伪造时间为 TTL - 1 秒内（仍有效）
+        # fake time to TTL - 1 second (still valid)
         from config import NL_CACHE_TTL
         near_future = time.time() + NL_CACHE_TTL - 1
         monkeypatch.setattr(cache_module.time, "time", lambda: near_future)
@@ -146,19 +146,19 @@ class TestTTLExpiry:
         assert result == data
 
 
-# ─── LRU 驱逐测试 ─────────────────────────────────────────────────────────────
+# ─── LRU eviction tests ───────────────────────────────────────────────────────
 
 class TestLRUEviction:
-    """超过 1000 条时驱逐最旧条目，保持缓存大小 ≤ 1000。"""
+    """After exceeding 1000 entries the oldest is evicted, keeping cache size ≤ 1000."""
 
     def test_eviction_keeps_size_at_most_1000(self):
-        # 写入 1001 条，缓存应驱逐最旧的一条，保持 ≤ 1000
+        # write 1001 entries; cache should evict the oldest and stay ≤ 1000
         for i in range(1001):
             set_cached_rewrite(f"query_{i}", [{"query": f"q{i}", "rationale": "r"}])
         assert len(cache_module._cache) <= 1000
 
     def test_oldest_entry_evicted(self):
-        # 最先写入的 "query_0" 应该被驱逐
+        # the first entry written ("query_0") should be evicted
         from gateway.nl.cache import _hash_key
         first_key = _hash_key("query_0")
 
@@ -168,10 +168,10 @@ class TestLRUEviction:
         assert first_key not in cache_module._cache
 
 
-# ─── Hash Key 规范化测试 ──────────────────────────────────────────────────────
+# ─── Hash key normalization tests ─────────────────────────────────────────────
 
 class TestHashKey:
-    """_hash_key 对 strip().lower() 后的内容做 md5，大小写/空白不影响命中。"""
+    """_hash_key computes md5 over strip().lower() content; case/whitespace differences don't prevent hits."""
 
     def test_same_key_case_insensitive(self):
         from gateway.nl.cache import _hash_key
@@ -182,7 +182,7 @@ class TestHashKey:
         assert _hash_key("  foo  ") == _hash_key("foo")
 
     def test_case_insensitive_cache_hit(self):
-        # 用大写 set，用小写 get → 应命中
+        # set with uppercase, get with lowercase → should hit
         data = [{"query": "Foo", "rationale": "test"}]
         set_cached_rewrite("FOO QUERY", data)
         result = get_cached_rewrite("foo query")

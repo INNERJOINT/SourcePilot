@@ -1,7 +1,7 @@
 """
-Zoekt HTTP API mock 响应数据
+Zoekt HTTP API mock response data
 
-从 test_sourcepilot.py 和 test_api_contract.py 提取的共享 mock 数据。
+Shared mock data extracted from test_sourcepilot.py and test_api_contract.py.
 """
 
 MOCK_SEARCH_RESPONSE = {

@@ -32,7 +32,7 @@ export default function AddRepoModal({ open, onClose, onAdded }: AddRepoModalPro
     e.preventDefault();
     if (!repoPath.trim()) return;
     if (checked.size === 0) {
-      setError("至少选择一个 backend");
+      setError("Select at least one backend");
       return;
     }
     setSubmitting(true);
@@ -66,10 +66,10 @@ export default function AddRepoModal({ open, onClose, onAdded }: AddRepoModalPro
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-        <h2 className="text-lg font-semibold">添加仓库 / 触发索引</h2>
+        <h2 className="text-lg font-semibold">Add Repository / Trigger Indexing</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">仓库路径</label>
+            <label className="block text-sm font-medium mb-1">Repository Path</label>
             <input
               type="text"
               value={repoPath}
@@ -115,14 +115,14 @@ export default function AddRepoModal({ open, onClose, onAdded }: AddRepoModalPro
               className="px-4 py-2 border rounded hover:bg-slate-50"
               disabled={submitting}
             >
-              取消
+              Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? "提交中..." : "提交"}
+              {submitting ? "Submitting..." : "Submit"}
             </button>
           </div>
         </form>

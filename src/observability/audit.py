@@ -1,13 +1,13 @@
 """
-MCP 审计日志模块
+Audit logging module
 
-提供结构化 JSON 审计日志，记录每次工具调用的详细信息（耗时、结果数、状态等），
-支持性能调优和运营监控。
+Provides structured JSON audit logs that record detailed information about each tool call
+(latency, result count, status, etc.) to support performance tuning and operational monitoring.
 
-用法:
+Usage:
     from observability.audit import setup_audit_logger, audit_tool_call, audit_stats
 
-    setup_audit_logger("stdio")  # 或 "http"
+    setup_audit_logger("stdio")  # or "http"
 
     async with audit_tool_call("search_code", {"query": "foo"}, "mcp") as ctx:
         results = await do_search()
@@ -31,29 +31,29 @@ from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 import config
 
 
-# ─── 请求级 trace_id ────────────────────────────────────
+# ─── Request-scoped trace_id ───────────────────────────────────────────
 # TODO: extract trace_id management to observability/tracing.py when OTel/spans are added
 
 _trace_id: ContextVar[str] = ContextVar("audit_trace_id", default="")
 
 
 def new_trace_id() -> str:
-    """生成新的 trace_id 并设置到当前上下文。返回 trace_id。"""
+    """Generate a new trace_id, set it on the current context, and return it."""
     tid = uuid.uuid4().hex
     _trace_id.set(tid)
     return tid
 
 
 def get_trace_id() -> str:
-    """获取当前上下文的 trace_id（无则返回空字符串）。"""
+    """Return the trace_id for the current context (empty string if none)."""
     return _trace_id.get()
 
 
-# ─── JSON 格式化器 ────────────────────────────────────
+# ─── JSON formatter ──────────────────────────────────────
 
 
 def _truncate(obj, max_bytes: int = 1024) -> tuple:
-    """JSON 序列化后超过 max_bytes 则截断，返回 (value, truncated_flag)。"""
+    """Serialize to JSON and truncate if over max_bytes; returns (value, truncated_flag)."""
     try:
         serialized = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError):
@@ -64,12 +64,12 @@ def _truncate(obj, max_bytes: int = 1024) -> tuple:
 
 
 class JsonFormatter(logging.Formatter):
-    """将 LogRecord 格式化为单行 JSON，按 event 类型使用不同 schema。"""
+    """Format a LogRecord as single-line JSON, using different schemas per event type."""
 
     def format(self, record: logging.LogRecord) -> str:
         event = getattr(record, "event", "unknown")
 
-        # 公共字段
+        # Common fields
         data: dict = {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3],
             "trace_id": getattr(record, "trace_id", "") or get_trace_id(),
@@ -92,7 +92,7 @@ class JsonFormatter(logging.Formatter):
         elif event == "pipeline_stage":
             data["stage"] = getattr(record, "stage", "")
             data["stage_args"] = getattr(record, "stage_args", {})
-            # 用户决策：pipeline_stage 不截断，保留完整 records 数组以便审计
+            # User decision: pipeline_stage is not truncated — keep full records array for auditing
             data["stage_result"] = getattr(record, "stage_result", {})
 
         elif event == "audit_summary":
@@ -107,10 +107,10 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
-# ─── 非阻塞队列 Handler ─────────────────────────────────
+# ─── Non-blocking queue handler ──────────────────────────────────────
 
 class _NonBlockingQueueHandler(QueueHandler):
-    """QueueHandler 子类：队列满时静默丢弃，不阻塞 event loop。"""
+    """QueueHandler subclass: silently drops records when the queue is full, never blocks the event loop."""  # noqa: E501
 
     def __init__(self, q: queue.Queue):
         super().__init__(q)
@@ -123,7 +123,7 @@ class _NonBlockingQueueHandler(QueueHandler):
             self.dropped_count += 1
 
 
-# ─── 审计日志器设置 ───────────────────────────────────
+# ─── Audit logger setup ───────────────────────────────────
 
 _audit_logger: logging.Logger | None = None
 _queue_listener: QueueListener | None = None
@@ -131,15 +131,16 @@ _queue_handler: _NonBlockingQueueHandler | None = None
 
 
 def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
-    """初始化审计专用 logger。
+    """Initialize the dedicated audit logger.
 
     Args:
-        transport_mode: "stdio" 或 "http"。
-            stdio: 默认写文件（RotatingFileHandler），避免污染 MCP JSON-RPC。
-            http: 默认写 stderr（StreamHandler）。
+        transport_mode: "stdio" or "http".
+            stdio: defaults to writing to a file (RotatingFileHandler) to avoid
+                   polluting MCP JSON-RPC output.
+            http: defaults to writing to stderr (StreamHandler).
 
     Returns:
-        配置好的 audit logger。
+        The configured audit logger.
     """
     global _audit_logger, _queue_listener, _queue_handler
     if _audit_logger is not None:
@@ -159,7 +160,7 @@ def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
 
     formatter = JsonFormatter()
 
-    # 确定实际输出目标
+    # Determine the actual output destination
     log_file = config.AUDIT_LOG_FILE
     if not log_file and transport_mode == "stdio":
         log_file = "audit.log"
@@ -177,7 +178,7 @@ def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
 
     real_handler.setFormatter(formatter)
 
-    # 通过 QueueHandler + QueueListener 异步化写入
+    # Async-write via QueueHandler + QueueListener
     q: queue.Queue = queue.Queue(maxsize=10000)
     _queue_handler = _NonBlockingQueueHandler(q)
     _queue_listener = QueueListener(q, real_handler, respect_handler_level=True)
@@ -188,24 +189,24 @@ def setup_audit_logger(transport_mode: str = "stdio") -> logging.Logger:
 
 
 def start_audit_listener():
-    """启动 QueueListener 后台线程（在 app lifespan 中调用）。"""
+    """Start the QueueListener background thread (called in the app lifespan)."""
     if _queue_listener is not None:
         _queue_listener.start()
 
 
 def stop_audit_listener():
-    """停止 QueueListener 后台线程（在 app lifespan 中调用）。"""
+    """Stop the QueueListener background thread (called in the app lifespan)."""
     if _queue_listener is not None:
         _queue_listener.stop()
 
 
 def get_audit_logger() -> logging.Logger | None:
-    """获取已初始化的审计 logger（未初始化返回 None）。"""
+    """Return the initialized audit logger (None if not yet initialized)."""
     return _audit_logger
 
 
 def reset_audit_logger():
-    """重置审计 logger（仅用于测试）。"""
+    """Reset the audit logger (for tests only)."""
     global _audit_logger, _queue_listener, _queue_handler
     if _queue_listener is not None:
         try:
@@ -221,10 +222,10 @@ def reset_audit_logger():
         _audit_logger = None
 
 
-# ─── 审计上下文管理器 ─────────────────────────────────
+# ─── Audit context managers ──────────────────────────────────────────
 
 class AuditContext:
-    """工具调用/流水线阶段审计上下文，用于收集结果信息。"""
+    """Audit context for a tool call or pipeline stage, used to collect result metadata."""
 
     def __init__(self):
         self.result_count: int | None = None
@@ -241,16 +242,16 @@ class AuditContext:
         self.result = result
 
 
-# 从格式化文本中提取结果数的正则
-_RESULT_COUNT_RE = re.compile(r"找到 (\d+)")
+# Regex to extract result count from formatted text
+_RESULT_COUNT_RE = re.compile(r"Found (\d+)")
 
 
 def extract_result_count(tool_name: str, text: str) -> int | None:
-    """从工具返回的文本中提取结果数量。
+    """Extract the result count from tool output text.
 
-    - search_code/symbol/file/regex/list_repos: 正则匹配 "找到 N"
-    - get_file_content/read_resource: 硬编码 1
-    - 无法提取时返回 None
+    - search_code/symbol/file/regex/list_repos: regex match for "Found N"
+    - get_file_content/read_resource: hardcoded 1
+    - returns None when the count cannot be extracted
     """
     if tool_name in ("get_file_content", "read_resource"):
         return 1
@@ -263,7 +264,7 @@ def extract_result_count(tool_name: str, text: str) -> int | None:
 
 @asynccontextmanager
 async def audit_tool_call(tool_name: str, arguments: dict, interface: str):
-    """审计工具调用的异步上下文管理器。
+    """Async context manager for auditing a tool call.
 
     Usage:
         async with audit_tool_call("search_code", args, "mcp") as ctx:
@@ -301,17 +302,17 @@ async def audit_tool_call(tool_name: str, arguments: dict, interface: str):
                 },
             )
 
-        # 更新统计
+        # Update statistics
         audit_stats.record(tool_name, duration_ms, status == "error", slow)
 
 
 @asynccontextmanager
 async def audit_stage(stage: str, metadata: dict | None = None):
-    """审计流水线阶段的异步上下文管理器。
+    """Async context manager for auditing a pipeline stage.
 
     Args:
-        stage: 阶段名称（如 "classify", "rewrite", "zoekt_search", "rrf_merge", "rerank"）
-        metadata: 阶段输入参数/配置（会记录到日志）
+        stage: stage name (e.g. "classify", "rewrite", "zoekt_search", "rrf_merge", "rerank")
+        metadata: stage input parameters/config (recorded in the log)
 
     Usage:
         async with audit_stage("classify", {"query": q}) as ctx:
@@ -349,17 +350,17 @@ async def audit_stage(stage: str, metadata: dict | None = None):
                 },
             )
 
-        # 将 stage 级别指标纳入统计
+        # Include stage-level metrics in statistics
         audit_stats.record(stage, duration_ms, status == "error", slow)
 
 
-# ─── 审计统计 ─────────────────────────────────────────
+# ─── Audit statistics ──────────────────────────────────────────────────
 
 class AuditStats:
-    """轻量级审计统计聚合器，支持 per-tool 错误率、百分位延迟、趋势历史。"""
+    """Lightweight audit statistics aggregator with per-tool error rates, percentile latencies, and trend history."""  # noqa: E501
 
     RESERVOIR_SIZE = 1000
-    HISTORY_SIZE = 12  # 周期快照数（默认 5min × 12 = 1h）
+    HISTORY_SIZE = 12  # number of period snapshots (default 5min × 12 = 1h)
 
     def __init__(self):
         self.total_calls = 0
@@ -367,7 +368,7 @@ class AuditStats:
         self.slow_queries = 0
         self._per_tool: dict[str, dict] = {}
         self._latency_reservoir: dict[str, list[float]] = {}
-        self._reservoir_n: dict[str, int] = {}  # Algorithm R 的总计数
+        self._reservoir_n: dict[str, int] = {}  # total count for Algorithm R
         self._summary_history: list[dict] = []
 
     def record(self, tool: str, duration_ms: float, is_error: bool, is_slow: bool):
@@ -401,7 +402,7 @@ class AuditStats:
 
     @staticmethod
     def _compute_percentiles(samples: list[float]) -> dict:
-        """从样本计算 p50/p95/p99。样本不足时返回可用值。"""
+        """Compute p50/p95/p99 from samples. Returns available values when sample count is low."""
         if not samples:
             return {"p50_ms": 0, "p95_ms": 0, "p99_ms": 0}
         s = sorted(samples)
@@ -437,11 +438,11 @@ class AuditStats:
         }
 
     def trend(self) -> list[dict]:
-        """返回最近 N 个周期的摘要快照（用于趋势对比）。"""
+        """Return summary snapshots from the most recent N periods (for trend comparison)."""
         return list(self._summary_history)
 
     def reset(self):
-        """重置当前周期计数（不清除趋势历史）。"""
+        """Reset current-period counters (trend history is preserved)."""
         self.total_calls = 0
         self.total_errors = 0
         self.slow_queries = 0
@@ -450,7 +451,7 @@ class AuditStats:
         self._reservoir_n.clear()
 
     def log_summary(self):
-        """输出一条摘要审计记录，保存快照到历史，然后重置计数。"""
+        """Emit one summary audit record, save a snapshot to history, then reset counters."""
         if self.total_calls == 0:
             return
 
@@ -459,7 +460,7 @@ class AuditStats:
             "%Y-%m-%dT%H:%M:%S.%f"
         )[:-3]
 
-        # 维护环形缓冲区
+        # Maintain the ring buffer
         self._summary_history.append(snapshot)
         if len(self._summary_history) > self.HISTORY_SIZE:
             self._summary_history = self._summary_history[-self.HISTORY_SIZE:]
@@ -482,7 +483,7 @@ class AuditStats:
         self.reset()
 
     async def periodic_summary(self):
-        """周期性输出摘要的协程（供 asyncio.create_task 调用）。"""
+        """Coroutine that emits periodic summaries (intended for asyncio.create_task)."""
         interval = config.AUDIT_SUMMARY_INTERVAL
         if interval <= 0:
             return
@@ -491,9 +492,9 @@ class AuditStats:
                 await asyncio.sleep(interval)
                 self.log_summary()
         except asyncio.CancelledError:
-            # 关闭时输出最后一次摘要
+            # Emit one final summary on shutdown
             self.log_summary()
 
 
-# 全局统计实例
+# Global statistics instance
 audit_stats = AuditStats()

@@ -1,6 +1,6 @@
 """Integration test: run_all.sh bare-MCP startup path.
 
-Uses the fake-PATH JSON-recording pattern from refs/test/mock.md §方案二.
+Uses the fake-PATH JSON-recording pattern from refs/test/mock.md §Approach 2.
 Verifies that with MCP_DOCKER=false, run_all.sh invokes $VENV_PYTHON
 with arguments containing '-m' and 'mcp_server'.
 

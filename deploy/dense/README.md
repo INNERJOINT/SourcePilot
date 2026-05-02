@@ -32,27 +32,28 @@ docker compose up -d
 export DENSE_ENABLED=true
 ```
 
-## 容器内索引（Containerized Indexing）
+## Containerized Indexing
 
-自 2026-04 起，`build_dense_index.py` 不再直接跑在宿主机；`./scripts/build_index.sh`
-已改写为 `docker compose --profile indexer run --rm dense-indexer` 的薄包装层，
-自动把 `--source-dir <host path>` 翻译为容器内 `/src/<subpath>`。
+Since 2026-04, `build_dense_index.py` no longer runs directly on the host; `./scripts/build_index.sh`
+has been rewritten as a thin wrapper around `docker compose --profile indexer run --rm dense-indexer`,
+automatically translating `--source-dir <host path>` to `/src/<subpath>` inside the container.
 
 ```bash
-# 一次性构建（默认 profile 不会拉起 indexer）
+# One-shot build (the default profile does not start the indexer)
 cd dense-deploy
 AOSP_SOURCE_ROOT=/opt/aosp/aosp_project ./scripts/build_index.sh \
     --source-dir /opt/aosp/aosp_project/frameworks/base \
     --repo-name frameworks/base \
     --batch-size 32
 
-# 或直接调用 compose（需把路径手动写成容器内路径 /src/...）
+# Or invoke compose directly (paths must be given as container paths /src/...)
 docker compose --profile indexer run --rm dense-indexer \
     --source-dir /src/frameworks/base --repo-name frameworks/base
 ```
 
-约束：`--source-dir` 必须落在 `$AOSP_SOURCE_ROOT` 下，否则 wrapper 会报错退出
-（避免静默索引空内容）。宿主机上无需再安装 `qdrant-client`。
+Constraint: `--source-dir` must be under `$AOSP_SOURCE_ROOT`; the wrapper exits with an error
+otherwise (to prevent silently indexing empty content). `qdrant-client` no longer needs to be
+installed on the host.
 
 ## Service Components
 

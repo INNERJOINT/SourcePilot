@@ -1,8 +1,8 @@
 """
-审计日志模块测试
+Audit log module tests
 
-测试 audit.py 的核心功能：JSON 格式化、计时、错误处理、慢查询标记、
-开关控制、propagate 隔离、统计聚合。
+Tests core functionality of audit.py: JSON formatting, timing, error handling,
+slow-query flagging, toggle control, propagate isolation, and stats aggregation.
 """
 
 import asyncio
@@ -37,14 +37,14 @@ import config
 
 @pytest.fixture(autouse=True)
 def _reset_audit():
-    """每个测试前后重置审计 logger 和配置。"""
+    """Reset audit logger and config before and after each test."""
     reset_audit_logger()
-    # 保存原始值
+    # Save original values
     orig_enabled = config.AUDIT_ENABLED
     orig_slow_ms = config.AUDIT_SLOW_QUERY_MS
     orig_log_file = config.AUDIT_LOG_FILE
     yield
-    # 恢复
+    # restore
     reset_audit_logger()
     config.AUDIT_ENABLED = orig_enabled
     config.AUDIT_SLOW_QUERY_MS = orig_slow_ms
@@ -52,7 +52,7 @@ def _reset_audit():
 
 
 class LogCapture(logging.Handler):
-    """捕获日志记录用于断言。"""
+    """Captures log records for assertions."""
 
     def __init__(self):
         super().__init__()
@@ -63,21 +63,21 @@ class LogCapture(logging.Handler):
 
 
 def _setup_with_capture() -> LogCapture:
-    """设置审计 logger 并附加一个内存捕获 handler。"""
+    """Set up audit logger and attach an in-memory capture handler."""
     config.AUDIT_ENABLED = True
-    config.AUDIT_LOG_FILE = ""  # 不写文件
-    logger = setup_audit_logger("http")  # http 模式 → stderr handler
-    # 添加一个捕获 handler
+    config.AUDIT_LOG_FILE = ""  # don't write to file
+    logger = setup_audit_logger("http")  # http mode → stderr handler
+    # attach a capture handler
     capture = LogCapture()
     capture.setFormatter(JsonFormatter())
     logger.addHandler(capture)
     return capture
 
 
-# ─── 测试 ─────────────────────────────────────────────
+# ─── Tests ────────────────────────────────────────────
 
 class TestJsonFormat:
-    """测试 1: JSON 格式合法性 + 必需字段。"""
+    """Test 1: JSON validity + required fields."""
 
     @pytest.mark.asyncio
     async def test_json_format(self):
@@ -89,7 +89,7 @@ class TestJsonFormat:
         assert len(capture.records) == 1
         data = json.loads(capture.records[0])
 
-        # 必需字段检查
+        # Required fields check
         assert "timestamp" in data
         assert data["event"] == "tool_call"
         assert data["interface"] == "mcp"
@@ -102,14 +102,14 @@ class TestJsonFormat:
 
 
 class TestDurationRecorded:
-    """测试 2: duration_ms > 0。"""
+    """Test 2: duration_ms > 0."""
 
     @pytest.mark.asyncio
     async def test_duration_recorded(self):
         capture = _setup_with_capture()
 
         async with audit_tool_call("search_symbol", {"symbol": "Foo"}, "mcp") as ctx:
-            await asyncio.sleep(0.01)  # 确保有可测量的耗时
+            await asyncio.sleep(0.01)  # ensure measurable elapsed time
             ctx.set_result_count(1)
 
         data = json.loads(capture.records[0])
@@ -117,7 +117,7 @@ class TestDurationRecorded:
 
 
 class TestErrorStatus:
-    """测试 3: 异常时 status='error' + error_message。"""
+    """Test 3: status='error' + error_message when an exception is raised."""
 
     @pytest.mark.asyncio
     async def test_error_status(self):
@@ -134,15 +134,15 @@ class TestErrorStatus:
 
 
 class TestSlowQueryFlag:
-    """测试 4: 超阈值时 slow=true。"""
+    """Test 4: slow=true when threshold is exceeded."""
 
     @pytest.mark.asyncio
     async def test_slow_query_flag(self):
         capture = _setup_with_capture()
-        config.AUDIT_SLOW_QUERY_MS = 10  # 10ms 阈值
+        config.AUDIT_SLOW_QUERY_MS = 10  # 10ms threshold
 
         async with audit_tool_call("search_regex", {"pattern": ".*"}, "mcp") as ctx:
-            await asyncio.sleep(0.02)  # 20ms > 10ms 阈值
+            await asyncio.sleep(0.02)  # 20ms > 10ms threshold
             ctx.set_result_count(3)
 
         data = json.loads(capture.records[0])
@@ -151,7 +151,7 @@ class TestSlowQueryFlag:
 
 
 class TestAuditDisabled:
-    """测试 5: AUDIT_ENABLED=false 时无审计输出。"""
+    """Test 5: No audit output when AUDIT_ENABLED=false."""
 
     @pytest.mark.asyncio
     async def test_audit_disabled(self):
@@ -169,13 +169,13 @@ class TestAuditDisabled:
 
 
 class TestPropagateFalse:
-    """测试 6: audit logger 不向 root logger 传播。"""
+    """Test 6: audit logger does not propagate to root logger."""
 
     @pytest.mark.asyncio
     async def test_propagate_false(self):
         _setup_with_capture()
 
-        # 在 root logger 上添加捕获
+        # attach a capture to the root logger
         root_capture = LogCapture()
         root_capture.setFormatter(logging.Formatter("%(message)s"))
         root_logger = logging.getLogger()
@@ -185,7 +185,7 @@ class TestPropagateFalse:
             async with audit_tool_call("list_repos", {"query": ""}, "mcp") as ctx:
                 ctx.set_result_count(10)
 
-            # root logger 不应收到任何 audit 记录
+            # root logger must not receive any audit records
             audit_in_root = [r for r in root_capture.records if "tool_call" in r]
             assert len(audit_in_root) == 0
         finally:
@@ -193,7 +193,7 @@ class TestPropagateFalse:
 
 
 class TestStatsSummary:
-    """测试 7: AuditStats 正确累计。"""
+    """Test 7: AuditStats accumulates correctly."""
 
     def test_stats_aggregation(self):
         config.AUDIT_ENABLED = True
@@ -225,30 +225,30 @@ class TestStatsSummary:
 
 
 class TestExtractResultCount:
-    """测试 extract_result_count 辅助函数。"""
+    """Tests for the extract_result_count helper function."""
 
     def test_search_results(self):
-        text = '找到 10 条与 "test" 相关的代码：\n'
+        text = 'Found 10 results matching "test":\n'
         assert extract_result_count("search_code", text) == 10
 
     def test_list_repos(self):
-        text = "找到 5 个仓库：\n"
+        text = "Found 5 repositories:\n"
         assert extract_result_count("list_repos", text) == 5
 
     def test_get_file_content(self):
-        text = "# repo/file (L1-L100 / 共 100 行)"
+        text = "# repo/file (L1-L100 / 100 lines total)"
         assert extract_result_count("get_file_content", text) == 1
 
     def test_read_resource(self):
-        text = "# repo/file (共 200 行)"
+        text = "# repo/file (200 lines total)"
         assert extract_result_count("read_resource", text) == 1
 
     def test_no_match(self):
-        assert extract_result_count("search_code", "未找到相关代码。") is None
+        assert extract_result_count("search_code", "No code found matching the query.") is None
 
 
 class TestAuditLogFile:
-    """测试审计日志写入文件（通过 QueueListener）。"""
+    """Test audit log writing to file (via QueueListener)."""
 
     @pytest.mark.asyncio
     async def test_file_handler(self):
@@ -264,7 +264,7 @@ class TestAuditLogFile:
             async with audit_tool_call("search_code", {"query": "file_test"}, "mcp") as ctx:
                 ctx.set_result_count(3)
 
-            # 给 QueueListener 后台线程时间处理记录
+            # Give the QueueListener background thread time to process the record
             await asyncio.sleep(0.1)
             stop_audit_listener()
 
@@ -279,22 +279,22 @@ class TestAuditLogFile:
 
 
 class TestTraceId:
-    """测试 trace_id 生成与传播。"""
+    """Tests for trace_id generation and propagation."""
 
     def test_new_trace_id_format(self):
-        """trace_id 是 32 字符的 hex 字符串。"""
+        """trace_id is a 32-character hex string."""
         tid = new_trace_id()
         assert len(tid) == 32
         assert all(c in "0123456789abcdef" for c in tid)
 
     def test_get_trace_id_returns_current(self):
-        """get_trace_id 返回最近 new_trace_id 设置的值。"""
+        """get_trace_id returns the value most recently set by new_trace_id."""
         tid = new_trace_id()
         assert get_trace_id() == tid
 
     @pytest.mark.asyncio
     async def test_trace_id_in_tool_call_log(self):
-        """audit_tool_call 记录包含当前 trace_id。"""
+        """audit_tool_call log records contain the current trace_id."""
         capture = _setup_with_capture()
         tid = new_trace_id()
 
@@ -306,11 +306,11 @@ class TestTraceId:
 
 
 class TestAuditStage:
-    """测试 audit_stage 上下文管理器。"""
+    """Tests for the audit_stage context manager."""
 
     @pytest.mark.asyncio
     async def test_stage_basic(self):
-        """audit_stage 记录包含 stage、stage_args、stage_result。"""
+        """audit_stage records contain stage, stage_args, and stage_result."""
         capture = _setup_with_capture()
         new_trace_id()
 
@@ -327,8 +327,8 @@ class TestAuditStage:
 
     @pytest.mark.asyncio
     async def test_stage_result_not_truncated(self):
-        """pipeline_stage 的 stage_result 不再受 _truncate 限制，
-        records 数组应原样落盘（即便单条记录超过 1KB 默认阈值）。"""
+        """pipeline_stage stage_result is no longer subject to _truncate limits;
+        the records array is written as-is even if a single record exceeds the 1KB default threshold."""
         capture = _setup_with_capture()
         new_trace_id()
 
@@ -352,7 +352,7 @@ class TestAuditStage:
 
     @pytest.mark.asyncio
     async def test_stage_error(self):
-        """audit_stage 异常时记录 error。"""
+        """audit_stage records an error when an exception is raised."""
         capture = _setup_with_capture()
         new_trace_id()
 
@@ -366,7 +366,7 @@ class TestAuditStage:
 
     @pytest.mark.asyncio
     async def test_stage_shares_trace_id(self):
-        """同一请求内的多个 stage 共享同一 trace_id。"""
+        """Multiple stages within the same request share the same trace_id."""
         capture = _setup_with_capture()
         tid = new_trace_id()
 
@@ -384,7 +384,7 @@ class TestAuditStage:
 
     @pytest.mark.asyncio
     async def test_stage_disabled(self):
-        """AUDIT_ENABLED=false 时 audit_stage 无输出。"""
+        """No output from audit_stage when AUDIT_ENABLED=false."""
         config.AUDIT_ENABLED = False
         reset_audit_logger()
         logger = setup_audit_logger("http")
@@ -398,11 +398,11 @@ class TestAuditStage:
         assert len(capture.records) == 0
 
 
-# ─── 新增测试 ─────────────────────────────────────────
+# ─── Additional tests ─────────────────────────────────
 
 
 class TestAuditStatsEnhanced:
-    """测试增强版 AuditStats：per-tool 错误计数、reservoir sampling、百分位。"""
+    """Tests for enhanced AuditStats: per-tool error counts, reservoir sampling, and percentiles."""
 
     def test_per_tool_error_count(self):
         config.AUDIT_ENABLED = True
@@ -446,7 +446,7 @@ class TestAuditStatsEnhanced:
 
 
 class TestReservoirSampling:
-    """测试 reservoir sampling 属性。"""
+    """Tests for reservoir sampling properties."""
 
     def test_reservoir_capped_at_size(self):
         config.AUDIT_ENABLED = True
@@ -466,7 +466,7 @@ class TestReservoirSampling:
 
 
 class TestSummaryHistory:
-    """测试趋势历史环形缓冲区。"""
+    """Tests for the trend history ring buffer."""
 
     def test_trend_returns_snapshots(self):
         config.AUDIT_ENABLED = True
@@ -502,7 +502,7 @@ class TestSummaryHistory:
 
 
 class TestJsonFormatterSchema:
-    """测试 tool_call 和 pipeline_stage 的不同 schema。"""
+    """Tests for the different schemas of tool_call and pipeline_stage."""
 
     @pytest.mark.asyncio
     async def test_tool_call_has_interface_tool_arguments(self):
@@ -534,7 +534,7 @@ class TestJsonFormatterSchema:
 
 
 class TestTruncation:
-    """测试大字段截断保护。"""
+    """Tests for large-field truncation protection."""
 
     def test_truncate_small_value(self):
         val, truncated = _truncate({"key": "short"})
@@ -559,8 +559,8 @@ class TestTruncation:
 
     @pytest.mark.asyncio
     async def test_large_stage_result_not_truncated(self):
-        """新策略：pipeline_stage 不再截断 stage_result，
-        即便序列化后远超 _truncate 默认 1KB，也应原样落盘。"""
+        """New policy: pipeline_stage no longer truncates stage_result;
+        even when serialized size far exceeds the _truncate default 1KB, it should be written as-is."""
         capture = _setup_with_capture()
         new_trace_id()
         async with audit_stage("rewrite", {"query": "q"}) as stg:
@@ -572,7 +572,7 @@ class TestTruncation:
 
 
 class TestQueueHandler:
-    """测试 QueueHandler 集成。"""
+    """Tests for QueueHandler integration."""
 
     def test_logger_uses_non_blocking_handler(self):
         config.AUDIT_ENABLED = True
@@ -584,7 +584,7 @@ class TestQueueHandler:
 
 
 class TestQueueDropOnFull:
-    """测试队列满时静默丢弃。"""
+    """Tests for silent drop when queue is full."""
 
     def test_drop_on_full(self):
         import queue as queue_mod
@@ -600,7 +600,7 @@ class TestQueueDropOnFull:
 
 
 class TestAuditStageRecord:
-    """测试 audit_stage 将指标纳入 AuditStats。"""
+    """Tests that audit_stage feeds metrics into AuditStats."""
 
     @pytest.mark.asyncio
     async def test_stage_feeds_audit_stats(self):

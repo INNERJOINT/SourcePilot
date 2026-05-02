@@ -11,30 +11,30 @@ def feature_rerank(
     top_n: int = 10,
 ) -> list[dict]:
     """
-    基于特征的轻量重排。
+    Feature-based lightweight reranking.
 
-    特征：
-    1. 标题中包含查询关键词的数量
-    2. 内容中关键词命中密度
-    3. 文件类型优先级（.java > .cpp > 其他）
-    4. RRF 原始分数
-    5. Dense 语义匹配 bonus
+    Features:
+    1. Number of query keywords present in the title.
+    2. Keyword hit density in the content.
+    3. File-type priority (.java > .cpp > others).
+    4. RRF base score.
+    5. Dense semantic match bonus.
 
     Args:
-        query: 用户原始查询
-        candidates: RRF 融合后的候选列表
-        top_n: 返回 top N 条
+        query: Original user query.
+        candidates: Candidate list after RRF fusion.
+        top_n: Number of top results to return.
 
     Returns:
-        重排后的 top_n 结果
+        Reranked top_n results.
     """
     query_lower = query.lower()
-    # 提取中英文关键词
+    # Extract Chinese and English keywords
     query_tokens = set(query_lower.split())
-    # 额外提取 CamelCase 中的各单词
+    # Also extract individual words from CamelCase
     camel_words = re.findall(r'[A-Z][a-z]+', query)
     query_tokens.update(w.lower() for w in camel_words)
-    # 丢弃过短的 token
+    # Drop tokens that are too short
     query_tokens = {t for t in query_tokens if len(t) >= 2}
 
     scored = []
@@ -43,15 +43,15 @@ def feature_rerank(
         title = c.get("title", "").lower()
         content = c.get("content", "").lower()
 
-        # 特征 1：标题命中（权重较高）
+        # Feature 1: title hits (higher weight)
         title_hits = sum(1 for t in query_tokens if t in title)
         score += title_hits * 0.15
 
-        # 特征 2：内容命中密度（有上限）
+        # Feature 2: content hit density (capped)
         content_hits = sum(1 for t in query_tokens if t in content)
         score += min(content_hits * 0.03, 0.15)
 
-        # 特征 3：文件类型优先级
+        # Feature 3: file type priority
         if title.endswith('.java'):
             score += 0.05
         elif title.endswith(('.cpp', '.cc', '.h', '.hpp')):
@@ -59,14 +59,14 @@ def feature_rerank(
         elif title.endswith('.py'):
             score += 0.02
 
-        # 特征 4：路径中包含高价值目录
+        # Feature 4: high-value directories in path
         high_value_paths = ['frameworks/base', 'system/core', 'system/server']
         for hvp in high_value_paths:
             if hvp in title:
                 score += 0.03
                 break
 
-        # 特征 5：Dense 语义匹配 bonus
+        # Feature 5: Dense semantic match bonus
         meta = c.get("metadata", {})
         if meta.get("source") == "dense":
             score += config.DENSE_RERANK_BOOST

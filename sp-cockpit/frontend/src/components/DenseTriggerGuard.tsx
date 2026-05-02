@@ -35,8 +35,8 @@ export default function DenseTriggerGuard({
       {children(trigger)}
       <ConfirmDialog
         open={open}
-        title="确认重建 Dense 索引"
-        message={`将重建 dense 索引,可能覆盖现有 Qdrant collection。仓库路径: ${repoPath}。确认继续?`}
+        title="Confirm Rebuild Dense Index"
+        message={`This will rebuild the dense index and may overwrite the existing Qdrant collection. Repository path: ${repoPath}. Confirm?`}
         onConfirm={handleConfirm}
         onCancel={() => setOpen(false)}
       />

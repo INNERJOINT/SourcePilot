@@ -1,7 +1,7 @@
 """
-集成测试配置
+Integration test configuration
 
-将 src/ 加入 Python 路径，提供 gateway 管道测试所需的 fixtures。
+Adds src/ to the Python path and provides fixtures required by gateway pipeline tests.
 """
 import sys
 import os

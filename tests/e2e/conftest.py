@@ -1,8 +1,8 @@
 """
-端到端测试配置
+End-to-end test configuration
 
-同时将 src/ 和 mcp-server/ 加入 Python 路径。
-提供真实服务器启动/关闭 fixtures。
+Adds both src/ and mcp-server/ to the Python path.
+Provides fixtures for real server startup/shutdown.
 """
 import os
 import sys

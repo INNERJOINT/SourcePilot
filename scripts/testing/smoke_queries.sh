@@ -135,7 +135,7 @@ main() {
     -o /dev/null \
     -X POST -H "content-type: application/json" \
     -H "X-Trace-Id: $probe_tid" \
-    -d '{"query":"binder 驱动权限校验 probe","top_k":3}' \
+    -d '{"query":"binder driver permission check probe","top_k":3}' \
     "$SOURCEPILOT_URL/api/search" 2> /dev/null || true
   probe_count=0
   for _ in 1 2 3; do
@@ -151,8 +151,8 @@ main() {
   echo "=== SourcePilot smoke @ $SOURCEPILOT_URL ==="
 
   run_case zoekt_keyword /api/search "{\"query\":\"binder_open\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
-  run_case nl_inscope_dense /api/search "{\"query\":\"binder 驱动的权限校验机制\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
-  run_case nl_outscope_dense /api/search "{\"query\":\"Launcher3 桌面布局加载流程\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
+  run_case nl_inscope_dense /api/search "{\"query\":\"binder driver permission check mechanism\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
+  run_case nl_outscope_dense /api/search "{\"query\":\"Launcher3 home screen layout loading flow\",\"top_k\":5,\"project\":\"$AOSP_PROJECT\"}" no list
   run_case symbol /api/search_symbol "{\"symbol\":\"startBootstrapServices\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}" no list
   run_case file /api/search_file "{\"path\":\"AndroidManifest.xml\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}" no list
   run_case regex /api/search_regex "{\"pattern\":\"binder_[a-z_]+\",\"top_k\":3,\"project\":\"$AOSP_PROJECT\"}" no list

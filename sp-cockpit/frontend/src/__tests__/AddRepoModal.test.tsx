@@ -13,12 +13,12 @@ function mockFetch(response: unknown) {
 describe("AddRepoModal", () => {
   it("renders nothing when closed", () => {
     render(<AddRepoModal open={false} onClose={vi.fn()} onAdded={vi.fn()} />);
-    expect(screen.queryByText("添加仓库 / 触发索引")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add Repository / Trigger Indexing")).not.toBeInTheDocument();
   });
 
   it("renders modal when open", () => {
     render(<AddRepoModal open={true} onClose={vi.fn()} onAdded={vi.fn()} />);
-    expect(screen.getByText("添加仓库 / 触发索引")).toBeInTheDocument();
+    expect(screen.getByText("Add Repository / Trigger Indexing")).toBeInTheDocument();
   });
 
   it("submits one POST per checked backend", async () => {
@@ -36,7 +36,7 @@ describe("AddRepoModal", () => {
     // zoekt is pre-checked; also check dense
     fireEvent.click(screen.getByTestId("checkbox-dense"));
 
-    fireEvent.click(screen.getByText("提交"));
+    fireEvent.click(screen.getByText("Submit"));
 
     await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
 
@@ -68,7 +68,7 @@ describe("AddRepoModal", () => {
     fireEvent.click(screen.getByTestId("checkbox-zoekt"));
     fireEvent.click(screen.getByTestId("checkbox-structural"));
 
-    fireEvent.click(screen.getByText("提交"));
+    fireEvent.click(screen.getByText("Submit"));
 
     await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
 
@@ -92,7 +92,7 @@ describe("AddRepoModal", () => {
     fireEvent.change(screen.getByPlaceholderText("/path/to/repo"), {
       target: { value: "/test/repo" },
     });
-    fireEvent.click(screen.getByText("提交"));
+    fireEvent.click(screen.getByText("Submit"));
 
     await waitFor(() => expect(screen.getByText(/✗ zoekt/)).toBeInTheDocument());
     expect(onAdded).not.toHaveBeenCalled();

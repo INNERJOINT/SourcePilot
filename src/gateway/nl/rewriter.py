@@ -1,8 +1,8 @@
 """
 LLM Query Rewrite
 
-将自然语言问题转换为多个 Zoekt 搜索查询。
-支持超时降级：LLM 调用失败时自动提取关键词。
+Converts natural-language questions into multiple Zoekt search queries.
+Supports timeout fallback: automatically extracts keywords when the LLM call fails.
 """
 
 import json
@@ -16,36 +16,37 @@ from gateway.nl.cache import get_cached_rewrite, set_cached_rewrite
 
 logger = logging.getLogger(__name__)
 
-PROMPT = """你是一个 AOSP（Android Open Source Project）代码搜索助手。
-用户会用自然语言描述他们想找的代码。你的任务是把用户问题转换成多个代码搜索查询。
+PROMPT = """You are an AOSP (Android Open Source Project) code search assistant.
+The user will describe in natural language the code they are looking for. Your task is to convert
+the user's question into multiple code search queries.
 
-规则：
-1. 生成 3-5 个搜索查询，每个查询应从不同角度切入
-2. 查询应包含：相关的类名、函数名、关键变量名、文件路径模式
-3. 使用 Android/AOSP 常见命名惯例（CamelCase 类名、Android 包路径）
-4. 不要猜测不确定的符号名，宁可用关键词组合
-5. 优先使用具体的类名和函数名
+Rules:
+1. Generate 3-5 search queries, each approaching from a different angle.
+2. Queries should include: relevant class names, function names, key variable names, file path patterns.
+3. Use Android/AOSP common naming conventions (CamelCase class names, Android package paths).
+4. Do not guess uncertain symbol names — prefer keyword combinations instead.
+5. Prioritize specific class names and function names.
 
-严格输出 JSON（不要 markdown 代码块包裹）：
-{"queries":[{"query":"搜索查询","rationale":"为什么这样查"}]}
+Output strict JSON (do not wrap in markdown code blocks):
+{"queries":[{"query":"search query","rationale":"why this query"}]}
 
-用户问题：{q}"""
+User question: {q}"""
 
 
 async def rewrite_query(query: str) -> list[dict]:
     """
-    将自然语言查询改写为多个 Zoekt 搜索查询。
+    Rewrite a natural-language query into multiple Zoekt search queries.
 
     Returns:
         [{"query": "...", "rationale": "..."}, ...]
     """
-    # # 1. 检查缓存（含概念映射表）—— 暂时跳过，直接走 LLM
+    # # 1. Check cache (includes concept map) — temporarily skipped, going straight to LLM
     # cached = get_cached_rewrite(query)
     # if cached:
     #     logger.info("Rewrite cache/concept_map hit for: %s", query[:50])
     #     return cached
 
-    # 2. 调用 LLM
+    # 2. Call the LLM
     try:
         async with httpx.AsyncClient(timeout=NL_TIMEOUT) as client:
             resp = await client.post(
@@ -66,7 +67,7 @@ async def rewrite_query(query: str) -> list[dict]:
             logger.info("LLM raw response: %s", json.dumps(resp_json, ensure_ascii=False)[:1000])
             text = resp_json["choices"][0]["message"]["content"]
 
-            # 兼容 LLM 可能用 ```json ... ``` 包裹
+            # Handle LLM response potentially wrapped in ```json ... ```
             text = _extract_json(text)
             result = json.loads(text)
             queries = result.get("queries", [])
@@ -78,12 +79,12 @@ async def rewrite_query(query: str) -> list[dict]:
 
     except Exception as e:
         logger.warning("Rewrite LLM call failed (timeout=%.1fs): %s", NL_TIMEOUT, e)
-        # 3. 降级：提取关键词
+        # 3. Fallback: extract keywords
         return _fallback_extract(query)
 
 
 def _extract_json(text: str) -> str:
-    """从 LLM 输出中提取 JSON，兼容 markdown 代码块包裹。"""
+    """Extract JSON from LLM output, handling markdown code block wrapping."""
     text = text.strip()
     if "```" in text:
         parts = text.split("```")
@@ -98,12 +99,13 @@ def _extract_json(text: str) -> str:
 
 def _fallback_extract(query: str) -> list[dict]:
     """
-    超时降级：从自然语言中提取代码关键词。
+    Timeout fallback: extract code keywords from natural language.
 
-    策略：
-    1. 提取连续的英文+数字+点+下划线片段（如 "persist.vendor.freeform.min_width"）
-    2. 提取相邻英文单词的组合（如 "vendor wifi"）
-    3. 补充独立关键词
+    Strategy:
+    1. Extract contiguous English+digit+dot+underscore segments
+       (e.g. "persist.vendor.freeform.min_width").
+    2. Combine adjacent English words (e.g. "vendor wifi").
+    3. Supplement with individual keywords.
     """
     queries = []
     seen = set()
@@ -113,36 +115,37 @@ def _fallback_extract(query: str) -> list[dict]:
             seen.add(q)
             queries.append({"query": q, "rationale": rationale})
 
-    # 1. 提取完整的代码标识符（含点号/下划线的连续串，如属性名、包名）
+    # 1. Extract complete code identifiers (dot/underscore-separated strings,
+    #    e.g. property names, package names)
     code_tokens = re.findall(r'[a-zA-Z_][a-zA-Z0-9_.]{3,}', query)
     for ct in code_tokens:
         _add(ct, "code identifier")
 
-    # 2. 去掉中文 NL 词后，提取剩余英文部分作为组合查询
+    # 2. Strip Chinese NL words and extract remaining English parts as a combined query
     stripped = re.sub(
         r'[\u4e00-\u9fff，。？！、的是在了和与或]+', ' ', query
     ).strip()
     eng_words = [w for w in stripped.split() if re.match(r'[a-zA-Z]', w)]
 
-    # 所有英文词的组合（如 "vendor wifi"）
+    # All English words combined (e.g. "vendor wifi")
     if len(eng_words) >= 2:
         combined = " ".join(eng_words)
         _add(combined, "combined keywords")
 
-    # 相邻两两组合
+    # Adjacent word pairs
     for i in range(len(eng_words) - 1):
         pair = f"{eng_words[i]} {eng_words[i+1]}"
         _add(pair, "adjacent pair")
 
-    # 3. 独立关键词补充
+    # 3. Supplement with individual keywords
     for w in eng_words:
         if len(w) >= 3:
             _add(w, "single keyword")
 
-    # 4. 如果什么都没提取到，用原始查询
+    # 4. If nothing was extracted, use the original query
     if not queries:
         _add(query, "original query")
 
-    queries = queries[:5]  # 最多 5 路
+    queries = queries[:5]  # max 5 lanes
     logger.info("Fallback extracted %d queries: %s", len(queries), [q["query"] for q in queries])
     return queries

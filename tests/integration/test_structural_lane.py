@@ -1,9 +1,9 @@
 """
-Structural lane 集成测试
+Structural lane integration tests
 
-直接调用 gateway._nl_search()，通过 monkeypatch 模拟 StructuralAdapter，
-验证 STRUCTURAL_ENABLED 开关、RRF 融合、降级行为。
-不连接真实 Neo4j。
+Calls gateway._nl_search() directly, mocking StructuralAdapter via monkeypatch,
+to verify the STRUCTURAL_ENABLED toggle, RRF fusion, and degradation behavior.
+No real Neo4j connection required.
 """
 
 import asyncio
@@ -20,7 +20,7 @@ from gateway.gateway import _assemble_lane_indices
 
 @pytest.fixture(autouse=True)
 def reset_adapters():
-    """每个测试前后重置 gateway 中所有适配器单例。"""
+    """Reset all adapter singletons in gateway before and after each test."""
     gateway._structural_adapter = None
     gateway._dense_adapter = None
     yield
@@ -55,12 +55,12 @@ def _make_structural_hits(n: int = 1) -> list[dict]:
     ]
 
 
-# ─── STRUCTURAL_ENABLED=false 零影响测试 ──────────────────────────────────────────
+# ─── STRUCTURAL_ENABLED=false zero-impact test ──────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_structural_disabled_zero_impact(monkeypatch):
-    """STRUCTURAL_ENABLED=false 时，结果与纯 Zoekt 路径完全一致。"""
+    """With STRUCTURAL_ENABLED=false, results are identical to the pure Zoekt path."""
     monkeypatch.setattr(config, "STRUCTURAL_ENABLED", False)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
@@ -83,18 +83,18 @@ async def test_structural_disabled_zero_impact(monkeypatch):
             repos=None,
         )
 
-    # structural adapter 不应被初始化
+    # structural adapter should not be initialized
     assert gateway._structural_adapter is None
     assert isinstance(result, list)
     assert len(result) > 0
 
 
-# ─── STRUCTURAL_ENABLED=true 结果进入 RRF 测试 ────────────────────────────────────
+# ─── STRUCTURAL_ENABLED=true results enter RRF test ────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_structural_enabled_results_in_rrf(monkeypatch):
-    """STRUCTURAL_ENABLED=true 时，structural hits 通过 RRF 融合进入最终结果。"""
+    """With STRUCTURAL_ENABLED=true, structural hits are fused into the final results via RRF."""
     monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
@@ -131,14 +131,14 @@ async def test_structural_enabled_results_in_rrf(monkeypatch):
     titles = [r["title"] for r in result]
     assert isinstance(result, list)
     assert len(result) > 0
-    # structural_result_to_dict 生成的 title 含 StructuralFile
+    # structural_result_to_dict generates titles containing StructuralFile
     all_titles = " ".join(titles)
     assert "StructuralFile" in all_titles
 
 
 @pytest.mark.asyncio
 async def test_structural_lane_passes_project_to_adapter(monkeypatch):
-    """指定 project 时，structural lane 调用应透传 project 参数。"""
+    """When a project is specified, the structural lane call must forward the project parameter."""
     monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
@@ -186,7 +186,7 @@ async def test_structural_lane_passes_project_to_adapter(monkeypatch):
     ],
 )
 def test_all_4_lane_combinations_index(dense_on, structural_on):
-    """_assemble_lane_indices 在四种 lane 开关组合下均返回正确索引。"""
+    """_assemble_lane_indices returns correct indices for all four lane toggle combinations."""
     zoekt_count = 2
     idx = _assemble_lane_indices(zoekt_count, dense_on, structural_on)
 
@@ -200,24 +200,24 @@ def test_all_4_lane_combinations_index(dense_on, structural_on):
         assert idx == {"dense": 2, "structural": 3}
 
 
-# ─── Structural 超时降级测试 ───────────────────────────────────────────────────────
+# ─── Structural timeout degradation test ───────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_structural_timeout_degrades(monkeypatch):
-    """search_by_structural 超时时，gateway 降级为纯 Zoekt 结果，不抛异常。"""
+    """When search_by_structural times out, gateway degrades to pure Zoekt results without raising."""
     monkeypatch.setattr(config, "STRUCTURAL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_ENABLED", False)
     monkeypatch.setattr(config, "NL_ENABLED", True)
     monkeypatch.setattr(config, "DENSE_TOP_K", 10)
-    # 设置极短超时
+    # Set a very short timeout
     monkeypatch.setattr(config, "STRUCTURAL_LANE_TIMEOUT_MS", 1)
 
     zoekt_results = _make_zoekt_results(2)
     rewrite_output = [{"query": "startActivity"}]
 
     async def _slow_search(*args, **kwargs):
-        await asyncio.sleep(10)  # 远超 timeout
+        await asyncio.sleep(10)  # far exceeds timeout
         return []
 
     mock_structural_adapter = MagicMock()
@@ -239,9 +239,9 @@ async def test_structural_timeout_degrades(monkeypatch):
             repos=None,
         )
 
-    # 超时后 gateway 不抛异常，返回 Zoekt 结果
+    # After timeout gateway does not raise; returns Zoekt results
     assert isinstance(result, list)
     assert len(result) > 0
-    # 超时后所有结果来自 Zoekt（无 structural source）
+    # After timeout all results come from Zoekt (no structural source)
     for r in result:
         assert r.get("metadata", {}).get("source") != "structural"

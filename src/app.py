@@ -68,11 +68,11 @@ async def _parse_json(request: Request) -> tuple[dict | None, JSONResponse | Non
         body = await request.json()
         return body, None
     except Exception:
-        return None, _err(400, "请求体必须是合法的 JSON")
+        return None, _err(400, "Request body must be valid JSON")
 
 
 def _trace_from_request(request: Request) -> str:
-    """读取或生成本次请求的 trace_id。"""
+    """Read or generate a trace_id for the current request."""
     tid = request.headers.get("X-Trace-Id")
     if tid:
         from observability.audit import _trace_id
@@ -119,7 +119,7 @@ async def api_search(request: Request) -> JSONResponse:
 
     query = body.get("query")
     if not query:
-        return _err(400, "缺少必填参数 query")
+        return _err(400, "Missing required parameter: query")
 
     project, perr = _resolve_project(body)
     if perr:
@@ -160,7 +160,7 @@ async def api_search(request: Request) -> JSONResponse:
             return _ok(results)
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_search error: %s", e)
@@ -174,7 +174,7 @@ async def api_search_symbol(request: Request) -> JSONResponse:
 
     symbol = body.get("symbol")
     if not symbol:
-        return _err(400, "缺少必填参数 symbol")
+        return _err(400, "Missing required parameter: symbol")
 
     project, perr = _resolve_project(body)
     if perr:
@@ -212,7 +212,7 @@ async def api_search_symbol(request: Request) -> JSONResponse:
             return _ok(results)
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_search_symbol error: %s", e)
@@ -226,7 +226,7 @@ async def api_search_file(request: Request) -> JSONResponse:
 
     path = body.get("path")
     if not path:
-        return _err(400, "缺少必填参数 path")
+        return _err(400, "Missing required parameter: path")
 
     project, perr = _resolve_project(body)
     if perr:
@@ -264,7 +264,7 @@ async def api_search_file(request: Request) -> JSONResponse:
             return _ok(results)
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_search_file error: %s", e)
@@ -278,7 +278,7 @@ async def api_search_regex(request: Request) -> JSONResponse:
 
     pattern = body.get("pattern")
     if not pattern:
-        return _err(400, "缺少必填参数 pattern")
+        return _err(400, "Missing required parameter: pattern")
 
     project, perr = _resolve_project(body)
     if perr:
@@ -310,7 +310,7 @@ async def api_search_regex(request: Request) -> JSONResponse:
             return _ok(results)
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_search_regex error: %s", e)
@@ -338,7 +338,7 @@ async def api_list_repos(request: Request) -> JSONResponse:
             return _ok(results)
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_list_repos error: %s", e)
@@ -353,7 +353,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
     repo = body.get("repo")
     filepath = body.get("filepath")
     if not repo or not filepath:
-        return _err(400, "缺少必填参数 repo 或 filepath")
+        return _err(400, "Missing required parameters: repo or filepath")
 
     project, perr = _resolve_project(body)
     if perr:
@@ -387,7 +387,7 @@ async def api_get_file_content(request: Request) -> JSONResponse:
             return _err(404, str(e))
         except httpx.RequestError as e:
             ctx.set_error(str(e))
-            return _err(502, f"Zoekt 不可达: {e}")
+            return _err(502, f"Zoekt unreachable: {e}")
         except Exception as e:
             ctx.set_error(str(e))
             logger.error("api_get_file_content error: %s", e)

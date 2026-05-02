@@ -1,5 +1,5 @@
 """
-mcp_stdio.main_stdio 单元测试 (FastMCP)
+Unit tests for mcp_stdio.main_stdio (FastMCP)
 
 Tests entry/mcp_stdio.py which delegates to mcp.run_stdio_async().
 """

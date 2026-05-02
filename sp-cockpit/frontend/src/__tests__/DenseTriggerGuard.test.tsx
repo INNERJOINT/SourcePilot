@@ -28,7 +28,7 @@ describe("DenseTriggerGuard", () => {
     fireEvent.click(screen.getByTestId("trigger-btn"));
 
     // Dialog should be visible
-    expect(screen.getByText(/将重建 dense 索引/)).toBeInTheDocument();
+    expect(screen.getByText(/This will rebuild the dense index/)).toBeInTheDocument();
     expect(screen.getByText(/\/my\/repo/)).toBeInTheDocument();
 
     // onConfirmed NOT called yet
@@ -51,13 +51,13 @@ describe("DenseTriggerGuard", () => {
     );
 
     fireEvent.click(screen.getByText("Trigger"));
-    expect(screen.getByText(/将重建 dense 索引/)).toBeInTheDocument();
+    expect(screen.getByText(/This will rebuild the dense index/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("确认"));
+    fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(1));
     // Dialog dismissed
-    expect(screen.queryByText(/将重建 dense 索引/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/This will rebuild the dense index/)).not.toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });
@@ -71,9 +71,9 @@ describe("DenseTriggerGuard", () => {
     );
 
     fireEvent.click(screen.getByText("Trigger"));
-    fireEvent.click(screen.getByText("取消"));
+    fireEvent.click(screen.getByText("Cancel"));
 
     expect(onConfirmed).not.toHaveBeenCalled();
-    expect(screen.queryByText(/将重建 dense 索引/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/This will rebuild the dense index/)).not.toBeInTheDocument();
   });
 });

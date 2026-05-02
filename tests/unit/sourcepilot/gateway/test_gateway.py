@@ -1,18 +1,18 @@
 """
-Gateway 主编排模块单元测试
+Unit tests for the gateway orchestration module
 
-测试 gateway/gateway.py 中的 search、search_symbol、search_file、
-search_regex、list_repos、get_file_content 等函数。
+Tests search, search_symbol, search_file, search_regex, list_repos,
+and get_file_content in gateway/gateway.py.
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-# ─── 辅助工具 ─────────────────────────────────────────────────────────────────
+# ─── Helper utilities ─────────────────────────────────────────────────────────
 
 def _make_result(title: str, score: float = 0.8, repo: str = "repo/a",
                  path: str = "path/file.java") -> dict:
-    """构造标准搜索结果记录"""
+    """Build a standard search result record."""
     return {
         "title": title,
         "score": score,
@@ -27,14 +27,14 @@ SAMPLE_RESULTS = [
 ]
 
 
-# ─── search() 函数测试 ────────────────────────────────────────────────────────
+# ─── search() function tests ──────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestSearch:
-    """search() 主入口函数测试套件"""
+    """Test suite for the search() main entry-point function."""
 
     async def test_exact_path_calls_zoekt_directly(self):
-        """query_type='exact' 时直接调用 ZoektAdapter.search_zoekt，不经过 NL 管道"""
+        """When query_type='exact', ZoektAdapter.search_zoekt is called directly without going through the NL pipeline."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway.classify_query", return_value="exact"), \
@@ -45,7 +45,7 @@ class TestSearch:
             assert result == SAMPLE_RESULTS
 
     async def test_nl_disabled_always_exact_path(self):
-        """NL_ENABLED=False 时，即使 classify_query 可能返回 NL，仍走 exact 路径"""
+        """When NL_ENABLED=False, even if classify_query might return NL, the exact path is taken."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway.config") as mock_config, \
@@ -54,12 +54,12 @@ class TestSearch:
             mock_config.NL_ENABLED = False
             from gateway.gateway import search
             result = await search("how does system server start")
-            # classify_query 被调用，但 NL_ENABLED=False 时结果被忽略
+            # classify_query is called, but the result is ignored when NL_ENABLED=False
             mock_adapter.search_zoekt.assert_called_once()
             assert result == SAMPLE_RESULTS
 
     async def test_nl_path_full_pipeline(self):
-        """query_type='natural_language' 时走完整 NL 管道：rewrite → search → rrf → rerank"""
+        """When query_type='natural_language', the full NL pipeline runs: rewrite → search → rrf → rerank."""
         rewrite_output = [{"query": "SystemServer start"}, {"query": "boot services android"}]
         zoekt_results = [_make_result("SystemServer.java", score=0.5)]
 
@@ -72,12 +72,12 @@ class TestSearch:
             mock_config.NL_ENABLED = True
             from gateway.gateway import search
             result = await search("how does system server start", top_k=5)
-            # 多路并行，search_zoekt 应被调用 2 次（每个重写查询一次）
+            # parallel multi-lane: search_zoekt should be called once per rewritten query (2 calls)
             assert mock_adapter.search_zoekt.call_count == 2
             assert isinstance(result, list)
 
     async def test_nl_empty_rewrite_fallback(self):
-        """rewrite_query 返回空列表时，降级为直接 Zoekt 搜索"""
+        """When rewrite_query returns an empty list, falls back to direct Zoekt search."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway.classify_query", return_value="natural_language"), \
@@ -85,12 +85,12 @@ class TestSearch:
              patch("gateway.gateway._get_adapter", return_value=mock_adapter):
             from gateway.gateway import search
             result = await search("some query")
-            # 降级到直接搜索
+            # falls back to direct search
             mock_adapter.search_zoekt.assert_called_once()
             assert result == SAMPLE_RESULTS
 
     async def test_nl_all_routes_fail_fallback(self):
-        """所有并行路由都失败时，降级为直接 Zoekt 搜索"""
+        """When all parallel routes fail, falls back to direct Zoekt search."""
         rewrite_output = [{"query": "q1"}, {"query": "q2"}]
 
         call_count = 0
@@ -98,7 +98,7 @@ class TestSearch:
         async def side_effect_search(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            # 前两次（并行路由，top_k=20）抛异常，第三次（降级）返回结果
+            # first two calls (parallel routes, top_k=20) raise; third (fallback) succeeds
             if kwargs.get("top_k") == 20:
                 raise RuntimeError("zoekt unavailable")
             return SAMPLE_RESULTS
@@ -112,11 +112,11 @@ class TestSearch:
             mock_config.NL_ENABLED = True
             from gateway.gateway import search
             result = await search("some nl query")
-            # 最终降级调用成功
+            # final fallback call succeeds
             assert result == SAMPLE_RESULTS
 
     async def test_score_threshold_filters_results(self):
-        """score_threshold 过滤掉分数不足的结果（NL 管道在 rerank 后过滤）"""
+        """score_threshold filters out results below the threshold (NL pipeline filters after rerank)."""
         low_score = _make_result("LowScore.java", score=0.1)
         high_score = _make_result("HighScore.java", score=0.9)
 
@@ -131,25 +131,25 @@ class TestSearch:
              patch("gateway.gateway.feature_rerank") as mock_rerank, \
              patch("gateway.gateway._get_adapter", return_value=mock_adapter):
             mock_config.NL_ENABLED = True
-            # rrf_merge 直接返回原始结果，保留原始 score
+            # rrf_merge passes through original results, preserving scores
             mock_rrf.return_value = [high_score, low_score]
-            # feature_rerank 也直接返回（保留 score）
+            # feature_rerank also passes through (preserving scores)
             mock_rerank.return_value = [high_score, low_score]
             from gateway.gateway import search
             result = await search("query", score_threshold=0.5)
-            # score_threshold=0.5 过滤后只有 high_score 保留
+            # score_threshold=0.5 filters out low_score; only high_score remains
             assert len(result) == 1
             assert result[0]["score"] >= 0.5
 
 
-# ─── search_symbol() 函数测试 ─────────────────────────────────────────────────
+# ─── search_symbol() function tests ──────────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestSearchSymbol:
-    """search_symbol() 符号搜索测试套件"""
+    """Test suite for the search_symbol() function."""
 
     async def test_sym_prefix_added(self):
-        """搜索时自动添加 sym: 前缀"""
+        """sym: prefix is automatically prepended to the search query."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
@@ -159,26 +159,26 @@ class TestSearchSymbol:
             assert call_kwargs["query"] == "sym:SystemServer"
 
     async def test_sym_fallback_on_empty(self):
-        """sym: 搜索无结果时降级为普通搜索"""
+        """Falls back to plain search when sym: search returns no results."""
         call_count = 0
 
         async def side_effect(**kwargs):
             nonlocal call_count
             call_count += 1
             if "sym:" in kwargs.get("query", ""):
-                return []  # sym: 无结果
-            return SAMPLE_RESULTS  # 普通搜索有结果
+                return []  # sym: returns nothing
+            return SAMPLE_RESULTS  # plain search has results
 
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(side_effect=side_effect)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
             from gateway.gateway import search_symbol
             result = await search_symbol("SystemServer")
-            assert call_count == 2  # 调用了两次：sym: + 普通
+            assert call_count == 2  # called twice: sym: + plain
             assert result == SAMPLE_RESULTS
 
     async def test_sym_no_fallback_when_results_exist(self):
-        """sym: 搜索有结果时不触发降级"""
+        """Does not trigger fallback when sym: search returns results."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
@@ -188,14 +188,14 @@ class TestSearchSymbol:
             assert result == SAMPLE_RESULTS
 
 
-# ─── search_file() 函数测试 ───────────────────────────────────────────────────
+# ─── search_file() function tests ────────────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestSearchFile:
-    """search_file() 文件搜索测试套件"""
+    """Test suite for the search_file() function."""
 
     async def test_file_prefix_added(self):
-        """搜索时自动添加 file: 前缀"""
+        """file: prefix is automatically prepended to the search query."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
@@ -205,7 +205,7 @@ class TestSearchFile:
             assert call_kwargs["query"] == "file:SystemServer.java"
 
     async def test_file_with_extra_query(self):
-        """额外查询词追加到 file: 前缀后"""
+        """Extra query terms are appended after the file: prefix."""
         mock_adapter = MagicMock()
         mock_adapter.search_zoekt = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
@@ -215,14 +215,14 @@ class TestSearchFile:
             assert call_kwargs["query"] == "file:SystemServer.java startBootstrap"
 
 
-# ─── search_regex() 函数测试 ──────────────────────────────────────────────────
+# ─── search_regex() function tests ───────────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestSearchRegex:
-    """search_regex() 正则搜索测试套件"""
+    """Test suite for the search_regex() function."""
 
     async def test_delegates_to_adapter_search_regex(self):
-        """委托给适配器的 search_regex 方法"""
+        """Delegates to the adapter's search_regex method."""
         mock_adapter = MagicMock()
         mock_adapter.search_regex = AsyncMock(return_value=SAMPLE_RESULTS)
         with patch("gateway.gateway._get_adapter", return_value=mock_adapter):
@@ -234,14 +234,14 @@ class TestSearchRegex:
             assert result == SAMPLE_RESULTS
 
 
-# ─── list_repos() 函数测试 ────────────────────────────────────────────────────
+# ─── list_repos() function tests ─────────────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestListRepos:
-    """list_repos() 仓库列表测试套件"""
+    """Test suite for the list_repos() function."""
 
     async def test_delegates_to_adapter_list_repos(self):
-        """委托给适配器的 list_repos 方法"""
+        """Delegates to the adapter's list_repos method."""
         repo_list = [{"name": "frameworks/base"}]
         mock_adapter = MagicMock()
         mock_adapter.list_repos = AsyncMock(return_value=repo_list)
@@ -252,14 +252,14 @@ class TestListRepos:
             assert result == repo_list
 
 
-# ─── get_file_content() 函数测试 ──────────────────────────────────────────────
+# ─── get_file_content() function tests ───────────────────────────────────────
 
 @pytest.mark.asyncio
 class TestGetFileContent:
-    """get_file_content() 文件内容获取测试套件"""
+    """Test suite for the get_file_content() function."""
 
     async def test_delegates_to_adapter_fetch_file_content(self):
-        """委托给适配器的 fetch_file_content 方法"""
+        """Delegates to the adapter's fetch_file_content method."""
         file_content = {
             "content": "L1: package com.android;\n",
             "total_lines": 10,

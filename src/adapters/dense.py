@@ -1,7 +1,7 @@
 """
-DenseAdapter — 向量数据库检索适配器
+DenseAdapter — vector database retrieval adapter
 
-封装 Qdrant 向量数据库客户端和 embedding 调用，实现 SearchAdapter 接口。
+Wraps the Qdrant vector database client and embedding calls, implementing the SearchAdapter interface.
 """
 
 import logging
@@ -32,7 +32,7 @@ _FEISHU_OUTPUT_FIELDS = ["title", "url", "space_id", "node_token", "content"]
 
 
 class DenseAdapter(SearchAdapter):
-    """Qdrant 向量数据库检索适配器"""
+    """Qdrant vector database retrieval adapter."""
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class DenseAdapter(SearchAdapter):
         return [ContentType.CODE]
 
     async def search(self, query: BackendQuery) -> BackendResponse:
-        """实现 SearchAdapter.search — 委托给 search_by_embedding()"""
+        """Implement SearchAdapter.search — delegates to search_by_embedding()."""
         start = time.perf_counter()
         try:
             results = await self.search_by_embedding(
@@ -107,23 +107,23 @@ class DenseAdapter(SearchAdapter):
         top_k: int | None = None,
         repos: str | None = None,
     ) -> list[dict[str, Any]]:
-        """语义向量检索（gateway 直接调用此方法）。
+        """Semantic vector search (called directly by the gateway).
 
         Args:
-            query: 自然语言查询
-            top_k: 返回结果数量
-            repos: 可选，repo 名称过滤
+            query: Natural language query string.
+            top_k: Number of results to return.
+            repos: Optional repo name filter.
 
         Returns:
-            list[dict]，每个 dict 包含 score + metadata
+            list[dict], each dict containing score + metadata.
         """
         if top_k is None:
             top_k = self._top_k
 
-        # 1. 将查询转为向量
+        # 1. Embed the query into a vector
         query_vector = await self._embedding_client.embed_query(query)
 
-        # 2. 构建过滤条件
+        # 2. Build filter conditions
         query_filter = None
         if repos and "repo" in self._output_fields:
             from qdrant_client import models
@@ -132,7 +132,7 @@ class DenseAdapter(SearchAdapter):
                 must=[models.FieldCondition(key="repo", match=models.MatchValue(value=repos))]
             )
 
-        # 3. Qdrant ANN 搜索
+        # 3. Qdrant ANN search
         client = self._get_qdrant_client()
         search_results = client.query_points(
             collection_name=self._collection_name,
@@ -142,7 +142,7 @@ class DenseAdapter(SearchAdapter):
             query_filter=query_filter,
         )
 
-        # 4. 转换结果
+        # 4. Convert results
         hits = []
         for point in search_results.points:
             hits.append(
@@ -156,24 +156,24 @@ class DenseAdapter(SearchAdapter):
         return hits
 
     async def get_content(self, item_id: str) -> dict:
-        """获取完整内容 — 委托给 Zoekt 获取文件。
+        """Fetch full content — delegates to Zoekt for file retrieval.
 
-        Dense 索引只存 chunk，完整文件内容需要从 Zoekt 获取。
+        The dense index stores only chunks; full file content must be fetched from Zoekt.
         """
         raise NotImplementedError(
-            "DenseAdapter.get_content() 需要通过 ZoektAdapter 获取完整文件。"
-            "请使用 gateway.get_file_content() 代替。"
+            "DenseAdapter.get_content() requires fetching the full file via ZoektAdapter. "
+            "Use gateway.get_file_content() instead."
         )
 
     async def health_check(self) -> bool:
-        """检查 Qdrant 和 embedding 服务是否可用"""
+        """Check whether Qdrant and the embedding service are available."""
         try:
             client = self._get_qdrant_client()
-            # 检查 collection 是否存在
+            # Check that the collection exists
             if not client.collection_exists(self._collection_name):
                 logger.warning("Qdrant collection '%s' not found", self._collection_name)
                 return False
-            # 检查 embedding 服务
+            # Check the embedding service
             test_vec = await self._embedding_client.embed_query("test")
             if len(test_vec) != self._embedding_dim:
                 logger.warning(

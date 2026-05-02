@@ -1,17 +1,18 @@
 """
-classify_query() 单元测试
+Unit tests for classify_query()
 
-覆盖 Zoekt 修饰符、正则、NL 指示词、中英文混合、纯符号路径、长度阈值等分支。
+Covers Zoekt modifiers, regex patterns, NL indicators, mixed Chinese/English,
+pure symbol paths, and length threshold branches.
 """
 
 import pytest
 from gateway.nl.classifier import classify_query
 
 
-# ─── Zoekt 修饰符 → exact ────────────────────────────────────────────────────
+# ─── Zoekt modifiers → exact ─────────────────────────────────────────────────
 
 class TestZoektModifiers:
-    """Zoekt 前缀修饰符必须路由为 exact。"""
+    """Zoekt prefix modifiers must route as exact."""
 
     def test_sym_prefix(self):
         assert classify_query("sym:ActivityManager") == "exact"
@@ -29,10 +30,10 @@ class TestZoektModifiers:
         assert classify_query("case:yes foo") == "exact"
 
 
-# ─── 正则表达式 → exact ──────────────────────────────────────────────────────
+# ─── Regex pattern → exact ──────────────────────────────────────────────────
 
 class TestRegexPattern:
-    """r"..." 格式识别为 exact（正则查询）。"""
+    """r"..." format is identified as exact (regex query)."""
 
     def test_regex_pattern(self):
         assert classify_query('r"pattern"') == "exact"
@@ -41,13 +42,13 @@ class TestRegexPattern:
         assert classify_query('r"ActivityManager.*start"') == "exact"
 
 
-# ─── NL 中文指示词 → natural_language ────────────────────────────────────────
+# ─── NL Chinese keywords → natural_language ──────────────────────────────────
 
 class TestNLChineseKeywords:
-    """含 NL 中文关键词的查询必须路由为 natural_language。"""
+    """Queries containing NL Chinese keywords must route as natural_language."""
 
     def test_zenme(self):
-        # "怎么" 在列表中
+        # "怎么" is in the keyword list
         assert classify_query("怎么实现xxx") == "natural_language"
 
     def test_shenme(self):
@@ -60,18 +61,18 @@ class TestNLChineseKeywords:
         assert classify_query("为什么会崩溃") == "natural_language"
 
     def test_qidong(self):
-        # "启动" 在 NL 词列表中
+        # "启动" is in the NL keyword list
         assert classify_query("启动流程是什么") == "natural_language"
 
     def test_shixian(self):
-        # "实现" 在 NL 词列表中
+        # "实现" is in the NL keyword list
         assert classify_query("ActivityManager实现原理") == "natural_language"
 
 
-# ─── NL 英文指示词 → natural_language ────────────────────────────────────────
+# ─── NL English keywords → natural_language ──────────────────────────────────
 
 class TestNLEnglishKeywords:
-    """含 NL 英文关键词的查询必须路由为 natural_language。"""
+    """Queries containing NL English keywords must route as natural_language."""
 
     def test_how(self):
         assert classify_query("how to start activity") == "natural_language"
@@ -95,27 +96,27 @@ class TestNLEnglishKeywords:
         assert classify_query("describe the boot process") == "natural_language"
 
 
-# ─── 中文 + 代码标识符混合 → natural_language ────────────────────────────────
+# ─── Mixed Chinese + code identifier → natural_language ──────────────────────
 
 class TestChineseCodeMix:
-    """中文字符 + 代码标识符组合触发 NL 分支（即使没有 NL 指示词）。"""
+    """Chinese characters + code identifier combination triggers the NL branch (even without NL indicator words)."""
 
     def test_chinese_plus_camelcase(self):
-        # has_chinese=True, has_code=True（ActivityManager >= 3 个后续字符）
+        # has_chinese=True, has_code=True (ActivityManager has 3+ trailing chars)
         assert classify_query("ActivityManager是什么") == "natural_language"
 
     def test_chinese_plus_dotted_identifier(self):
-        # "ro.vendor.tags" 有 4+ 个字符的标识符
+        # "ro.vendor.tags" has an identifier with 4+ chars
         assert classify_query("ro.vendor.tags有哪些引用") == "natural_language"
 
 
-# ─── 纯符号/路径 → exact ─────────────────────────────────────────────────────
+# ─── Pure symbol/path → exact ─────────────────────────────────────────────────
 
 class TestPureSymbolPath:
-    """仅含字母数字点下划线斜杠冒号连字符 → exact。"""
+    """Only alphanumeric characters, dots, underscores, slashes, colons, hyphens → exact."""
 
     def test_camelcase_symbol(self):
-        # "SystemServer" 仅含字母 → exact（无 NL 词，无中文）
+        # "SystemServer" contains only letters → exact (no NL words, no Chinese)
         assert classify_query("SystemServer") == "exact"
 
     def test_java_package(self):
@@ -131,40 +132,40 @@ class TestPureSymbolPath:
         assert classify_query("build-tools") == "exact"
 
 
-# ─── 长度阈值 → natural_language ─────────────────────────────────────────────
+# ─── Length threshold → natural_language ─────────────────────────────────────
 
 class TestLengthThreshold:
-    """纯 ASCII 无 NL 词但超过 15 字符的查询判为 natural_language。"""
+    """Pure ASCII with no NL keywords but longer than 15 characters is classified as natural_language."""
 
     def test_long_sentence(self):
-        # 长度超过 15，无 NL 关键词，有空格（不满足纯符号正则）
+        # length exceeds 15, no NL keywords, has spaces (doesn't match pure-symbol regex)
         q = "this is a long query string that exceeds fifteen chars"
         assert classify_query(q) == "natural_language"
 
     def test_exactly_16_chars_with_space(self):
-        # 16 字符、含空格（不满足纯符号路径正则）
+        # 16 characters, contains space (doesn't match pure-symbol path regex)
         q = "a b c d e f g h i"  # len > 15
         assert classify_query(q) == "natural_language"
 
     def test_short_exact(self):
-        # ≤15 字符、无中文无 NL 词、含空格 → exact（走最终 return 'exact'）
-        # "init.rc" 满足纯符号路径正则
+        # ≤15 chars, no Chinese, no NL keywords, contains space → exact (hits final return 'exact')
+        # "init.rc" matches the pure-symbol path regex
         assert classify_query("init.rc") == "exact"
 
 
-# ─── 边界情况 ────────────────────────────────────────────────────────────────
+# ─── Edge cases ───────────────────────────────────────────────────────────────
 
 class TestEdgeCases:
-    """空字符串、纯空白等边界输入。"""
+    """Empty string, whitespace-only, and similar boundary inputs."""
 
     def test_empty_string(self):
-        # strip() 后为空，不匹配任何分支，最终返回 exact
+        # strip() results in empty string; no branch matches; final return is exact
         assert classify_query("") == "exact"
 
     def test_whitespace_only(self):
-        # strip() 后为空，同上
+        # strip() results in empty string; same as above
         assert classify_query("   ") == "exact"
 
     def test_leading_trailing_whitespace(self):
-        # 前后有空格但内容是 exact 符号
+        # leading/trailing whitespace but content is an exact symbol
         assert classify_query("  SystemServer  ") == "exact"

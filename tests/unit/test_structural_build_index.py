@@ -78,7 +78,7 @@ def test_derive_repo_and_path_project_root_fallback():
 
 
 def test_derive_repo_and_path_rejects_outside_source_root():
-    with pytest.raises(ValueError, match="文件不在 source_root 下"):
+    with pytest.raises(ValueError, match="not under source_root"):
         bgi._derive_repo_and_path(
             file_path="/opt/aosp/other/frameworks/base/Foo.java",
             source_root="/opt/aosp/aosp_project",
@@ -119,7 +119,7 @@ class _FakeSession:
 def test_preflight_fails_when_identity_fields_missing():
     session = _FakeSession(missing_count=1)
 
-    with pytest.raises(RuntimeError, match="缺少 project/repo/path"):
+    with pytest.raises(RuntimeError, match="missing project/repo/path"):
         bgi._preflight_file_identity_constraints(session)
 
     assert not any("CREATE CONSTRAINT file_project_repo_path" in q for q, _ in session.queries)
@@ -131,7 +131,7 @@ def test_preflight_fails_when_composite_duplicates_exist():
         dup_rows=[{"project": "aosp_project", "repo": "frameworks/base", "path": "A.java", "c": 2}],
     )
 
-    with pytest.raises(RuntimeError, match="复合键重复"):
+    with pytest.raises(RuntimeError, match="duplicate File composite keys"):
         bgi._preflight_file_identity_constraints(session)
 
     assert not any("CREATE CONSTRAINT file_project_repo_path" in q for q, _ in session.queries)

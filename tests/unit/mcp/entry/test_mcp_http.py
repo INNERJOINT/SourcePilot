@@ -1,7 +1,7 @@
 """
-BearerTokenMiddleware 单元测试
+BearerTokenMiddleware unit tests
 
-测试 entry/mcp_http.py 中 BearerTokenMiddleware 的鉴权逻辑。
+Tests the authentication logic of BearerTokenMiddleware in entry/mcp_http.py.
 """
 import pytest
 from entry.mcp_http import BearerTokenMiddleware
@@ -10,10 +10,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-# ─── 测试用 inner app ────────────────────────────────────
+# ─── Test inner app ────────────────────────────────────
 
 async def hello(request):
-    """简单的内层 handler，用于验证请求是否透传"""
+    """Simple inner handler used to verify request passthrough."""
     return JSONResponse({"ok": True})
 
 
@@ -23,19 +23,19 @@ wrapped_app = BearerTokenMiddleware(inner_app, TEST_TOKEN)
 client = TestClient(wrapped_app, raise_server_exceptions=True)
 
 
-# ─── 鉴权成功测试 ────────────────────────────────────────
+# ─── Auth success tests ────────────────────────────────
 
 def test_valid_token_passes_through():
-    """携带正确 Bearer Token 时，请求透传到内层 app，返回 200"""
+    """With a valid Bearer Token, request passes through to the inner app and returns 200."""
     resp = client.get("/test", headers={"Authorization": f"Bearer {TEST_TOKEN}"})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
 
 
-# ─── 鉴权失败测试 ────────────────────────────────────────
+# ─── Auth failure tests ────────────────────────────────
 
 def test_invalid_token_returns_401():
-    """携带错误 Bearer Token 时，返回 401 及 invalid_token 错误"""
+    """With a wrong Bearer Token, returns 401 with invalid_token error."""
     resp = client.get("/test", headers={"Authorization": "Bearer wrong-token"})
     assert resp.status_code == 401
     body = resp.json()
@@ -43,7 +43,7 @@ def test_invalid_token_returns_401():
 
 
 def test_missing_auth_header_returns_401():
-    """未携带 Authorization 头时，返回 401 及 unauthorized 错误"""
+    """Without an Authorization header, returns 401 with unauthorized error."""
     resp = client.get("/test")
     assert resp.status_code == 401
     body = resp.json()
@@ -51,18 +51,18 @@ def test_missing_auth_header_returns_401():
 
 
 def test_non_bearer_prefix_returns_401():
-    """Authorization 头非 Bearer 前缀时，返回 401"""
+    """With a non-Bearer Authorization prefix, returns 401."""
     resp = client.get("/test", headers={"Authorization": "Token some-api-key"})
     assert resp.status_code == 401
     body = resp.json()
     assert body["error"] == "unauthorized"
 
 
-# ─── 非 HTTP scope 透传测试 ──────────────────────────────
+# ─── Non-HTTP scope passthrough tests ──────────────────
 
 @pytest.mark.asyncio
 async def test_lifespan_scope_bypasses_auth():
-    """lifespan scope 类型应绕过鉴权，直接透传给内层 app"""
+    """lifespan scope type should bypass auth and pass directly to the inner app."""
     call_log = []
 
     async def mock_inner(scope, receive, send):
@@ -70,7 +70,7 @@ async def test_lifespan_scope_bypasses_auth():
 
     middleware = BearerTokenMiddleware(mock_inner, TEST_TOKEN)
 
-    # 模拟 lifespan scope（无 headers）
+    # Simulate lifespan scope (no headers)
     scope = {"type": "lifespan"}
     await middleware(scope, None, None)
 
@@ -79,7 +79,7 @@ async def test_lifespan_scope_bypasses_auth():
 
 @pytest.mark.asyncio
 async def test_websocket_scope_bypasses_auth():
-    """websocket scope 类型应绕过鉴权，直接透传给内层 app"""
+    """websocket scope type should bypass auth and pass directly to the inner app."""
     call_log = []
 
     async def mock_inner(scope, receive, send):
@@ -87,28 +87,28 @@ async def test_websocket_scope_bypasses_auth():
 
     middleware = BearerTokenMiddleware(mock_inner, TEST_TOKEN)
 
-    # 模拟 websocket scope
+    # Simulate websocket scope
     scope = {"type": "websocket", "headers": []}
     await middleware(scope, None, None)
 
     assert "websocket" in call_log
 
 
-# ─── WWW-Authenticate 响应头测试 ─────────────────────────
+# ─── WWW-Authenticate response header tests ─────────────────────────
 
 def test_missing_token_has_www_authenticate_header():
-    """缺少 token 时，响应包含 WWW-Authenticate 头"""
+    """When token is missing, response includes a WWW-Authenticate header."""
     resp = client.get("/test")
     assert "www-authenticate" in resp.headers or "WWW-Authenticate" in resp.headers
 
 
 def test_invalid_token_has_www_authenticate_header():
-    """token 错误时，响应包含 WWW-Authenticate 头"""
+    """When token is wrong, response includes a WWW-Authenticate header."""
     resp = client.get("/test", headers={"Authorization": "Bearer bad"})
     assert "www-authenticate" in resp.headers or "WWW-Authenticate" in resp.headers
 
 
-# ─── /health 健康检查绕过鉴权 ─────────────────────────────
+# ─── /health health-check auth bypass ─────────────────────────────────
 
 async def health(request):
     return JSONResponse({"status": "ok"})
@@ -120,19 +120,19 @@ _health_client = TestClient(_health_wrapped)
 
 
 def test_health_endpoint_bypasses_auth():
-    """/health 健康检查不需要 Bearer token（供 docker/k8s 探针使用）"""
+    """/health check does not require a Bearer token (for docker/k8s probes)."""
     resp = _health_client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
 
 
 def test_health_endpoint_works_with_invalid_token():
-    """/health 即使带错误 token 也能通过"""
+    """/health passes even with a wrong token."""
     resp = _health_client.get("/health", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 200
 
 
 def test_non_health_still_requires_auth():
-    """非 /health 路径仍然需要鉴权"""
+    """Non-/health paths still require authentication."""
     resp = _health_client.get("/test")
     assert resp.status_code == 401

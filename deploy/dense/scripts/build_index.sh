@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# 向量索引构建 — 通过 docker compose 调起 dense-indexer 容器
+# Vector index build — launches the dense-indexer container via docker compose
 #
-# 用法:
+# Usage:
 #   ./deploy/dense/scripts/build_index.sh \
 #       --source-dir /opt/aosp/aosp_project/frameworks/base \
 #       --repo-name frameworks/base \
-#       [--batch-size 32] [其他 build_dense_index.py 参数]
+#       [--batch-size 32] [other build_dense_index.py arguments]
 #
-# 行为:
-#   - 在宿主机不再直接运行 Python；改走容器 dense-indexer。
-#   - 本脚本负责把 --source-dir 的宿主机绝对路径翻译为 /src/<subpath>，
-#     前提是它落在 $AOSP_SOURCE_ROOT 之下（与 compose 的 :ro 卷一致）。
+# Behavior:
+#   - Python is no longer run directly on the host; the dense-indexer container is used instead.
+#   - This script translates the --source-dir host absolute path to /src/<subpath>
+#     inside the container, provided it falls under $AOSP_SOURCE_ROOT (matching the
+#     compose :ro volume mount).
 #
-# 前置:
-#   - Qdrant + embedding-server 已通过 `docker compose up -d` 启动并 healthy。
-#   - .env 中设置了 AOSP_SOURCE_ROOT（或使用默认 /opt/aosp/aosp_project）。
+# Prerequisites:
+#   - Qdrant + embedding-server started and healthy via `docker compose up -d`.
+#   - AOSP_SOURCE_ROOT set in .env (or using the default /opt/aosp/aosp_project).
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/.." && pwd)             # deploy/dense
 PROJ_ROOT=$(cd "$DIR/../.." && pwd)                # repo root
 COMPOSE_FILE="$PROJ_ROOT/deploy/docker-compose.yml"
 
-# 加载 .env（项目根优先，deploy/dense 覆盖）；但保留调用方显式传入的关键变量。
+# Load .env (project root takes precedence, deploy/dense can override); preserve
+# any key variables explicitly passed by the caller.
 _PRESERVE_ENV_VARS=(
     AOSP_SOURCE_ROOT
     DENSE_ENABLED
@@ -52,8 +54,9 @@ done
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT:-/opt/aosp/aosp_project}"
 AOSP_SOURCE_ROOT="${AOSP_SOURCE_ROOT%/}"
 
-# 把 --source-dir <host-abs-path> 透明翻译为 --source-dir /src/<rel-path>。
-# 其他参数原样透传；若未提供 --source-dir 则无操作（供 --help 等场景使用）。
+# Translate --source-dir <host-abs-path> transparently to --source-dir /src/<rel-path>.
+# Other arguments are passed through unchanged; if --source-dir is not provided this
+# is a no-op (e.g. for --help invocations).
 ARGS=()
 i=0
 argv=("$@")
@@ -64,18 +67,18 @@ while (( i < n )); do
         --source-dir)
             host_path="${argv[$((i+1))]:-}"
             if [[ -z "$host_path" ]]; then
-                echo "ERROR: --source-dir 需要一个参数" >&2
+                echo "ERROR: --source-dir requires an argument" >&2
                 exit 2
             fi
-            # 规范化宿主机路径（去尾斜杠）
+            # Normalize host path (strip trailing slash)
             host_path="${host_path%/}"
             if [[ "$host_path" == "$AOSP_SOURCE_ROOT" ]]; then
                 container_path="/src"
             elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
                 container_path="/src/${host_path#${AOSP_SOURCE_ROOT}/}"
             else
-                echo "ERROR: --source-dir '$host_path' 不在 AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT' 之下" >&2
-                echo "       请调整 .env 中的 AOSP_SOURCE_ROOT 或传入 \$AOSP_SOURCE_ROOT 之下的路径。" >&2
+                echo "ERROR: --source-dir '$host_path' is not under AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT'" >&2
+                echo "       Adjust AOSP_SOURCE_ROOT in .env or pass a path under \$AOSP_SOURCE_ROOT." >&2
                 exit 2
             fi
             ARGS+=("--source-dir" "$container_path")
@@ -89,7 +92,7 @@ while (( i < n )); do
             elif [[ "$host_path" == "$AOSP_SOURCE_ROOT"/* ]]; then
                 container_path="/src/${host_path#${AOSP_SOURCE_ROOT}/}"
             else
-                echo "ERROR: --source-dir '$host_path' 不在 AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT' 之下" >&2
+                echo "ERROR: --source-dir '$host_path' is not under AOSP_SOURCE_ROOT='$AOSP_SOURCE_ROOT'" >&2
                 exit 2
             fi
             ARGS+=("--source-dir=$container_path")

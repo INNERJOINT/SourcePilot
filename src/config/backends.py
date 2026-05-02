@@ -7,11 +7,11 @@ BACKENDS = {
         "adapter": "adapters.zoekt.ZoektAdapter",
     },
     "dense": {
-        "enabled": False,  # 通过 DENSE_ENABLED 环境变量控制
+        "enabled": False,  # controlled by the DENSE_ENABLED environment variable
         "adapter": "adapters.dense.DenseAdapter",
     },
     "structural": {
-        "enabled": False,  # 通过 STRUCTURAL_ENABLED 环境变量控制
+        "enabled": False,  # controlled by the STRUCTURAL_ENABLED environment variable
         "adapter": "adapters.structural.StructuralAdapter",
     },
     # "feishu": {

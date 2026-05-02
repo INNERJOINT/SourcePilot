@@ -121,7 +121,7 @@ describe("Repositories", () => {
     await waitFor(() => screen.getByText("/aosp/frameworks/base"));
 
     fireEvent.click(screen.getByText("+ Add Repo"));
-    expect(screen.getByText("添加仓库 / 触发索引")).toBeInTheDocument();
+    expect(screen.getByText("Add Repository / Trigger Indexing")).toBeInTheDocument();
   });
 
   it("shows DenseTriggerGuard dialog for dense repo trigger", async () => {
@@ -137,6 +137,6 @@ describe("Repositories", () => {
     // repo id=2 is dense backend
     fireEvent.click(screen.getByTestId("trigger-2"));
 
-    expect(screen.getByText(/将重建 dense 索引/)).toBeInTheDocument();
+    expect(screen.getByText(/This will rebuild the dense index/)).toBeInTheDocument();
   });
 });

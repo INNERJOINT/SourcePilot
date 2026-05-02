@@ -1,7 +1,7 @@
 """
-SourcePilot HTTP API mock 响应数据
+SourcePilot HTTP API mock response data
 
-从 test_mcp_server.py 提取的共享 mock 数据。
+Shared mock data extracted from test_mcp_server.py.
 """
 
 MOCK_SP_SEARCH_RESULTS = [

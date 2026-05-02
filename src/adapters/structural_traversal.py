@@ -1,10 +1,11 @@
 """
-structural_traversal — Neo4j 结构化检索遍历工具函数
+structural_traversal — Neo4j structural retrieval traversal utilities
 
-提供 fulltext_search_nodes、expand_neighbors、compute_structural_score、
-extract_query_entities 和 format_hit 等工具函数，供 StructuralAdapter 调用。
+Provides fulltext_search_nodes, expand_neighbors, compute_structural_score,
+extract_query_entities, and format_hit helper functions used by StructuralAdapter.
 
-所有 Cypher 参数均使用参数化查询，严禁 f-string 拼接（防注入）。
+All Cypher parameters use parameterized queries — f-string concatenation is strictly
+forbidden to prevent injection attacks.
 """
 
 import re
@@ -16,9 +17,9 @@ async def fulltext_search_nodes(
     limit: int = 20,
     project: str | None = None,
 ) -> list[dict]:
-    """全文检索 Neo4j 节点，同时查询 symbol_name_idx 和 doc_entity_idx。
+    """Full-text search for Neo4j nodes, querying both symbol_name_idx and doc_entity_idx.
 
-    返回去重后的节点列表，每条形如：
+    Returns a deduplicated list of nodes, each of the form:
         {"nid": int, "kind": str, "props": dict, "score": float}
     """
     if not query_terms:
@@ -52,7 +53,7 @@ async def fulltext_search_nodes(
                             "score": record["score"],
                         }
             except Exception:
-                # 索引不存在时跳过（如首次使用前尚未建索引）
+                # Skip if the index does not exist (e.g. before the index has been built)
                 pass
 
     return list(seen.values())
@@ -64,9 +65,9 @@ async def expand_neighbors(
     max_hops: int = 2,
     project: str | None = None,
 ) -> list[dict]:
-    """从种子节点出发，沿关系边扩展至最多 max_hops 跳，返回到达的 File 节点信息。
+    """Starting from seed nodes, traverse relationship edges up to max_hops hops and return reached File nodes.
 
-    返回列表，每条形如：
+    Returns a list, each entry of the form:
         {"file_props": dict, "path_length": int, "anchor_nids": list[int]}
     """
     if not node_ids:
@@ -113,10 +114,10 @@ def compute_structural_score(
     max_match_count: int,
     alpha: float = 0.6,
 ) -> float:
-    """计算结构化检索得分。
+    """Compute a structural retrieval score.
 
     score = alpha * (1/path_length) + (1-alpha) * (match_count / max_match_count)
-    结果归一化到 [0, 1]。
+    Result is normalized to [0, 1].
     """
     proximity = 1.0 / max(path_length, 1)
     coverage = match_count / max(max_match_count, 1)
@@ -125,25 +126,25 @@ def compute_structural_score(
 
 
 def extract_query_entities(query: str) -> list[str]:
-    """从查询字符串中提取实体词元（CamelCase、snake_case、3+ 字符词）。
+    """Extract entity tokens from a query string (CamelCase, snake_case, 3+ character words).
 
-    返回去重后的小写词元列表，用于全文检索。
+    Returns a deduplicated list of lowercase tokens for use in full-text search.
     """
     tokens: list[str] = []
 
-    # CamelCase 词（如 ActivityManager、SurfaceFlinger）
+    # CamelCase words (e.g. ActivityManager, SurfaceFlinger)
     camel = re.findall(r"[A-Z][a-z]+(?:[A-Z][a-z]+)+", query)
     tokens.extend(camel)
 
-    # snake_case 标识符（如 get_window_manager）
+    # snake_case identifiers (e.g. get_window_manager)
     snake = re.findall(r"[a-z]+(?:_[a-z]+)+", query)
     tokens.extend(snake)
 
-    # 3+ 字符的字母数字词
+    # Alphanumeric words of 3+ characters
     words = re.findall(r"[a-zA-Z][a-zA-Z0-9]{2,}", query)
     tokens.extend(words)
 
-    # 小写去重
+    # Deduplicate while lowercasing
     seen: dict[str, None] = {}
     result: list[str] = []
     for t in tokens:
@@ -159,9 +160,9 @@ def format_hit(
     path_length: int,
     matched_terms: list[str],
 ) -> dict:
-    """将结构化遍历结果格式化为 StructuralAdapter 统一 hit dict。
+    """Format a structural traversal result into a unified hit dict for StructuralAdapter.
 
-    输出格式：
+    Output format:
         {"repo": str, "path": str, "start_line": int|None,
          "end_line": int|None, "content": str, "score": float,
          "matched_terms": list[str]}
@@ -172,6 +173,6 @@ def format_hit(
         "start_line": file_node_props.get("start_line"),
         "end_line": file_node_props.get("end_line"),
         "content": file_node_props.get("content", ""),
-        "score": 0.0,  # 由调用方 compute_structural_score 填充
+        "score": 0.0,  # filled in by the caller via compute_structural_score
         "matched_terms": matched_terms,
     }

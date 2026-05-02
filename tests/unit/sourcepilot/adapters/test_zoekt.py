@@ -1,8 +1,8 @@
 """
-SourcePilot 内部测试
+ZoektAdapter unit tests
 
-使用 respx 模拟 Zoekt HTTP 响应，无需运行真实的 Zoekt 服务。
-测试覆盖 ZoektAdapter 的搜索、正则搜索、仓库列表、文件内容获取及代码片段构建。
+Uses respx to mock Zoekt HTTP responses; no real Zoekt service required.
+Covers search, regex search, repo listing, file content fetching, and snippet building.
 """
 
 import json
@@ -29,7 +29,7 @@ class _ZoektClientCompat:
 zoekt_client = _ZoektClientCompat()
 
 
-# ─── Mock 数据 ────────────────────────────────────────
+# ─── Mock data ────────────────────────────────────────
 
 MOCK_SEARCH_RESPONSE = {
     "Result": {
@@ -83,14 +83,14 @@ MOCK_PRINT_RESPONSE_HTML = """
 """
 
 
-# ─── zoekt_client.search() 测试 ──────────────────────
+# ─── zoekt_client.search() tests ──────────────────────
 
 class TestSearch:
-    """测试 zoekt_client.search() 函数"""
+    """Tests for the zoekt_client.search() function."""
 
     @pytest.mark.asyncio
     async def test_basic_search(self):
-        """基本搜索能返回正确结构的 records"""
+        """Basic search returns records with the expected structure."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -107,7 +107,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_with_repo_filter(self):
-        """repo 过滤参数正确拼入查询"""
+        """repo filter parameter is included correctly in the query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -115,14 +115,14 @@ class TestSearch:
 
             await zoekt_client.search(query="test", repos="frameworks/base")
 
-            # 验证查询包含 r: 前缀
+            # verify the query includes the r: prefix
             request = route.calls[0].request
             q_param = str(request.url.params.get("q", ""))
             assert "r:frameworks/base" in q_param
 
     @pytest.mark.asyncio
     async def test_search_with_lang_filter(self):
-        """lang 过滤参数正确拼入查询"""
+        """lang filter parameter is included correctly in the query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -136,7 +136,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_with_branch_filter(self):
-        """branch 过滤参数正确拼入查询"""
+        """branch filter parameter is included correctly in the query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -150,7 +150,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_with_case_sensitive(self):
-        """case_sensitive 参数正确拼入查询"""
+        """case_sensitive parameter is included correctly in the query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -164,7 +164,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_case_auto_not_added(self):
-        """case_sensitive='auto' 时不应添加 case: 前缀"""
+        """case_sensitive='auto' should not add a case: prefix to the query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -178,7 +178,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_combined_filters(self):
-        """多个过滤器可组合使用"""
+        """Multiple filters can be combined together."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -202,7 +202,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_empty_results(self):
-        """Zoekt 返回空结果"""
+        """Zoekt returns empty results."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_EMPTY_RESPONSE)
@@ -213,7 +213,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_418_teapot(self):
-        """Zoekt 返回 418 表示无结果"""
+        """Zoekt returning 418 indicates no results."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(418, text="I'm a teapot")
@@ -224,7 +224,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_score_normalization_with_zoekt_score(self):
-        """有 Score 字段时使用 sigmoid 归一化"""
+        """When a Score field is present, sigmoid normalization is applied."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -238,19 +238,19 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_score_threshold(self):
-        """score_threshold 能过滤低分结果"""
+        """score_threshold filters out low-scoring results."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
             )
 
             results = await zoekt_client.search(query="test", score_threshold=0.99)
-            # 两条结果的归一化分数都应低于 0.99
+            # both results' normalized scores should be below 0.99
             assert len(results) == 0
 
     @pytest.mark.asyncio
     async def test_search_top_k(self):
-        """top_k 限制返回数量"""
+        """top_k limits the number of returned results."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -261,7 +261,7 @@ class TestSearch:
 
     @pytest.mark.asyncio
     async def test_search_context_lines_param(self):
-        """NUM_CONTEXT_LINES > 0 时应传入 ctx 参数"""
+        """When NUM_CONTEXT_LINES > 0, the ctx parameter should be sent."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -275,14 +275,14 @@ class TestSearch:
                 assert ctx_param == str(config.NUM_CONTEXT_LINES)
 
 
-# ─── zoekt_client.search_regex() 测试 ────────────────
+# ─── zoekt_client.search_regex() tests ────────────────
 
 class TestSearchRegex:
-    """测试 zoekt_client.search_regex() 函数"""
+    """Tests for the zoekt_client.search_regex() function."""
 
     @pytest.mark.asyncio
     async def test_regex_query_format(self):
-        """正则搜索使用 content:/pattern/ 格式"""
+        """Regex search uses content:/pattern/ format."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -296,7 +296,7 @@ class TestSearchRegex:
 
     @pytest.mark.asyncio
     async def test_regex_with_lang(self):
-        """正则搜索支持 lang 过滤"""
+        """Regex search supports lang filter."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -310,7 +310,7 @@ class TestSearchRegex:
 
     @pytest.mark.asyncio
     async def test_regex_with_repo(self):
-        """正则搜索支持 repo 过滤"""
+        """Regex search supports repo filter."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -325,14 +325,14 @@ class TestSearchRegex:
             assert "r:frameworks/base" in q_param
 
 
-# ─── zoekt_client.list_repos() 测试 ──────────────────
+# ─── zoekt_client.list_repos() tests ──────────────────
 
 class TestListRepos:
-    """测试 zoekt_client.list_repos() 函数"""
+    """Tests for the zoekt_client.list_repos() function."""
 
     @pytest.mark.asyncio
     async def test_list_repos_query(self):
-        """list_repos 使用 type:repo 查询"""
+        """list_repos uses type:repo query."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -347,7 +347,7 @@ class TestListRepos:
 
     @pytest.mark.asyncio
     async def test_list_repos_no_query(self):
-        """无 query 时只用 type:repo"""
+        """Without a query, only type:repo is used."""
         with respx.mock:
             route = respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -361,7 +361,7 @@ class TestListRepos:
 
     @pytest.mark.asyncio
     async def test_list_repos_dedup(self):
-        """list_repos 从 FileMatches 提取去重的 repo"""
+        """list_repos extracts deduplicated repos from FileMatches."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(200, json=MOCK_SEARCH_RESPONSE)
@@ -369,13 +369,13 @@ class TestListRepos:
 
             repos = await zoekt_client.list_repos()
 
-            # MOCK 数据两条都是 frameworks/base，去重后应只有 1 个
+            # both MOCK records are frameworks/base; after dedup only 1 remains
             assert len(repos) == 1
             assert repos[0]["name"] == "frameworks/base"
 
     @pytest.mark.asyncio
     async def test_list_repos_empty(self):
-        """无匹配仓库时返回空列表"""
+        """Returns an empty list when there are no matching repos."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/search").mock(
                 return_value=httpx.Response(418, text="I'm a teapot")
@@ -385,14 +385,14 @@ class TestListRepos:
             assert repos == []
 
 
-# ─── zoekt_client.fetch_file_content() 测试 ──────────
+# ─── zoekt_client.fetch_file_content() tests ──────────
 
 class TestFetchFileContent:
-    """测试 zoekt_client.fetch_file_content() 函数"""
+    """Tests for the zoekt_client.fetch_file_content() function."""
 
     @pytest.mark.asyncio
     async def test_fetch_full_file(self):
-        """获取完整文件内容"""
+        """Fetch full file content."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)
@@ -411,7 +411,7 @@ class TestFetchFileContent:
 
     @pytest.mark.asyncio
     async def test_fetch_line_range(self):
-        """指定行范围"""
+        """Fetch a specific line range."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)
@@ -426,13 +426,13 @@ class TestFetchFileContent:
 
             assert result["start_line"] == 2
             assert result["end_line"] == 4
-            # 应只有 3 行
+            # should contain exactly 3 lines
             lines = result["content"].split("\n")
             assert len(lines) == 3
 
     @pytest.mark.asyncio
     async def test_fetch_file_not_found(self):
-        """文件不存在时抛出 FileNotFoundError"""
+        """Raises FileNotFoundError when the file does not exist."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(418, text="I'm a teapot")
@@ -446,7 +446,7 @@ class TestFetchFileContent:
 
     @pytest.mark.asyncio
     async def test_fetch_line_numbers_in_output(self):
-        """输出中包含行号前缀"""
+        """Output includes line number prefixes."""
         with respx.mock:
             respx.get(f"{config.ZOEKT_URL}/print").mock(
                 return_value=httpx.Response(200, text=MOCK_PRINT_RESPONSE_HTML)
@@ -460,13 +460,13 @@ class TestFetchFileContent:
             assert "L5:" in result["content"]
 
 
-# ─── _build_content_snippet() 测试 ───────────────────
+# ─── _build_content_snippet() tests ───────────────────
 
 class TestBuildContentSnippet:
-    """测试代码片段构建"""
+    """Tests for code snippet building."""
 
     def test_normal_fragments(self):
-        """正常的 Fragments 拼接"""
+        """Normal fragments are concatenated correctly."""
         fm = {
             "Matches": [
                 {
@@ -482,12 +482,12 @@ class TestBuildContentSnippet:
         assert "startBootstrap" in result
 
     def test_no_matches(self):
-        """无匹配时返回占位文本"""
+        """Returns placeholder text when there are no matches."""
         result = zoekt_client._build_content_snippet({"Matches": []})
         assert result == "(no content preview available)"
 
     def test_multiple_matches(self):
-        """多行匹配"""
+        """Multiple line matches."""
         fm = {
             "Matches": [
                 {

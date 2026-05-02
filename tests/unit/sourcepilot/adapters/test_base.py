@@ -1,7 +1,7 @@
 """
-adapters/base.py 单元测试
+Unit tests for adapters/base.py
 
-验证数据类（ContentType、QueryOptions、SearchItem 等）和 SearchAdapter ABC。
+Validates data classes (ContentType, QueryOptions, SearchItem, etc.) and the SearchAdapter ABC.
 """
 
 import pytest
@@ -16,10 +16,10 @@ from adapters.base import (
 )
 
 
-# ─── ContentType 枚举 ─────────────────────────────────────────────────────────
+# ─── ContentType enum ─────────────────────────────────────────────────────────
 
 class TestContentType:
-    """ContentType 枚举值验证。"""
+    """ContentType enum value validation."""
 
     def test_code_value(self):
         assert ContentType.CODE.value == "code"
@@ -37,14 +37,14 @@ class TestContentType:
         assert ContentType.CONFIG.value == "config"
 
     def test_all_five_values(self):
-        # 枚举共有 5 个成员
+        # enum has exactly 5 members
         assert len(ContentType) == 5
 
 
-# ─── QueryOptions 默认值 ───────────────────────────────────────────────────────
+# ─── QueryOptions defaults ───────────────────────────────────────────────────
 
 class TestQueryOptions:
-    """QueryOptions 数据类默认值和自定义值验证。"""
+    """QueryOptions dataclass default and custom value validation."""
 
     def test_default_max_results(self):
         opts = QueryOptions()
@@ -77,10 +77,10 @@ class TestQueryOptions:
         assert opts.cursor == "abc"
 
 
-# ─── Highlight 数据类 ──────────────────────────────────────────────────────────
+# ─── Highlight dataclass ──────────────────────────────────────────────────────
 
 class TestHighlight:
-    """Highlight 数据类创建验证。"""
+    """Highlight dataclass creation validation."""
 
     def test_create_with_text_only(self):
         h = Highlight(text="ActivityManager")
@@ -94,15 +94,15 @@ class TestHighlight:
     def test_ranges_default_is_list(self):
         h1 = Highlight(text="a")
         h2 = Highlight(text="b")
-        # 默认 factory 确保不同实例不共享列表
+        # default factory ensures different instances don't share the list
         h1.ranges.append((0, 1))
         assert h2.ranges == []
 
 
-# ─── SearchItem 数据类 ─────────────────────────────────────────────────────────
+# ─── SearchItem dataclass ─────────────────────────────────────────────────────
 
 class TestSearchItem:
-    """SearchItem 数据类创建和可选字段默认值验证。"""
+    """SearchItem dataclass creation and optional-field default validation."""
 
     def _make_item(self, **kwargs):
         defaults = dict(
@@ -154,10 +154,10 @@ class TestSearchItem:
         assert item.metadata["repo"] == "frameworks/base"
 
 
-# ─── BackendQuery 数据类 ──────────────────────────────────────────────────────
+# ─── BackendQuery dataclass ───────────────────────────────────────────────────
 
 class TestBackendQuery:
-    """BackendQuery 数据类创建验证。"""
+    """BackendQuery dataclass creation validation."""
 
     def test_create_minimal(self):
         q = BackendQuery(raw_query="ActivityManager", parsed={"term": "ActivityManager"})
@@ -187,10 +187,10 @@ class TestBackendQuery:
         assert q.options.max_results == 25
 
 
-# ─── BackendResponse 数据类 ───────────────────────────────────────────────────
+# ─── BackendResponse dataclass ───────────────────────────────────────────────
 
 class TestBackendResponse:
-    """BackendResponse 数据类创建验证。"""
+    """BackendResponse dataclass creation validation."""
 
     def _make_response(self, **kwargs):
         defaults = dict(
@@ -222,7 +222,7 @@ class TestBackendResponse:
         assert r.cursor is None
 
     def test_status_values(self):
-        # 支持 ok / error / timeout / partial
+        # supports ok / error / timeout / partial
         for status in ("ok", "error", "timeout", "partial"):
             r = self._make_response(status=status)
             assert r.status == status
@@ -244,15 +244,15 @@ class TestBackendResponse:
 # ─── SearchAdapter ABC ────────────────────────────────────────────────────────
 
 class TestSearchAdapterABC:
-    """SearchAdapter 是抽象基类，不可直接实例化。"""
+    """SearchAdapter is an abstract base class and cannot be instantiated directly."""
 
     def test_cannot_instantiate_directly(self):
-        # 直接实例化必须抛出 TypeError
+        # direct instantiation must raise TypeError
         with pytest.raises(TypeError):
             SearchAdapter()  # type: ignore
 
     def test_subclass_must_implement_search(self):
-        """未实现 search 的子类不可实例化。"""
+        """A subclass that does not implement search cannot be instantiated."""
 
         class PartialAdapter(SearchAdapter):
             async def get_content(self, item_id: str) -> dict:
@@ -273,7 +273,7 @@ class TestSearchAdapterABC:
             PartialAdapter()
 
     def test_full_subclass_can_instantiate(self):
-        """实现所有抽象方法的子类可以实例化。"""
+        """A subclass that implements all abstract methods can be instantiated."""
 
         class ConcreteAdapter(SearchAdapter):
             async def search(self, query: BackendQuery) -> BackendResponse:

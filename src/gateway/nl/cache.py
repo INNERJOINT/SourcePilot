@@ -1,8 +1,8 @@
 """
-Rewrite 缓存 + 高频概念映射表
+Rewrite cache and high-frequency concept mapping table
 
-- 概念映射表：高频 AOSP 查询直接映射到符号，跳过 LLM 调用
-- LRU 缓存：缓存 LLM rewrite 结果，TTL 24h
+- Concept map: maps high-frequency AOSP queries directly to symbols, bypassing LLM calls.
+- LRU cache: caches LLM rewrite results with a 24h TTL.
 """
 
 import hashlib
@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 from config import NL_CACHE_TTL
 
-# ─── LRU 缓存 ──────────────────────────────────────
+# ─── LRU cache ───────────────────────────────────────
 _cache: dict[str, tuple[float, list]] = {}
 
-# ─── 概念映射表 ────────────────────────────────────
+# ─── Concept mapping table ────────────────────────────
 _concept_map: dict[str, list[dict]] = {}
 _MAP_PATH = os.path.join(os.path.dirname(__file__), "concept_map.json")
 
@@ -41,16 +41,16 @@ def _hash_key(query: str) -> str:
 
 def get_cached_rewrite(query: str) -> list[dict] | None:
     """
-    查找缓存的 rewrite 结果。
-    优先检查概念映射表，再检查 LRU 缓存。
+    Look up a cached rewrite result.
+    Checks the concept map first, then the LRU cache.
     """
-    # 1. 概念映射表匹配
+    # 1. Concept map lookup
     for concept, queries in _concept_map.items():
         if concept in query:
             logger.debug("Concept map hit: '%s'", concept)
             return queries
 
-    # 2. LRU 缓存
+    # 2. LRU cache
     key = _hash_key(query)
     if key in _cache:
         ts, result = _cache[key]
@@ -62,10 +62,10 @@ def get_cached_rewrite(query: str) -> list[dict] | None:
 
 
 def set_cached_rewrite(query: str, result: list[dict]):
-    """缓存 rewrite 结果。"""
+    """Cache a rewrite result."""
     key = _hash_key(query)
     _cache[key] = (time.time(), result)
-    # 简易 LRU：超过 1000 条时清理最旧的
+    # Simple LRU eviction: discard the oldest entry when the cache exceeds 1000 items
     if len(_cache) > 1000:
         oldest_key = min(_cache, key=lambda k: _cache[k][0])
         del _cache[oldest_key]

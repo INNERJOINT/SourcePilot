@@ -90,7 +90,7 @@ def _get_dense_adapter(project: str | None = None):
 
 
 def _get_structural_adapter():
-    """Lazy-init structural adapter when STRUCTURAL_ENABLED=true。"""
+    """Lazy-init structural adapter when STRUCTURAL_ENABLED=true."""
     global _structural_adapter
     if not config.STRUCTURAL_ENABLED:
         return None
@@ -108,7 +108,7 @@ def _get_structural_adapter():
 async def _search_with_audit(
     query: str, route_index: int, project: str | None = None, **kwargs
 ) -> list[dict]:
-    """单路 Zoekt 搜索，带 audit_stage 记录。"""
+    """Single-lane Zoekt search with audit_stage logging."""
     async with audit_stage("zoekt_search", {"query": query, "route_index": route_index}) as stg:
         records = await _get_adapter(project).search_zoekt(query=query, **kwargs)
         stg.set_result({"records_count": len(records), "records": records})
@@ -233,7 +233,7 @@ async def _nl_search(
     )
 
     if not rewrite_results:
-        # rewrite 完全失败时，降级为直接搜索
+        # When rewrite completely fails, fall back to a direct search
         async with audit_stage(
             "fallback_search", {"query": query, "reason": "rewrite_empty"}
         ) as stg:
@@ -249,10 +249,10 @@ async def _nl_search(
             stg.set_result_count(len(records))
         return records
 
-    # 2. 构建并行任务：Zoekt 多路 rewrite + Dense 单路语义
+    # 2. Build parallel tasks: Zoekt multi-lane rewrite + Dense single-lane semantic
     tasks = []
 
-    # 2a. Zoekt 通道：rewritten queries → 多路并行
+    # 2a. Zoekt lane: rewritten queries → multiple parallel lanes
     for i, rq in enumerate(rewrite_results):
         tasks.append(
             _search_with_audit(
@@ -267,13 +267,13 @@ async def _nl_search(
             )
         )
 
-    # 2b. Dense 通道：原始 NL query → 单路语义搜索
+    # 2b. Dense lane: original NL query → single-lane semantic search
     dense = _get_dense_adapter(project)
     has_dense = dense is not None
     if has_dense:
         tasks.append(_dense_search_with_audit(query, repos=repos, project=project))
 
-    # 2c. Structural 通道：原始 NL query → 结构化关系搜索
+    # 2c. Structural lane: original NL query → relationship-based structural search
     structural = _get_structural_adapter()
     has_structural = structural is not None
     if has_structural:
@@ -282,7 +282,7 @@ async def _nl_search(
     zoekt_route_count = len(rewrite_results)
     lane_idx = _assemble_lane_indices(zoekt_route_count, has_dense, has_structural)
 
-    # 3. 并行执行所有任务
+    # 3. Execute all tasks in parallel
     async with audit_stage(
         "nl_parallel_search",
         {
@@ -295,7 +295,7 @@ async def _nl_search(
     ) as stg:
         all_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 4. 分离 Zoekt、Dense 和 Structural 结果
+        # 4. Separate Zoekt, Dense, and Structural results
         zoekt_results_raw = all_results[:zoekt_route_count]
         valid_zoekt = [r for r in zoekt_results_raw if isinstance(r, list)]
         failed_zoekt = [r for r in zoekt_results_raw if isinstance(r, Exception)]
@@ -332,7 +332,7 @@ async def _nl_search(
     )
 
     if not valid_zoekt and not dense_results and not structural_results:
-        # 所有路都失败时，降级
+        # All lanes failed — fall back to direct search
         async with audit_stage(
             "fallback_search", {"query": query, "reason": "all_routes_failed"}
         ) as stg:
@@ -348,7 +348,7 @@ async def _nl_search(
             stg.set_result_count(len(records))
         return records
 
-    # 5. RRF 融合（Zoekt 多路 + Dense 一路 + Structural 一路）
+    # 5. RRF fusion (Zoekt multi-lane + Dense lane + Structural lane)
     all_lists = (
         valid_zoekt
         + ([dense_results] if dense_results else [])
@@ -390,7 +390,7 @@ async def _nl_search(
         )
         stg.set_result_count(len(reranked))
 
-    # 7. 按 score_threshold 过滤
+    # 7. Filter by score_threshold
     if score_threshold > 0:
         reranked = [r for r in reranked if r.get("score", 0) >= score_threshold]
 
@@ -402,7 +402,7 @@ async def _dense_search_with_audit(
     repos: str | None = None,
     project: str | None = None,
 ) -> list[dict]:
-    """Dense 通道搜索，带 audit 和降级。"""
+    """Dense lane search with audit logging and graceful degradation."""
     async with audit_stage("dense_search", {"query": query}) as stg:
         try:
             dense = _get_dense_adapter(project)
@@ -424,7 +424,7 @@ async def _structural_search_with_audit(
     repos: str | None = None,
     project: str | None = None,
 ) -> list[dict]:
-    """Structural 通道搜索，带 audit 和降级。"""
+    """Structural lane search with audit logging and graceful degradation."""
     async with audit_stage("structural_search", {"query": query}) as stg:
         try:
             structural = _get_structural_adapter()
@@ -446,7 +446,7 @@ async def _structural_search_with_audit(
 def _assemble_lane_indices(
     zoekt_route_count: int, has_dense: bool, has_structural: bool
 ) -> dict[str, int | None]:
-    """计算各 lane 在 asyncio.gather 结果列表中的索引。"""
+    """Compute the index of each lane in the asyncio.gather result list."""
     idx = zoekt_route_count
     dense_idx = None
     structural_idx = None

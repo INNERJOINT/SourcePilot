@@ -41,8 +41,8 @@ to verify each pipeline stage actually ran with the right `records_count`.
 | # | Case name | Endpoint | Payload | Expected behavior |
 |---|-----------|----------|---------|-------------------|
 | 1 | `zoekt_keyword` | `/api/search` | `{"query":"binder_open","top_k":5}` | Plain keyword → Zoekt path, dense not required |
-| 2 | `nl_inscope_dense` | `/api/search` | `{"query":"binder 驱动的权限校验机制","top_k":5}` | NL query in scope of `frameworks/base` index → dense returns hits |
-| 3 | `nl_outscope_dense` | `/api/search` | `{"query":"Launcher3 桌面布局加载流程","top_k":5}` | NL query out of scope → dense returns 0 (correctness signal) |
+| 2 | `nl_inscope_dense` | `/api/search` | `{"query":"binder driver permission check mechanism","top_k":5}` | NL query in scope of `frameworks/base` index → dense returns hits |
+| 3 | `nl_outscope_dense` | `/api/search` | `{"query":"Launcher3 home screen layout loading flow","top_k":5}` | NL query out of scope → dense returns 0 (correctness signal) |
 | 4 | `symbol` | `/api/search_symbol` | `{"symbol":"startBootstrapServices","top_k":3}` | Symbol search via Zoekt |
 | 5 | `file` | `/api/search_file` | `{"path":"AndroidManifest.xml","top_k":3}` | Filename search |
 | 6 | `regex` | `/api/search_regex` | `{"pattern":"binder_[a-z_]+","top_k":3}` | Regex search |
@@ -71,7 +71,7 @@ The script aborts with exit code `2` if any of these fail:
 1. Required tool missing (`curl`, `jq`, `sqlite3`, and one of `uuidgen` / `openssl`).
 2. `sp-cockpit/data/audit.db` does not exist (sp-cockpit not running).
 3. SourcePilot health endpoint (`GET /api/health`) does not respond within `TIMEOUT` (default 15s).
-4. **Dense probe**: a single `binder 驱动权限校验 probe` query is fired; if no
+4. **Dense probe**: a single `binder driver permission check probe` query is fired; if no
    `dense_search` stage row appears in `audit.db` within 3 seconds, the script
    prints "Set `DENSE_ENABLED=true`, ensure Qdrant is running with
    `frameworks/base` indexed, and restart SourcePilot." and exits 2.
@@ -108,7 +108,7 @@ A focused, single-query verifier for the dense search path. Useful for
 
 1. Health-checks SourcePilot at `$SOURCEPILOT_URL/api/health`.
 2. Generates a `trace_id`.
-3. Sends one NL query: `"binder 驱动的权限校验机制"` to `/api/search` with `top_k=5`.
+3. Sends one NL query: `"binder driver permission check mechanism"` to `/api/search` with `top_k=5`.
 4. Reports response status, total result count, and how many results have
    `source == "dense"` vs other.
 5. Greps `audit.log` (path `AUDIT_LOG`, default `./audit.log`) for that
@@ -153,7 +153,7 @@ scripts/run_mcp.sh --transport streamable-http --port 8888
 
 The script uses a temporary SSE sink and kills the background `curl` SSE
 process on exit. Failure to obtain a session ID exits non-zero with
-"❌ 错误: 无法获取 Session ID".
+"❌ Error: Unable to obtain Session ID".
 
 ### When to use it
 
@@ -167,10 +167,10 @@ process on exit. Failure to obtain a session ID exits non-zero with
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `smoke_queries.sh` exits 2 with "audit.db 不存在" | sp-cockpit not running, or wrong `AUDIT_DB` path | Start sp-cockpit (port 9100); set `AUDIT_DB=sp-cockpit/data/audit.db` |
+| `smoke_queries.sh` exits 2 with "audit.db not found" | sp-cockpit not running, or wrong `AUDIT_DB` path | Start sp-cockpit (port 9100); set `AUDIT_DB=sp-cockpit/data/audit.db` |
 | `smoke_queries.sh` exits 2 with "dense_search stage not seen" | `DENSE_ENABLED` not true, Qdrant down, or `frameworks/base` not indexed | Re-export `DENSE_ENABLED=true` and restart SourcePilot |
-| `test_dense.sh` warns "audit.log 不存在" | SourcePilot configured to write audit elsewhere or audit disabled | Set `AUDIT_LOG=...` or check SourcePilot env |
-| `test_mcp_endpoints.sh` "无法获取 Session ID" | MCP not started in `streamable-http` mode, or wrong port | Start with `scripts/run_mcp.sh --transport streamable-http --port 8888` |
+| `test_dense.sh` warns "audit.log not found" | SourcePilot configured to write audit elsewhere or audit disabled | Set `AUDIT_LOG=...` or check SourcePilot env |
+| `test_mcp_endpoints.sh` "Unable to obtain Session ID" | MCP not started in `streamable-http` mode, or wrong port | Start with `scripts/run_mcp.sh --transport streamable-http --port 8888` |
 | Any script: `command not found: jq` | `jq` not installed | `apt install jq` (or platform equivalent) |
 
 ## See also

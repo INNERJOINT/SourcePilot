@@ -67,16 +67,16 @@ export default function RepoDetail() {
       {detail && (
         <>
           <div className="bg-white border rounded p-4 space-y-2">
-            <div><span className="font-medium">路径:</span> {detail.repo.repo_path}</div>
+            <div><span className="font-medium">Path:</span> {detail.repo.repo_path}</div>
             <div><span className="font-medium">Backend:</span> {detail.repo.backend}</div>
             <div>
-              <span className="font-medium">状态:</span>{" "}
+              <span className="font-medium">Status:</span>{" "}
               <span className={statusClass(detail.repo.last_status)}>
                 {detail.repo.last_status ?? "—"}
               </span>
             </div>
-            <div><span className="font-medium">最近完成:</span> {relTime(detail.repo.last_finished_at)}</div>
-            <div><span className="font-medium">实体数:</span> {detail.repo.entity_count ?? "—"}</div>
+            <div><span className="font-medium">Last Finished:</span> {relTime(detail.repo.last_finished_at)}</div>
+            <div><span className="font-medium">Entities:</span> {detail.repo.entity_count ?? "—"}</div>
           </div>
 
           <div className="bg-white border rounded overflow-x-auto">
