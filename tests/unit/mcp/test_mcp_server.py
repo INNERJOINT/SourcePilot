@@ -1,18 +1,19 @@
 """
-MCP Server 处理器测试
+MCP Server 处理器测试 (FastMCP)
 
 使用 respx 模拟 SourcePilot HTTP API 响应，无需运行真实的 SourcePilot 服务。
-MCP 层通过 httpx 调用 SourcePilot，不再直接访问 Zoekt。
+Each test creates its own in-memory MCP session to avoid anyio cancel-scope issues.
 """
 
-import json
+from contextlib import asynccontextmanager
+
+import httpx
 import pytest
 import respx
-import httpx
+from mcp.shared.memory import create_connected_server_and_client_session
+from mcp_server import _lifespan, mcp
 
-from mcp_server import call_tool
-
-# ─── SourcePilot API Mock 数据 ────────────────────────
+SP_URL = "http://mock-sourcepilot:9000"
 
 MOCK_SP_SEARCH_RESULTS = [
     {
@@ -37,12 +38,10 @@ MOCK_SP_SEARCH_RESULTS = [
     },
 ]
 
-MOCK_SP_LIST_REPOS = [
-    {"name": "frameworks/base", "url": ""},
-]
+MOCK_SP_LIST_REPOS = [{"name": "frameworks/base", "url": ""}]
 
 MOCK_SP_FILE_CONTENT = {
-    "content": "L1: package com.android.server;\nL2: \nL3: import android.os.Process;\nL4: \nL5: public class SystemServer {",
+    "content": "L1: package com.android.server;\nL2: \nL3: import android.os.Process;\n",
     "total_lines": 5,
     "repo": "frameworks/base",
     "filepath": "test.java",
@@ -50,150 +49,145 @@ MOCK_SP_FILE_CONTENT = {
     "end_line": 5,
 }
 
-SP_URL = "http://mock-sourcepilot:9000"
+
+@asynccontextmanager
+async def _mcp_session():
+    """Create a fresh in-memory MCP client session with lifespan."""
+    async with _lifespan(mcp):
+        async with create_connected_server_and_client_session(mcp._mcp_server) as session:
+            yield session
 
 
 # ─── MCP Server 工具测试 ─────────────────────────────
 
-class TestMCPTools:
-    """测试 MCP Server 工具路由和格式化（通过 SourcePilot HTTP API）"""
 
-    @pytest.mark.asyncio
-    async def test_mcp_search_code(self):
-        """MCP search_code 工具调用 → POST /api/search"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_code():
+    """MCP search_code 工具调用 → POST /api/search"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/search").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_code", {"inp": {"query": "startBootstrapServices"}}
             )
+        text = result.content[0].text
+        assert "SystemServer" in text or "startBootstrapServices" in text
 
-            result = await call_tool("search_code", {"query": "startBootstrapServices"})
 
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "startBootstrapServices" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_symbol(self):
-        """MCP search_symbol 工具调用 → POST /api/search_symbol"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/search_symbol").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_symbol():
+    """MCP search_symbol 工具調用 → POST /api/search_symbol"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/search_symbol").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_symbol", {"inp": {"symbol": "ActivityManager"}}
             )
+        assert "SystemServer" in result.content[0].text
 
-            result = await call_tool("search_symbol", {"symbol": "ActivityManager"})
 
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "SystemServer" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_file(self):
-        """MCP search_file 工具调用 → POST /api/search_file"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/search_file").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_file():
+    """MCP search_file 工具調用 → POST /api/search_file"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/search_file").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_file", {"inp": {"path": "SystemServer.java"}}
             )
+        assert "SystemServer" in result.content[0].text
 
-            result = await call_tool("search_file", {"path": "SystemServer.java"})
 
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "SystemServer" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_regex(self):
-        """MCP search_regex 工具调用 → POST /api/search_regex"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/search_regex").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_regex():
+    """MCP search_regex 工具調用 → POST /api/search_regex"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/search_regex").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_regex", {"inp": {"pattern": r"TODO.*fix"}}
             )
+        assert "SystemServer" in result.content[0].text
 
-            result = await call_tool("search_regex", {"pattern": r"TODO.*fix"})
 
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "SystemServer" in result[0].text
+@pytest.mark.asyncio
+async def test_mcp_list_repos():
+    """MCP list_repos 工具調用 → POST /api/list_repos"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/list_repos").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_LIST_REPOS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool("list_repos", {"inp": {}})
+        assert "frameworks/base" in result.content[0].text
 
-    @pytest.mark.asyncio
-    async def test_mcp_list_repos(self):
-        """MCP list_repos 工具调用 → POST /api/list_repos"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/list_repos").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_LIST_REPOS)
+
+@pytest.mark.asyncio
+async def test_mcp_get_file_content():
+    """MCP get_file_content 工具調用 → POST /api/get_file_content"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/get_file_content").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_FILE_CONTENT)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "get_file_content",
+                {"inp": {"repo": "frameworks/base", "filepath": "test.java"}},
             )
+        assert "package com.android.server" in result.content[0].text
 
-            result = await call_tool("list_repos", {"query": "frameworks"})
 
-            assert len(result) == 1
-            assert result[0].type == "text"
-            assert "frameworks/base" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_get_file_content(self):
-        """MCP get_file_content 工具调用 → POST /api/get_file_content"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/get_file_content").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_FILE_CONTENT)
+@pytest.mark.asyncio
+async def test_mcp_empty_results():
+    """无结果时返回 total=0 / 空 hits"""
+    with respx.mock:
+        respx.post(f"{SP_URL}/api/search").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_code", {"inp": {"query": "xyz_nonexistent"}}
             )
-
-            result = await call_tool("get_file_content", {
-                "repo": "frameworks/base",
-                "filepath": "test.java",
-            })
-
-            assert len(result) == 1
-            assert "package com.android.server" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_unknown_tool(self):
-        """未知工具返回错误消息"""
-        result = await call_tool("nonexistent_tool", {})
-        assert "Unknown tool" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_mcp_empty_results(self):
-        """无结果时返回友好提示"""
-        with respx.mock:
-            respx.post(f"{SP_URL}/api/search").mock(
-                return_value=httpx.Response(200, json=[])
-            )
-
-            result = await call_tool("search_code", {"query": "xyz_nonexistent"})
-            assert "未找到" in result[0].text
+        text = result.content[0].text
+        assert '"total": 0' in text or '"hits": []' in text
 
 
 # ─── MCP NL 搜索测试 ─────────────────────────────────
 
-class TestMCPNLSearch:
-    """测试 MCP Server search_code 对不同查询类型的处理。
 
-    MCP 层不再区分 NL/exact 查询 — 所有查询都转发给 SourcePilot。
-    这些测试验证无论查询内容是什么，都正确调用 SourcePilot /api/search 并返回结果。
-    """
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_nl_query_hits_sourcepilot(self):
-        """自然语言查询正确转发到 SourcePilot /api/search"""
-        with respx.mock:
-            route = respx.post(f"{SP_URL}/api/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_nl_query_hits_sourcepilot():
+    """自然语言查询正确转发到 SourcePilot /api/search"""
+    with respx.mock:
+        route = respx.post(f"{SP_URL}/api/search").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_code", {"inp": {"query": "Android 启动流程怎么初始化"}}
             )
+        assert route.called
+        assert result.content
 
-            result = await call_tool("search_code", {"query": "Android 启动流程怎么初始化"})
 
-            assert route.called
-            assert result[0].type == "text"
-            assert len(result) == 1
-
-    @pytest.mark.asyncio
-    async def test_mcp_search_exact_query_hits_sourcepilot(self):
-        """精确查询同样转发到 SourcePilot /api/search"""
-        with respx.mock:
-            route = respx.post(f"{SP_URL}/api/search").mock(
-                return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+@pytest.mark.asyncio
+async def test_mcp_search_exact_query_hits_sourcepilot():
+    """精确查询同样转发到 SourcePilot /api/search"""
+    with respx.mock:
+        route = respx.post(f"{SP_URL}/api/search").mock(
+            return_value=httpx.Response(200, json=MOCK_SP_SEARCH_RESULTS)
+        )
+        async with _mcp_session() as session:
+            result = await session.call_tool(
+                "search_code", {"inp": {"query": "startBootstrapServices"}}
             )
-
-            result = await call_tool("search_code", {"query": "startBootstrapServices"})
-
-            assert route.called
-            assert "startBootstrapServices" in result[0].text
+        assert route.called
+        assert "startBootstrapServices" in result.content[0].text

@@ -17,11 +17,13 @@ AI tools (Claude Code / Cursor / ...)
 |  └── entry/mcp_http.py    HTTP transport +    |
 |                           auth                |
 +----------------------------------------------+
-|  entry/handlers.py                            |
-|  ├── MCP Server + 7 tool definitions          |
-|  ├── aosp:// resource URI reads               |
-|  ├── result formatting (LLM-friendly text)    |
-|  └── httpx client → SourcePilot API           |
+|  entry/tools.py      — 7 @tool handlers        |
+|  entry/resources.py  — aosp:// URI reads      |
+|  entry/prompts.py    — @prompt templates      |
+|  entry/completions.py — @completion hints     |
+|  entry/models.py     — Pydantic I/O models    |
+|  (httpx client owned by lifespan, injected    |
+|   via ctx.request_context.lifespan_context)   |
 +----------------------------------------------+
         |
         |  HTTP (default http://localhost:9000)
@@ -58,7 +60,7 @@ For local tools such as Claude Code or Cursor that speak MCP over stdin/stdout:
 scripts/run_mcp.sh
 ```
 
-Add to your Claude Code config:
+Add to your Claude Code config (`~/.claude/claude.json` or project `.claude/settings.json`):
 
 ```json
 {
@@ -68,6 +70,22 @@ Add to your Claude Code config:
     }
   }
 }
+```
+
+Example tool calls from Claude Code:
+
+```
+# Keyword / NL search with progress reporting
+search_code(query="SystemServer startBootstrapServices", lang="java")
+
+# Symbol lookup
+search_symbol(symbol="ActivityManagerService")
+
+# Regex across all repos
+search_regex(pattern="binder_open\\s*\\(", repo="kernel/common")
+
+# Guided caller investigation via the find_callers prompt
+/mcp aosp-code-search find_callers symbol=startBootstrapServices
 ```
 
 ### Streamable HTTP mode (remote access)
@@ -139,6 +157,26 @@ Read the full contents of an AOSP source file or a specified line range. Use `se
 ```
 get_file_content(repo="frameworks/base", filepath="core/java/android/os/Process.java", start_line=100, end_line=200)
 ```
+
+## MCP Prompts
+
+One prompt template is registered for guided investigation workflows:
+
+### find_callers
+
+Guides the LLM to locate all call sites of a symbol using `search_symbol` + `search_regex` + `get_file_content`.
+
+Claude Code example:
+
+```
+/mcp aosp-code-search find_callers symbol=startBootstrapServices repo=frameworks/base
+```
+
+The prompt instructs the model to:
+1. Run `search_symbol` to confirm the definition and qualified name.
+2. Run `search_regex` to enumerate call patterns.
+3. Use `get_file_content` to read surrounding context for each match.
+4. Deduplicate by `(repo, filepath, line_number)` and report each unique call site.
 
 ## MCP Resources
 

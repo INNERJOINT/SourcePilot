@@ -4,12 +4,11 @@ BearerTokenMiddleware 单元测试
 测试 entry/mcp_http.py 中 BearerTokenMiddleware 的鉴权逻辑。
 """
 import pytest
-from starlette.applications import Starlette
-from starlette.routing import Route
-from starlette.responses import JSONResponse
-from starlette.testclient import TestClient
-
 from entry.mcp_http import BearerTokenMiddleware
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 # ─── 测试用 inner app ────────────────────────────────────
 

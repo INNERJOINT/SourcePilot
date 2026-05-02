@@ -1,37 +1,96 @@
-"""Entry point -- `python -m mcp_server`."""
-import asyncio
+"""MCP Server — FastMCP instance, lifespan, and tool/resource registration."""
+
+from __future__ import annotations
+
 import argparse
+import asyncio
+import logging
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
-# Re-export for backward compat (tests import call_tool, server from here)
-from entry.handlers import call_tool, server  # noqa: F401
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
+
+# ─── Lifespan context ──────────────────────────────────────────────────────────
 
 
-def main():
+@dataclass
+class AppContext:
+    """Lifespan-owned resources; access via ctx.request_context.lifespan_context."""
+
+    http_client: httpx.AsyncClient
+
+
+@asynccontextmanager
+async def _lifespan(server: FastMCP) -> AsyncIterator[AppContext]:  # noqa: ARG001
+    """Create and tear down the shared httpx client."""
+    from entry.resources import set_resource_client
+
+    client = httpx.AsyncClient(timeout=30.0)
+    set_resource_client(client)
+    logger.info("httpx.AsyncClient created (lifespan start)")
+    try:
+        yield AppContext(http_client=client)
+    finally:
+        await client.aclose()
+        logger.info("httpx.AsyncClient closed (lifespan end)")
+
+
+# ─── FastMCP instance ──────────────────────────────────────────────────────────
+
+mcp: FastMCP[AppContext] = FastMCP("sourcepilot-mcp", lifespan=_lifespan)
+
+# ─── Register tools, prompts, resources ───────────────────────────────────────
+
+from entry.tools import register_tools  # noqa: E402
+
+register_tools(mcp)
+
+from entry.resources import register_resources  # noqa: E402
+
+register_resources(mcp)
+
+from entry.prompts import register_prompts  # noqa: E402
+
+register_prompts(mcp)
+
+from entry.completions import register_completions  # noqa: E402
+
+register_completions(mcp)
+
+# ─── CLI entry point ───────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+
     parser = argparse.ArgumentParser(description="AOSP Code Search MCP Server")
     parser.add_argument(
-        "--transport", "-t",
+        "--transport",
+        "-t",
         choices=["stdio", "streamable-http"],
         default="stdio",
-        help="传输模式: stdio（默认，本地工具调用）或 streamable-http（远程 HTTP 访问）",
+        help="Transport mode: stdio (default) or streamable-http",
     )
-    parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Streamable HTTP 监听地址（默认 0.0.0.0）",
-    )
-    parser.add_argument(
-        "--port", "-p",
-        type=int,
-        default=8888,
-        help="Streamable HTTP 监听端口（默认 8888）",
-    )
+    parser.add_argument("--host", default="0.0.0.0", help="Streamable HTTP listen address")
+    parser.add_argument("--port", "-p", type=int, default=8888, help="Streamable HTTP listen port")
     args = parser.parse_args()
 
     if args.transport == "streamable-http":
         from entry.mcp_http import main_streamable_http
+
         asyncio.run(main_streamable_http(args.host, args.port))
     else:
         from entry.mcp_stdio import main_stdio
+
         asyncio.run(main_stdio())
 
 

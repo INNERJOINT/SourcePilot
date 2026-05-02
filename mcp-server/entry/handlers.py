@@ -25,7 +25,7 @@ from mcp.types import (
 )
 from pydantic import AnyUrl
 
-# 日志配置（MCP stdio 模式下日志必须输出到 stderr）
+# Logging config (in MCP stdio mode logs MUST go to stderr)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -46,23 +46,23 @@ def _set_http_client(client: httpx.AsyncClient) -> None:
 def _get_http_client() -> httpx.AsyncClient:
     return _http_client_ctx.get()
 
-# ─── 多项目探测状态 ────────────────────────────────────
+# ─── Multi-project probe state ─────────────────────────
 _multi_project: bool | None = None
 _project_names: list[str] = []
 
-# ─── 公共属性定义 ──────────────────────────────────────
+# ─── Common property definitions ───────────────────────
 _PROJECT_PROP = {
     "type": "string",
-    "description": "可选，项目名称（如 aosp-14, aosp-15）。不指定则使用默认项目。",
+    "description": "Optional, project name (e.g. aosp-14, aosp-15). If unspecified, the default project is used.",
 }
 
-# ─── 创建 MCP Server ──────────────────────────────────
+# ─── Create MCP Server ────────────────────────────────
 
 server = Server("aosp-code-search")
 
 
 async def _probe_projects() -> None:
-    """探测 SourcePilot /api/projects，更新多项目状态。失败时降级，不抛出。"""
+    """Probe SourcePilot /api/projects and update multi-project state. Degrades on failure, never raises."""
     global _multi_project, _project_names
     for attempt in range(2):
         try:
@@ -73,7 +73,7 @@ async def _probe_projects() -> None:
             )
             resp.raise_for_status()
             data = resp.json()
-            # data 预期为 list[dict] 或 dict with "projects" key
+            # data is expected to be list[dict] or dict with "projects" key
             if isinstance(data, list):
                 projects = data
             else:
@@ -89,36 +89,36 @@ async def _probe_projects() -> None:
                 logger.warning("_probe_projects attempt 1 failed: %s, retrying…", exc)
             else:
                 logger.warning("_probe_projects failed after 2 attempts: %s", exc)
-    # 保持 _multi_project = None（未探测到）
+    # Keep _multi_project = None (probe inconclusive)
 
 
 @server.list_resources()
 async def list_resources() -> list[Resource]:
-    """声明可用的资源列表。
+    """Declare the list of available resources.
 
-    暂时返回空列表（动态资源通过 read_resource 按需获取）。
+    Returns an empty list for now (dynamic resources are fetched on demand via read_resource).
     """
     return []
 
 
 @server.read_resource()
 async def read_resource(uri: AnyUrl) -> ReadResourceResult:
-    """通过 URI 读取资源内容。
+    """Read resource content via URI.
 
-    支持 URI 格式: aosp://{repo}/{filepath}
-    示例: aosp://frameworks/base/core/java/android/os/Process.java
+    Supported URI format: aosp://{repo}/{filepath}
+    Example: aosp://frameworks/base/core/java/android/os/Process.java
     """
     uri_str = str(uri)
     if not uri_str.startswith("aosp://"):
-        raise ValueError(f"不支持的 URI 格式: {uri_str}，请使用 aosp://{{repo}}/{{filepath}}")
+        raise ValueError(f"Unsupported URI format: {uri_str}, please use aosp://{{repo}}/{{filepath}}")
 
     path_part = uri_str[len("aosp://"):]
     if "/" not in path_part:
-        raise ValueError(f"URI 格式错误: {uri_str}，需要包含 repo 和 filepath: aosp://{{repo}}/{{filepath}}")
+        raise ValueError(f"Invalid URI format: {uri_str}, must contain repo and filepath: aosp://{{repo}}/{{filepath}}")
 
     repo, filepath = path_part.split("/", 1)
     if not repo or not filepath:
-        raise ValueError(f"URI 格式错误: repo 或 filepath 为空: {uri_str}")
+        raise ValueError(f"Invalid URI format: repo or filepath is empty: {uri_str}")
 
     logger.info("read_resource: repo=%s, filepath=%s", repo, filepath)
 
@@ -140,7 +140,7 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
 
     total_lines = result.get("total_lines", 0)
     file_content = result.get("content", "")
-    content = f"# {repo}/{filepath}  (共 {total_lines} 行)\n\n{file_content}"
+    content = f"# {repo}/{filepath}  ({total_lines} lines total)\n\n{file_content}"
 
     return ReadResourceResult(
         contents=[
@@ -155,17 +155,17 @@ async def read_resource(uri: AnyUrl) -> ReadResourceResult:
 
 @server.list_resource_templates()
 async def list_resource_templates() -> list[ResourceTemplate]:
-    """声明支持的资源 URI 模板。"""
+    """Declare the supported resource URI templates."""
     return [
         ResourceTemplate(
             name="aosp-file",
             uriTemplate="aosp://{repo}/{filepath}",
-            title="AOSP 源码文件",
+            title="AOSP source file",
             description=(
-                "读取 AOSP 仓库中的完整文件内容。"
-                "repo: 仓库名（如 frameworks/base）；"
-                "filepath: 文件路径（如 core/java/android/os/Process.java）。"
-                "先用 search_file 工具获取正确的 repo 和 filepath。"
+                "Read the full content of a file in an AOSP repository. "
+                "repo: repository name (e.g. frameworks/base); "
+                "filepath: file path (e.g. core/java/android/os/Process.java). "
+                "First use the search_file tool to obtain the correct repo and filepath."
             ),
             mimeType="text/plain",
         )
@@ -174,36 +174,36 @@ async def list_resource_templates() -> list[ResourceTemplate]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """声明可用的工具列表。"""
+    """Declare the list of available tools."""
     global _multi_project
     if _multi_project is None:
         await _probe_projects()
     if _multi_project is None:
-        logger.warning("list_tools: project probe未完成，使用 optional project 行为")
+        logger.warning("list_tools: project probe incomplete, using optional project behavior")
 
-    # 构造 project 属性描述（多项目时附带可选值列表）
+    # Build the project property description (multi-project: include allowed values)
     if _multi_project and _project_names:
         names_str = ", ".join(_project_names)
         project_prop_required = {
             "type": "string",
-            "description": f"必填，可选值: {names_str}",
+            "description": f"Required, allowed values: {names_str}",
         }
         project_prop_optional = {
             "type": "string",
-            "description": f"可选，项目名称。可选值: {names_str}",
+            "description": f"Optional, project name. Allowed values: {names_str}",
         }
     elif not _multi_project and _project_names:
         default_name = _project_names[0]
         project_prop_required = _PROJECT_PROP
         project_prop_optional = {
             "type": "string",
-            "description": f"可选，项目名称（如 aosp-14, aosp-15）。默认: {default_name}",
+            "description": f"Optional, project name (e.g. aosp-14, aosp-15). Default: {default_name}",
         }
     else:
         project_prop_required = _PROJECT_PROP
         project_prop_optional = _PROJECT_PROP
 
-    # 多项目时，搜索类工具 project 字段加入 required
+    # In multi-project mode, search-style tools require the project field
     search_required_base = ["query"]
     symbol_required_base = ["symbol"]
     file_required_base = ["path"]
@@ -231,16 +231,16 @@ async def list_tools() -> list[Tool]:
     common_filter_props = {
         "lang": {
             "type": "string",
-            "description": "可选，按编程语言过滤（如 java, python, cpp, go）",
+            "description": "Optional, filter by programming language (e.g. java, python, cpp, go)",
         },
         "branch": {
             "type": "string",
-            "description": "可选，按分支名过滤（如 main, android-14.0.0_r1）",
+            "description": "Optional, filter by branch name (e.g. main, android-14.0.0_r1)",
         },
         "case_sensitive": {
             "type": "string",
             "enum": ["auto", "yes", "no"],
-            "description": "大小写敏感模式：auto（默认，含大写则敏感）、yes、no",
+            "description": "Case sensitivity mode: auto (default, sensitive when query contains uppercase), yes, no",
             "default": "auto",
         },
         "project": project_prop,
@@ -250,8 +250,8 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="list_projects",
             description=(
-                "列出所有可用 AOSP 项目。"
-                "多项目部署时其他工具必须先调用此工具获取 project 名称。"
+                "List all available AOSP projects. "
+                "In multi-project deployments, other tools must call this first to get the project name."
             ),
             inputSchema={
                 "type": "object",
@@ -261,26 +261,26 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="search_code",
             description=(
-                "搜索 AOSP 代码库。支持关键词、类名、函数名、文件路径、属性名等。"
-                "返回匹配的代码片段及其文件位置。"
-                "示例: search_code(query='SystemServer startBootstrapServices')"
-                "示例: search_code(query='startActivity', lang='java', repo='frameworks/base')"
+                "Search the AOSP codebase. Supports keywords, class names, function names, "
+                "file paths, property names, etc. Returns matching code snippets and their file locations. "
+                "Example: search_code(query='SystemServer startBootstrapServices') "
+                "Example: search_code(query='startActivity', lang='java', repo='frameworks/base')"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "搜索查询。可以是关键词、符号名、文件路径、属性名等",
+                        "description": "Search query: keyword, symbol name, file path, property name, etc.",
                     },
                     "repo": {
                         "type": "string",
-                        "description": "可选，限定搜索的 repo 名称前缀（如 frameworks/base）",
+                        "description": "Optional, restrict search to repo name prefix (e.g. frameworks/base)",
                         "default": "",
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "返回结果数量，默认 10",
+                        "description": "Number of results to return, default 10",
                         "default": 10,
                     },
                     **common_filter_props,
@@ -291,26 +291,26 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="search_symbol",
             description=(
-                "精确搜索代码符号（类名、函数名、变量名）。"
-                "使用 Zoekt 的 sym: 前缀进行符号搜索。"
-                "示例: search_symbol(symbol='startBootstrapServices')"
-                "示例: search_symbol(symbol='ActivityManager', lang='java')"
+                "Precise code symbol search (class names, function names, variable names). "
+                "Uses Zoekt's sym: prefix for symbol search. "
+                "Example: search_symbol(symbol='startBootstrapServices') "
+                "Example: search_symbol(symbol='ActivityManager', lang='java')"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "description": "要搜索的符号名（类名、函数名等）",
+                        "description": "Symbol name to search for (class name, function name, etc.)",
                     },
                     "repo": {
                         "type": "string",
-                        "description": "可选，限定搜索的 repo",
+                        "description": "Optional, restrict search to repo",
                         "default": "",
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "返回结果数量，默认 5",
+                        "description": "Number of results to return, default 5",
                         "default": 5,
                     },
                     **common_filter_props,
@@ -321,10 +321,10 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="search_file",
             description=(
-                "按文件名或路径搜索代码文件。"
-                "使用 Zoekt 的 file: 前缀进行文件搜索。"
-                "示例: search_file(path='SystemServer.java')"
-                "示例: search_file(path='Android.bp', lang='starlark')"
+                "Search code files by file name or path. "
+                "Uses Zoekt's file: prefix for file search. "
+                "Example: search_file(path='SystemServer.java') "
+                "Example: search_file(path='Android.bp', lang='starlark')"
             ),
             inputSchema={
                 "type": "object",
@@ -332,17 +332,17 @@ async def list_tools() -> list[Tool]:
                     "path": {
                         "type": "string",
                         "description": (
-                            "文件名或路径模式（如 SystemServer.java 或 frameworks/base/）"
+                            "File name or path pattern (e.g. SystemServer.java or frameworks/base/)"
                         ),
                     },
                     "query": {
                         "type": "string",
-                        "description": "可选，在匹配文件中进一步搜索的关键词",
+                        "description": "Optional, additional keyword to search within matched files",
                         "default": "",
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "返回结果数量，默认 5",
+                        "description": "Number of results to return, default 5",
                         "default": 5,
                     },
                     **common_filter_props,
@@ -353,25 +353,25 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="search_regex",
             description=(
-                "使用正则表达式搜索代码。适合复杂模式匹配。"
-                "示例: search_regex(pattern='func\\s+\\w+\\s*\\(')"
-                "示例: search_regex(pattern='TODO.*fix', lang='java')"
+                "Search code with a regular expression. Suitable for complex pattern matching. "
+                "Example: search_regex(pattern='func\\s+\\w+\\s*\\(') "
+                "Example: search_regex(pattern='TODO.*fix', lang='java')"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "正则表达式模式",
+                        "description": "Regular expression pattern",
                     },
                     "repo": {
                         "type": "string",
-                        "description": "可选，限定搜索的 repo",
+                        "description": "Optional, restrict search to repo",
                         "default": "",
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "返回结果数量，默认 10",
+                        "description": "Number of results to return, default 10",
                         "default": 10,
                     },
                     "lang": common_filter_props["lang"],
@@ -385,21 +385,21 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="list_repos",
             description=(
-                "列出 AOSP 代码库中的仓库列表。"
-                "可按关键词过滤仓库名称。"
-                "示例: list_repos(query='frameworks')"
+                "List repositories in the AOSP codebase. "
+                "Can filter repository names by keyword. "
+                "Example: list_repos(query='frameworks')"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "可选，仓库名过滤关键词",
+                        "description": "Optional, repo name filter keyword",
                         "default": "",
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "返回数量上限，默认 50",
+                        "description": "Maximum number of results to return, default 50",
                         "default": 50,
                     },
                     "project": project_prop,
@@ -410,11 +410,11 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="get_file_content",
             description=(
-                "读取 AOSP 代码文件的完整内容（或指定行范围）。"
-                "先用 search_file 找到文件的 repo 和 filepath，再用此工具读取完整内容。"
-                "示例: get_file_content(repo='layoutlib',"
-                " filepath='bridge/src/android/app/Foo.java')"
-                "示例（读取指定行）: get_file_content(repo='frameworks/base',"
+                "Read the full content of an AOSP code file (or a specified line range). "
+                "First use search_file to find the file's repo and filepath, then use this tool to read content. "
+                "Example: get_file_content(repo='layoutlib',"
+                " filepath='bridge/src/android/app/Foo.java') "
+                "Example (specific line range): get_file_content(repo='frameworks/base',"
                 " filepath='core/java/android/os/Process.java',"
                 " start_line=100, end_line=200)"
             ),
@@ -423,20 +423,20 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "repo": {
                         "type": "string",
-                        "description": "仓库名（从 search_file/search_code 结果的 repo 字段获取）",
+                        "description": "Repo name (from the repo field of search_file/search_code results)",
                     },
                     "filepath": {
                         "type": "string",
-                        "description": "文件路径（从搜索结果的 path 字段获取，不含 repo 前缀）",
+                        "description": "File path (from the path field of search results, without repo prefix)",
                     },
                     "start_line": {
                         "type": "integer",
-                        "description": "起始行号（从 1 开始，默认 1，即文件开头）",
+                        "description": "Start line number (1-based, default 1, i.e. start of file)",
                         "default": 1,
                     },
                     "end_line": {
                         "type": "integer",
-                        "description": "结束行号（默认读取到文件末尾）",
+                        "description": "End line number (defaults to end of file)",
                     },
                     "project": project_prop,
                 },
@@ -448,7 +448,7 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """处理工具调用。"""
+    """Handle tool calls."""
     global _multi_project
     if _multi_project is None:
         await _probe_projects()
@@ -477,13 +477,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return result
     except Exception as e:
         logger.error("Tool error: %s", e)
-        return [TextContent(type="text", text=f"操作出错: {str(e)}")]
+        return [TextContent(type="text", text=f"Tool error: {str(e)}")]
 
 
-# ─── 工具实现 ──────────────────────────────────────────
+# ─── Tool implementations ─────────────────────────────
 
 async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
-    """向 SourcePilot 发送 POST 请求，统一处理连接错误。"""
+    """Send a POST request to SourcePilot, with unified connection error handling."""
     try:
         resp = await _get_http_client().post(
             f"{SOURCEPILOT_URL}{endpoint}",
@@ -504,7 +504,7 @@ async def _post(endpoint: str, body: dict, trace_id: str) -> dict:
 
 
 async def _get(endpoint: str, trace_id: str) -> dict | list:
-    """向 SourcePilot 发送 GET 请求，统一处理连接错误。"""
+    """Send a GET request to SourcePilot, with unified connection error handling."""
     try:
         resp = await _get_http_client().get(
             f"{SOURCEPILOT_URL}{endpoint}",
@@ -523,7 +523,7 @@ async def _get(endpoint: str, trace_id: str) -> dict | list:
 
 
 def _extract_filters(args: dict) -> dict:
-    """从工具参数中提取通用过滤字段。"""
+    """Extract common filter fields from tool arguments."""
     result = {
         "lang": args.get("lang") or None,
         "branch": args.get("branch") or None,
@@ -539,7 +539,7 @@ async def _handle_list_projects(args: dict, trace_id: str) -> list[TextContent]:
     try:
         data = await _get("/api/projects", trace_id)
     except RuntimeError as e:
-        return [TextContent(type="text", text=f"无法获取项目列表: {e}")]
+        return [TextContent(type="text", text=f"Failed to fetch project list: {e}")]
 
     if isinstance(data, list):
         projects = data
@@ -547,9 +547,9 @@ async def _handle_list_projects(args: dict, trace_id: str) -> list[TextContent]:
         projects = data.get("projects", [])
 
     if not projects:
-        return [TextContent(type="text", text="未找到任何项目。")]
+        return [TextContent(type="text", text="No projects found.")]
 
-    lines = [f"找到 {len(projects)} 个可用项目：\n"]
+    lines = [f"Found {len(projects)} available projects:\n"]
     lines.append(f"{'name':<20} {'source_root':<40} {'zoekt_url'}")
     lines.append("-" * 80)
     for p in projects:
@@ -559,7 +559,7 @@ async def _handle_list_projects(args: dict, trace_id: str) -> list[TextContent]:
         lines.append(f"{name:<20} {source_root:<40} {zoekt_url}")
 
     if len(projects) > 1:
-        lines.append("\n注意：多项目部署时，其他工具必须传入 project 字段以指定目标项目。")
+        lines.append("\nNote: in multi-project deployments, other tools must pass the 'project' field to specify the target project.")
 
     return [TextContent(type="text", text="\n".join(lines))]
 
@@ -621,9 +621,9 @@ async def _handle_list_repos(args: dict, trace_id: str) -> list[TextContent]:
     repos = await _post("/api/list_repos", body, trace_id)
 
     if not repos:
-        return [TextContent(type="text", text="未找到匹配的仓库。")]
+        return [TextContent(type="text", text="No matching repositories found.")]
 
-    lines = [f"找到 {len(repos)} 个仓库：\n"]
+    lines = [f"Found {len(repos)} repositories:\n"]
     for i, r in enumerate(repos, 1):
         name = r.get("name", "")
         url = r.get("url", "")
@@ -653,19 +653,19 @@ async def _handle_get_file_content(args: dict, trace_id: str) -> list[TextConten
     content = result.get("content")
     if total is None or s is None or e is None or content is None:
         return [TextContent(type="text", text="SourcePilot returned malformed response (status N/A)")]  # noqa: E501
-    header = f"# {repo}/{filepath}  (L{s}-L{e} / 共 {total} 行)\n"
+    header = f"# {repo}/{filepath}  (L{s}-L{e} / {total} lines total)\n"
 
     return [TextContent(type="text", text=header + "```\n" + content + "\n```")]
 
 
-# ─── 结果格式化 ────────────────────────────────────────
+# ─── Result formatting ────────────────────────────────
 
 def _format_results(query: str, results: list[dict]) -> str:
-    """将搜索结果格式化为 LLM 友好的文本。"""
+    """Format search results into LLM-friendly text."""
     if not results:
-        return f"未找到与 \"{query}\" 相关的代码。"
+        return f"No code found matching \"{query}\"."
 
-    lines = [f"找到 {len(results)} 条与 \"{query}\" 相关的代码：\n"]
+    lines = [f"Found {len(results)} code results matching \"{query}\":\n"]
 
     for i, r in enumerate(results, 1):
         title = r.get("title", "")

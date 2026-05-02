@@ -1,35 +1,42 @@
-"""MCP Server — Streamable HTTP transport mode."""
+"""MCP Server — Streamable HTTP transport mode.
 
-import contextlib
+Preserves:
+- BearerTokenMiddleware (required MCP_AUTH_TOKEN)
+- /health bypass (no auth required)
+- sys.exit(1) when MCP_AUTH_TOKEN is missing
+- FastMCP lifespan-owned httpx.AsyncClient
+"""
+
+from __future__ import annotations
+
 import logging
 import os
 import sys
 
-import httpx
+import uvicorn
+from mcp_server import mcp
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from entry.handlers import _set_http_client, server
-
 logger = logging.getLogger(__name__)
 
 
 class BearerTokenMiddleware:
-    """Bearer Token 鉴权中间件"""
+    """Bearer Token authentication middleware."""
 
-    def __init__(self, app: ASGIApp, token: str):
+    def __init__(self, app: ASGIApp, token: str) -> None:
         self.app = app
         self.token = token
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        # lifespan 事件必须透传给内层 app（触发 session_manager.run()）
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Pass lifespan events through (required for session_manager.run())
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        # 健康检查无需鉴权（供 docker/k8s 探针使用）
+        # Health probe bypasses auth
         if scope.get("path") == "/health":
             await self.app(scope, receive, send)
             return
@@ -58,11 +65,8 @@ class BearerTokenMiddleware:
         await self.app(scope, receive, send)
 
 
-async def main_streamable_http(host: str, port: int):
-    """以 Streamable HTTP 模式启动（供远程客户端通过 HTTP 访问）"""
-    import uvicorn
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-
+async def main_streamable_http(host: str, port: int) -> None:
+    """Run in Streamable HTTP mode."""
     logger.info("Starting AOSP Code Search MCP Server (streamable-http)")
     logger.info("Listening on http://%s:%d/mcp", host, port)
 
@@ -72,44 +76,24 @@ async def main_streamable_http(host: str, port: int):
         sys.exit(1)
     logger.info("Bearer token authentication ENABLED")
 
-    session_manager = StreamableHTTPSessionManager(
-        app=server,
-        json_response=False,
-        stateless=False,
-    )
+    # FastMCP generates the Starlette app with its own lifespan (runs session_manager)
+    # We wrap it with a custom Starlette that adds /health + BearerTokenMiddleware.
+    mcp_app = mcp.streamable_http_app()
 
-    async def handle_mcp(scope, receive, send):
-        await session_manager.handle_request(scope, receive, send)
-
-    async def health(request):
+    async def health(request):  # noqa: ANN001, ANN202
         return JSONResponse({"status": "ok"})
 
-    @contextlib.asynccontextmanager
-    async def lifespan(app):
-        client = httpx.AsyncClient(timeout=30.0)
-        _set_http_client(client)
-        try:
-            async with session_manager.run():
-                logger.info("MCP Session Manager running")
-                yield
-        finally:
-            await client.aclose()
-
-    app = Starlette(
-        lifespan=lifespan,
+    # Build outer Starlette that owns the /health route and mounts the FastMCP app.
+    # The inner mcp_app already carries its own lifespan; we expose it at /mcp.
+    outer = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Mount("/mcp", app=handle_mcp),
+            Mount("/mcp", app=mcp_app),
         ],
     )
 
-    app = BearerTokenMiddleware(app, auth_token)
+    wrapped = BearerTokenMiddleware(outer, auth_token)
 
-    uvicorn_config = uvicorn.Config(
-        app=app,
-        host=host,
-        port=port,
-        log_level="info",
-    )
-    uvicorn_server = uvicorn.Server(uvicorn_config)
-    await uvicorn_server.serve()
+    config = uvicorn.Config(app=wrapped, host=host, port=port, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()

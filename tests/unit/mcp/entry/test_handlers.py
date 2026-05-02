@@ -1,33 +1,32 @@
 """
-MCP handlers 单元测试
+MCP handlers unit tests.
 
-测试 entry/handlers.py 中的工具路由、过滤器提取、结果格式化等功能。
+Tests tool routing, filter extraction, result formatting, and other functionality
+in entry/handlers.py.
 """
+
+import httpx
 import pytest
 import respx
-import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
-
 from entry.handlers import (
+    SOURCEPILOT_URL,
     _extract_filters,
     _format_results,
+    _handle_get_file_content,
+    _handle_list_repos,
+    _handle_search_code,
     call_tool,
     list_tools,
-    _handle_search_code,
-    _handle_list_repos,
-    _handle_get_file_content,
-    SOURCEPILOT_URL,
 )
 from mcp.types import TextContent
 
-
-# ─── _extract_filters 测试 ───────────────────────────────
+# ─── _extract_filters tests ───────────────────────────────
 
 class TestExtractFilters:
-    """测试 _extract_filters 从参数中提取过滤字段"""
+    """Tests _extract_filters extracting filter fields from arguments."""
 
     def test_full_args(self):
-        """所有过滤参数都存在时，全部提取"""
+        """All filter parameters present -> all extracted."""
         args = {"lang": "java", "branch": "main", "case_sensitive": "yes"}
         result = _extract_filters(args)
         assert result["lang"] == "java"
@@ -35,7 +34,7 @@ class TestExtractFilters:
         assert result["case_sensitive"] == "yes"
 
     def test_partial_args(self):
-        """只有部分参数时，缺失的返回 None"""
+        """Partial parameters -> missing fields return None."""
         args = {"lang": "python"}
         result = _extract_filters(args)
         assert result["lang"] == "python"
@@ -43,27 +42,27 @@ class TestExtractFilters:
         assert result["case_sensitive"] == "auto"
 
     def test_empty_args(self):
-        """空参数时，lang/branch 为 None，case_sensitive 为 auto"""
+        """Empty arguments -> lang/branch is None, case_sensitive is auto."""
         result = _extract_filters({})
         assert result["lang"] is None
         assert result["branch"] is None
         assert result["case_sensitive"] == "auto"
 
     def test_empty_string_becomes_none(self):
-        """空字符串的 lang/branch 应被视为 None"""
+        """Empty-string lang/branch should be treated as None."""
         args = {"lang": "", "branch": ""}
         result = _extract_filters(args)
         assert result["lang"] is None
         assert result["branch"] is None
 
 
-# ─── _format_results 测试 ────────────────────────────────
+# ─── _format_results tests ────────────────────────────────
 
 class TestFormatResults:
-    """测试 _format_results 将结果列表格式化为文本"""
+    """Tests _format_results formatting result list into text."""
 
     def test_with_results(self):
-        """有结果时，格式化为含位置信息的文本"""
+        """With results -> formatted text including location info."""
         results = [
             {
                 "title": "SystemServer.java",
@@ -77,20 +76,20 @@ class TestFormatResults:
             }
         ]
         text = _format_results("SystemServer", results)
-        assert "1 条" in text
+        assert "Found 1" in text
         assert "SystemServer" in text
         assert "frameworks/base" in text
         assert "L120-L125" in text
         assert "startBootstrapServices" in text
 
     def test_empty_list(self):
-        """空结果时，返回包含 '未找到' 的提示"""
-        text = _format_results("不存在的查询", [])
-        assert "未找到" in text
-        assert "不存在的查询" in text
+        """Empty results -> message containing 'No code found'."""
+        text = _format_results("nonexistent_query", [])
+        assert "No code found" in text
+        assert "nonexistent_query" in text
 
     def test_multiple_results(self):
-        """多个结果时，按顺序编号"""
+        """Multiple results -> numbered in order."""
         results = [
             {
                 "title": "A.java",
@@ -108,7 +107,7 @@ class TestFormatResults:
         assert "### 2." in text
 
     def test_no_content_preview_skipped(self):
-        """content 为 '(no content preview available)' 时不展示代码块"""
+        """content == '(no content preview available)' -> code block omitted."""
         results = [
             {
                 "title": "A.java",
@@ -120,11 +119,11 @@ class TestFormatResults:
         assert "no content preview" not in text
 
 
-# ─── list_tools 测试 ────────────────────────────────────
+# ─── list_tools tests ────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_list_tools_returns_seven():
-    """list_tools 应返回 7 个工具（6 个搜索 + list_projects）"""
+    """list_tools should return 7 tools (6 search + list_projects)."""
     tools = await list_tools()
     assert len(tools) == 7
     names = {t.name for t in tools}
@@ -139,11 +138,11 @@ async def test_list_tools_returns_seven():
     }
 
 
-# ─── call_tool 路由测试 ──────────────────────────────────
+# ─── call_tool routing tests ──────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_call_tool_unknown():
-    """未知工具名返回 'Unknown tool: ...' 消息"""
+    """Unknown tool name returns 'Unknown tool: ...' message."""
     result = await call_tool("invalid_tool", {})
     assert len(result) == 1
     assert isinstance(result[0], TextContent)
@@ -153,7 +152,7 @@ async def test_call_tool_unknown():
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_search_code_routes_correctly():
-    """call_tool('search_code', ...) 调用正确的 SourcePilot 端点"""
+    """call_tool('search_code', ...) calls the correct SourcePilot endpoint."""
     respx.post(f"{SOURCEPILOT_URL}/api/search").mock(
         return_value=httpx.Response(200, json=[
             {
@@ -174,22 +173,22 @@ async def test_call_tool_search_code_routes_correctly():
 @pytest.mark.asyncio
 @respx.mock
 async def test_call_tool_exception_returns_error_message():
-    """当 _post 抛出异常时，call_tool 返回 '操作出错: ...' 消息"""
+    """When _post raises, call_tool returns 'Tool error: ...' message."""
     respx.post(f"{SOURCEPILOT_URL}/api/search").mock(
         side_effect=httpx.ConnectError("connection refused")
     )
 
     result = await call_tool("search_code", {"query": "test"})
     assert len(result) == 1
-    assert "操作出错" in result[0].text
+    assert "Tool error" in result[0].text
 
 
-# ─── _handle_search_code 测试 ────────────────────────────
+# ─── _handle_search_code tests ────────────────────────────
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_handle_search_code_builds_correct_body():
-    """_handle_search_code 构造包含 query/repos/top_k/filters 的请求体"""
+    """_handle_search_code builds a request body with query/repos/top_k/filters."""
     import json
 
     captured_body = {}
@@ -214,7 +213,7 @@ async def test_handle_search_code_builds_correct_body():
 @pytest.mark.asyncio
 @respx.mock
 async def test_handle_search_code_empty_repo_becomes_none():
-    """空字符串 repo 参数应被转换为 None（不限制仓库）"""
+    """Empty-string repo argument should be converted to None (no repo restriction)."""
     import json
 
     captured_body = {}
@@ -230,25 +229,25 @@ async def test_handle_search_code_empty_repo_becomes_none():
     assert captured_body["repos"] is None
 
 
-# ─── _handle_list_repos 测试 ────────────────────────────
+# ─── _handle_list_repos tests ────────────────────────────
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_handle_list_repos_empty_returns_not_found():
-    """list_repos 返回空列表时，提示 '未找到匹配的仓库'"""
+    """list_repos returning [] -> 'No matching repositories found' message."""
     respx.post(f"{SOURCEPILOT_URL}/api/list_repos").mock(
         return_value=httpx.Response(200, json=[])
     )
 
     result = await _handle_list_repos({}, "trace-000")
     assert len(result) == 1
-    assert "未找到匹配的仓库" in result[0].text
+    assert "No matching repositories found" in result[0].text
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_handle_list_repos_with_results():
-    """list_repos 返回仓库列表时，格式化输出"""
+    """list_repos returning a list -> formatted output."""
     respx.post(f"{SOURCEPILOT_URL}/api/list_repos").mock(
         return_value=httpx.Response(200, json=[
             {"name": "frameworks/base", "url": ""},
@@ -257,17 +256,17 @@ async def test_handle_list_repos_with_results():
     )
 
     result = await _handle_list_repos({}, "trace-001")
-    assert "2 个仓库" in result[0].text
+    assert "Found 2 repositories" in result[0].text
     assert "frameworks/base" in result[0].text
     assert "frameworks/av" in result[0].text
 
 
-# ─── _handle_get_file_content 测试 ──────────────────────
+# ─── _handle_get_file_content tests ──────────────────────
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_handle_get_file_content_formats_header():
-    """get_file_content 输出包含行号范围的文件头"""
+    """get_file_content output includes a header with line range."""
     respx.post(f"{SOURCEPILOT_URL}/api/get_file_content").mock(
         return_value=httpx.Response(200, json={
             "content": "public class SystemServer {}",

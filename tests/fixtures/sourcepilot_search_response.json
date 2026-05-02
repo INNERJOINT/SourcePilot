@@ -1,0 +1,33 @@
+[
+  {
+    "title": "AudioFlinger.cpp",
+    "content": "class AudioFlinger : public BnAudioFlinger {\npublic:\n    static void instantiate();\n};",
+    "metadata": {
+      "repo": "frameworks/av",
+      "path": "media/libaudioflinger/AudioFlinger.cpp",
+      "start_line": 100,
+      "end_line": 104,
+      "score": 0.97
+    }
+  },
+  {
+    "title": "AudioPolicy.h",
+    "content": "(no content preview available)",
+    "metadata": {
+      "repo": "frameworks/av",
+      "path": "services/audiopolicy/AudioPolicy.h",
+      "start_line": 1,
+      "end_line": 50,
+      "score": 0.82
+    }
+  },
+  {
+    "title": "audio_hw.c",
+    "content": "static int adev_open(const hw_module_t *module) { return 0; }",
+    "metadata": {
+      "repo": "hardware/libhardware",
+      "path": "modules/audio/audio_hw.c",
+      "score": 0.75
+    }
+  }
+]

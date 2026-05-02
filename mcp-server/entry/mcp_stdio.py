@@ -2,31 +2,22 @@
 
 import asyncio
 import logging
+import sys
 
-import httpx
+from mcp_server import mcp
 
-from entry.handlers import _set_http_client, server
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    stream=sys.stderr,
+)
 logger = logging.getLogger(__name__)
 
 
-async def main_stdio():
-    """以 stdio 模式启动（供 Claude Code 等本地工具直接调用）"""
-    from mcp.server.stdio import stdio_server
-
+async def main_stdio() -> None:
+    """Run in stdio mode (for Claude Code / local tool use)."""
     logger.info("Starting AOSP Code Search MCP Server (stdio)")
-
-    client = httpx.AsyncClient(timeout=30.0)
-    _set_http_client(client)
-    try:
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
-    finally:
-        await client.aclose()
+    await mcp.run_stdio_async()
 
 
 if __name__ == "__main__":

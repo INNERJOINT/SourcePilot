@@ -34,11 +34,11 @@ async def test_valid_uri_returns_content():
 
 @pytest.mark.asyncio
 async def test_invalid_scheme_raises_value_error():
-    """Non-aosp:// scheme -> ValueError with 不支持的 URI 格式."""
+    """Non-aosp:// scheme -> ValueError with unsupported URI format."""
     from entry.handlers import read_resource
 
     uri = AnyUrl("http://foo/bar/baz.java")
-    with pytest.raises(ValueError, match="不支持的 URI 格式"):
+    with pytest.raises(ValueError, match="Unsupported URI format"):
         await read_resource(uri)
 
 

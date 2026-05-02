@@ -71,6 +71,8 @@ bash tests/shell/static_check.sh          # Shell static checks: shellcheck, shf
 
 `app.py` endpoint → `gateway.search()` → `classifier.py` (exact vs NL intent) → exact: `ZoektAdapter.search_zoekt()` directly; NL: LLM rewrite → parallel multi-path Zoekt queries → `fusion.py` RRF merge → `ranker.py` rerank → response.
 
+MCP layer now uses FastMCP; tool params are Pydantic-validated before forwarding to SourcePilot.
+
 ## Architecture Details
 
 - **Pluggable backends** via `SearchAdapter` ABC in `src/adapters/base.py` — methods: `search`, `get_content`, `health_check`.

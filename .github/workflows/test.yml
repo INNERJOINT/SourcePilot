@@ -5,11 +5,22 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+    paths:
+      - "mcp-server/**"
+      - "tests/unit/mcp/**"
+      - "src/**"
+      - "tests/unit/sourcepilot/**"
+      - "tests/integration/**"
+      - "tests/e2e/**"
+      - "**/requirements*.txt"
   workflow_dispatch:
 
 jobs:
   test:
-    if: github.event_name == 'workflow_dispatch'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     env:
