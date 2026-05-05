@@ -16,16 +16,28 @@ services:
   # distinct host port. SourcePilot routes per-project queries via
   # ZOEKT_URL_<NAME> env vars (see sourcepilot-gateway block).
   #
+  # ──── Important: which zoekt services start is decided by
+  # config/projects.yaml, not by this file. Each per-project block is
+  # gated behind the "zoekt" Compose profile so a bare `docker compose
+  # up` does NOT auto-start them. The orchestration script
+  # (scripts/run_all.sh → infra_start_zoekt) parses projects.yaml and
+  # explicitly runs `docker compose up -d <svc>` for each declared
+  # project; explicit service names bypass the profile gate. The gateway
+  # has no `depends_on` on these services for the same reason — the
+  # script enforces ordering.
+  #
   # Adding a new project:
   #   1. Append a new entry to config/projects.yaml with a unique
   #      sparse_index.zoekt_url (e.g. http://localhost:6072).
   #   2. Duplicate the sparse-index-zoekt-<name> block below — change the
-  #      service name, the volume source, and the host port.
-  #   3. Add a ZOEKT_URL_<NAME> entry under sourcepilot-gateway.environment
-  #      pointing at the new container DNS name.
-  #   4. Add the new service to sourcepilot-gateway.depends_on.
+  #      service name, the volume source, and the host port. Keep the
+  #      `profiles: ["zoekt"]` line so it stays opt-in.
+  #   3. (Optional) Add a ZOEKT_URL_<NAME> entry under
+  #      sourcepilot-gateway.environment pointing at the new container
+  #      DNS name, if you want a per-project env override.
   sparse-index-zoekt:
     build: ./sparse/zoekt
+    profiles: ["zoekt"]
     volumes:
       - ${ZOEKT_INDEX_PATH:-/opt/aosp/aosp_project/.repo/.zoekt}:/data/index:ro
     ports:
@@ -47,6 +59,7 @@ services:
 
   sparse-index-zoekt-t2:
     build: ./sparse/zoekt
+    profiles: ["zoekt"]
     volumes:
       - ${ZOEKT_INDEX_PATH_T2:-/opt/aosp/aosp_project2/.repo/.zoekt}:/data/index:ro
     ports:
@@ -111,11 +124,11 @@ services:
       - ../config/projects.yaml:/etc/sourcepilot/projects.yaml:ro
     ports:
       - "${SOURCEPILOT_PORT:-9000}:9000"
-    depends_on:
-      sparse-index-zoekt:
-        condition: service_healthy
-      sparse-index-zoekt-t2:
-        condition: service_healthy
+    # NOTE: zoekt depends_on intentionally omitted. Per-project zoekt
+    # services are gated behind the "zoekt" Compose profile and started
+    # explicitly by scripts/run_all.sh based on config/projects.yaml.
+    # Listing them here would defeat that gating and force every
+    # declared zoekt service to start whenever the gateway starts.
     networks:
       - sourcepilot-net
     healthcheck:
