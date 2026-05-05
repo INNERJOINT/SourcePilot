@@ -151,17 +151,46 @@ EOF
         fi
         idx=$((idx + 1))
 
-        if curl -sf "$_url/" > /dev/null 2>&1; then
-          info "Detected ${svc} already running (${_url}), skipping startup"
+        # The zoekt_url from projects.yaml uses the in-Docker-network DNS
+        # name (e.g. http://sparse-index-zoekt:6070), which the host cannot
+        # resolve. Translate it to a host-reachable URL via the published
+        # port. Falls back to the configured _port on localhost.
+        local _probe_url="$_url"
+        # Strip scheme and port from the URL host before resolving via getent.
+        local _host_only="${_url#http://}"
+        _host_only="${_host_only%%:*}"
+        if ! getent hosts "$_host_only" > /dev/null 2>&1; then
+          local _published=""
+          # docker compose port returns non-zero when the container is not
+          # running yet; tolerate that and fall back to the configured port.
+          _published=$("$DOCKER_BIN" compose -f "$COMPOSE_FILE" port "$svc" 6070 2> /dev/null | awk -F: 'NR==1{print $NF}') || _published=""
+          if [ -z "$_published" ]; then
+            _published="$_port"
+          fi
+          _probe_url="http://localhost:${_published}"
+        fi
+
+        if curl -sf "$_probe_url/" > /dev/null 2>&1; then
+          info "Detected ${svc} already running (${_probe_url}), skipping startup"
           ZOEKT_DOCKER=true
           continue
         fi
 
-        info "Starting ${svc} (project=${_name}, url=${_url})..."
-        docker compose -f "$COMPOSE_FILE" up -d "$svc"
+        info "Starting ${svc} (project=${_name}, probe=${_probe_url})..."
+        "$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d "$svc"
         ZOEKT_DOCKER=true
 
-        _infra_wait_http "$_url/" "  ${svc}" "$MAX_RETRIES" warn
+        # Re-resolve the published port now that the container is up
+        # (compose may not have published the port until startup).
+        if [ "$_probe_url" != "$_url" ]; then
+          local _published2=""
+          _published2=$("$DOCKER_BIN" compose -f "$COMPOSE_FILE" port "$svc" 6070 2> /dev/null | awk -F: 'NR==1{print $NF}') || _published2=""
+          if [ -n "$_published2" ]; then
+            _probe_url="http://localhost:${_published2}"
+          fi
+        fi
+
+        _infra_wait_http "$_probe_url/" "  ${svc}" "$MAX_RETRIES" warn
       done <<< "$entries"
       return
     fi

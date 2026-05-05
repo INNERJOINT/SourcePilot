@@ -12,6 +12,9 @@
 #    SP_COCKPIT_DOCKER=true ./run_all.sh        # sp-cockpit in Docker
 #    DENSE_ENABLED=true ./run_all.sh            # Include dense retrieval stack
 #    STRUCTURAL_ENABLED=true ./run_all.sh       # Include Neo4j structural retrieval
+#    RESTART_CONTAINERS=false ./run_all.sh      # Keep already-running containers as-is
+#                                               # (default: stop existing containers first
+#                                               #  for a clean restart)
 # ──────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -86,6 +89,15 @@ main() {
   MCP_DOCKER="${MCP_DOCKER:-false}"
   SP_COCKPIT_DOCKER="${SP_COCKPIT_DOCKER:-false}"
 
+  # Whether to stop already-running compose containers before starting them
+  # (default: true => clean restart; set false to reuse running containers as-is).
+  RESTART_CONTAINERS="${RESTART_CONTAINERS:-true}"
+
+  # Whether the cleanup trap stops Docker containers on exit. Defaults to
+  # RESTART_CONTAINERS so opting out of restarts also keeps the containers
+  # alive between runs (e.g. for slow-loading zoekt indexes).
+  STOP_DOCKER_ON_EXIT="${STOP_DOCKER_ON_EXIT:-$RESTART_CONTAINERS}"
+
   # ── pyenv virtualenv (only needed when running bare processes) ─
   VENV_PYTHON="${VENV_PYTHON:-/opt/pyenv/versions/dify_py3_env/bin/python3}"
   if [ "$MCP_DOCKER" != "true" ] || [ "$SP_COCKPIT_DOCKER" != "true" ]; then
@@ -142,6 +154,35 @@ main() {
     info "All services stopped."
   }
   trap cleanup EXIT INT TERM
+
+  # ── Pre-start: stop existing compose containers for a clean restart ──
+  # Skip when RESTART_CONTAINERS=false so users can keep slow-loading
+  # services (e.g. zoekt with thousands of shards) running across runs.
+  if [ "$RESTART_CONTAINERS" = "true" ]; then
+    info "RESTART_CONTAINERS=true: stopping existing compose containers before startup..."
+    local _pre_svcs=()
+    # shellcheck disable=SC2207
+    local _pre_zoekt=($("$DOCKER_BIN" compose -f "$COMPOSE_FILE" ps --services 2> /dev/null | grep '^sparse-index-zoekt' || true))
+    _pre_svcs+=("${_pre_zoekt[@]}")
+    _pre_svcs+=(sourcepilot-gateway)
+    if [ "$MCP_DOCKER" = "true" ]; then
+      _pre_svcs+=(mcp-server)
+    fi
+    if [ "$SP_COCKPIT_DOCKER" = "true" ]; then
+      _pre_svcs+=(sp-cockpit)
+    fi
+    if [ "${DENSE_ENABLED:-false}" = "true" ]; then
+      _pre_svcs+=(qdrant dense-index-coderankembed)
+    fi
+    if [ "${STRUCTURAL_ENABLED:-false}" = "true" ]; then
+      _pre_svcs+=(neo4j)
+    fi
+    if [ "${#_pre_svcs[@]}" -gt 0 ]; then
+      "$DOCKER_BIN" compose -f "$COMPOSE_FILE" stop "${_pre_svcs[@]}" > /dev/null 2>&1 || true
+    fi
+  else
+    info "RESTART_CONTAINERS=false: reusing already-running containers if present"
+  fi
 
   infra_start_zoekt
   infra_start_dense
