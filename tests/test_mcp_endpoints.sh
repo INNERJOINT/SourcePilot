@@ -2,43 +2,78 @@
 # ──────────────────────────────────────────────────────
 #  AOSP Code Search MCP Server endpoint test cases
 #
-#  This script demonstrates how to call the MCP interface
-#  directly via curl in Streamable HTTP mode.
-#  Tests cover the three core capabilities exposed by MCP:
+#  This script exercises the MCP Streamable HTTP transport
+#  via curl. It performs a JSON-RPC initialize handshake to
+#  obtain Mcp-Session-Id, then invokes the three core tools:
 #  1. search_file
 #  2. search_symbol
 #  3. search_code
 # ──────────────────────────────────────────────────────
 
-# Server configuration
-MCP_URL="http://localhost:8888/mcp"
+set -uo pipefail
+
+MCP_URL="${MCP_URL:-http://localhost:8888/mcp}"
 TMP_DIR=$(mktemp -d)
-SSE_OUTPUT="$TMP_DIR/sse_output.txt"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# Load MCP_AUTH_TOKEN from environment or repo-root .env
+if [ -z "${MCP_AUTH_TOKEN:-}" ]; then
+    ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+    if [ -f "$ENV_FILE" ]; then
+        MCP_AUTH_TOKEN=$(grep -E '^MCP_AUTH_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+    fi
+fi
+if [ -z "${MCP_AUTH_TOKEN:-}" ]; then
+    echo "❌ Error: MCP_AUTH_TOKEN is not set. Export it or define it in .env."
+    exit 1
+fi
+AUTH_HEADER="Authorization: Bearer $MCP_AUTH_TOKEN"
 
 echo "=== AOSP Code Search MCP Server Test Cases ==="
+echo "Endpoint: $MCP_URL"
 echo "Make sure the server is started with:"
 echo "  ./run_mcp.sh --transport streamable-http --port 8888"
 echo "--------------------------------------------------------"
 
-# 1. Establish SSE connection and obtain Session ID
-echo ">>> [Handshake] Establishing SSE connection..."
-curl -s -N -H "Accept: text/event-stream" "$MCP_URL" > "$SSE_OUTPUT" &
-SSE_PID=$!
+# 1. Initialize handshake → obtain Mcp-Session-Id from response headers
+echo ">>> [Handshake] Sending initialize request..."
+INIT_BODY='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test_mcp_endpoints","version":"1.0"}}}'
+INIT_HEADERS="$TMP_DIR/init_headers.txt"
+INIT_BODY_OUT="$TMP_DIR/init_body.txt"
 
-# Wait for connection to be established and get the session ID
-sleep 2
-SESSION_ID=$(grep -oP "(?<=mcp-session-id: ).*" "$SSE_OUTPUT" | head -1 | tr -d '\r')
+HTTP_CODE=$(curl -s -o "$INIT_BODY_OUT" -D "$INIT_HEADERS" -w "%{http_code}" \
+    -X POST "$MCP_URL" \
+    -H "$AUTH_HEADER" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d "$INIT_BODY")
 
+if [ "$HTTP_CODE" != "200" ]; then
+    echo "❌ Error: initialize failed with HTTP $HTTP_CODE"
+    cat "$INIT_HEADERS" 2>/dev/null
+    cat "$INIT_BODY_OUT" 2>/dev/null
+    exit 1
+fi
+
+SESSION_ID=$(grep -i '^mcp-session-id:' "$INIT_HEADERS" | head -1 | cut -d: -f2- | tr -d ' \r\n')
 if [ -z "$SESSION_ID" ]; then
-    echo "❌ Error: Could not obtain Session ID. Check that the MCP service is running."
-    kill $SSE_PID 2>/dev/null
-    rm -r "$TMP_DIR"
+    echo "❌ Error: Could not obtain Mcp-Session-Id from initialize response."
+    cat "$INIT_HEADERS"
     exit 1
 fi
 echo "✅ Session ID obtained: $SESSION_ID"
+
+# Send the required notifications/initialized notification (no response expected)
+NOTIFY_BODY='{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
+curl -s -o /dev/null -X POST "$MCP_URL" \
+    -H "$AUTH_HEADER" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -H "mcp-session-id: $SESSION_ID" \
+    -d "$NOTIFY_BODY"
 echo "--------------------------------------------------------"
 
-# Helper function to send a JSON-RPC request
+# Helper: send a tools/call JSON-RPC request and print the result
 send_mcp_request() {
     local method_name=$1
     local id=$2
@@ -47,8 +82,8 @@ send_mcp_request() {
 
     echo ">>> [Test case $id] Testing capability: $method_name ($desc)"
 
-    # Build request body (CallToolRequest)
-    local request_body=$(cat <<EOF
+    local request_body
+    request_body=$(cat <<EOF
 {
     "jsonrpc": "2.0",
     "id": $id,
@@ -64,39 +99,66 @@ EOF
     echo "Sending request:"
     echo "$request_body" | jq .
 
-    # Clear previous SSE output
-    > "$SSE_OUTPUT"
-
-    # Send POST request
-    curl -s -X POST "$MCP_URL" \
+    local response_file="$TMP_DIR/resp_${id}.txt"
+    local code
+    code=$(curl -s -o "$response_file" -w "%{http_code}" \
+        -X POST "$MCP_URL" \
+        -H "$AUTH_HEADER" \
         -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
+        -H "Accept: application/json, text/event-stream" \
         -H "mcp-session-id: $SESSION_ID" \
-        -d "$request_body"
+        -d "$request_body")
 
-    # Wait for server to push response via SSE
-    sleep 2
-
-    echo "Server response (from SSE stream):"
-    # Extract JSON-RPC response body and format it
-    grep -oP "(?<=data: ).*" "$SSE_OUTPUT" | jq .
+    echo "HTTP $code"
+    echo "Server response:"
+    # Streamable HTTP returns either application/json or text/event-stream.
+    # Extract JSON-RPC payload from SSE "data: ..." lines if present, else dump as JSON.
+    local payload="$TMP_DIR/payload_${id}.json"
+    if grep -q '^data:' "$response_file"; then
+        grep '^data:' "$response_file" | sed 's/^data: //' | tee "$payload" | jq .
+    else
+        cp "$response_file" "$payload"
+        jq . "$payload" 2>/dev/null || cat "$payload"
+    fi
     echo "--------------------------------------------------------"
+
+    if [ "$code" != "200" ]; then
+        return 1
+    fi
+    # Treat tool-level errors (isError=true or top-level error) as test failures
+    if jq -e '.error' "$payload" >/dev/null 2>&1; then
+        return 1
+    fi
+    if jq -e '.result.isError == true' "$payload" >/dev/null 2>&1; then
+        return 1
+    fi
 }
 
-# 2. Test case 1: search_file
-# Scenario: find "device_vendor_v1.xml" files containing "product" keyword
-send_mcp_request "search_file" 1 '{"path": "device_vendor_v1.xml", "query": "product", "top_k": 3}' "file name + keyword search"
+EXIT_CODE=0
 
-# 3. Test case 2: search_symbol
-# Scenario: find the definition of "startBootstrapServices" method in AOSP
-send_mcp_request "search_symbol" 2 '{"symbol": "startBootstrapServices", "top_k": 3}' "exact function/class definition search"
+# Test 1: search_file
+send_mcp_request "search_file" 1 \
+    '{"inp": {"path": "device_vendor_v1.xml", "query": "product", "top_k": 3, "project": "ace"}}' \
+    "file name + keyword search" || EXIT_CODE=1
 
-# 4. Test case 3: search_code
-# Scenario: full-text keyword search in a specific repo (frameworks/base)
-send_mcp_request "search_code" 3 '{"query": "ActivityManagerService init", "repo": "frameworks/base", "top_k": 3}' "full-text search within specific repo"
+# Test 2: search_symbol
+send_mcp_request "search_symbol" 2 \
+    '{"inp": {"symbol": "startBootstrapServices", "top_k": 3, "project": "ace"}}' \
+    "exact function/class definition search" || EXIT_CODE=1
 
-# Cleanup
-echo ">>> Tests complete, cleaning up resources..."
-kill $SSE_PID 2>/dev/null
-rm -r "$TMP_DIR"
-echo "✅ Test run complete."
+# Test 3: search_code
+send_mcp_request "search_code" 3 \
+    '{"inp": {"query": "ActivityManagerService init", "repo": "frameworks/base", "top_k": 3, "project": "ace"}}' \
+    "full-text search within specific repo" || EXIT_CODE=1
+
+# Best-effort session shutdown (DELETE may be unsupported by some transports)
+curl -s -o /dev/null -X DELETE "$MCP_URL" \
+    -H "$AUTH_HEADER" \
+    -H "mcp-session-id: $SESSION_ID" || true
+
+if [ "$EXIT_CODE" -eq 0 ]; then
+    echo "✅ Test run complete."
+else
+    echo "❌ One or more tool calls failed."
+fi
+exit "$EXIT_CODE"

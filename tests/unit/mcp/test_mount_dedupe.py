@@ -1,4 +1,9 @@
-"""Tests: M2 — exactly one Mount with path '/mcp' in the Starlette app."""
+"""Tests: M2 — public /mcp endpoint exposed exactly once, no /mcp/mcp duplication.
+
+The outer Starlette mounts the FastMCP app at "/" (not "/mcp"), because the inner
+FastMCP app already exposes Route("/mcp"). Mounting at "/mcp" composed to "/mcp/mcp",
+which broke clients. This test pins the working layout.
+"""
 
 import asyncio
 import unittest.mock as mock
@@ -9,7 +14,7 @@ from starlette.routing import Mount
 
 
 def test_exactly_one_mcp_mount(monkeypatch):
-    """Only one Mount('/mcp') exists; no duplicate Mount('/mcp/')."""
+    """Outer routes contain Mount('/'); the public /mcp endpoint comes from the inner app."""
     monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token")
 
     captured_routes = []
@@ -27,12 +32,13 @@ def test_exactly_one_mcp_mount(monkeypatch):
         except (SystemExit, KeyboardInterrupt, Exception):
             pass
 
-    mcp_mounts = [
-        r for r in captured_routes
-        if isinstance(r, Mount) and r.path in ("/mcp", "/mcp/")
-    ]
-    mcp_exact = [r for r in mcp_mounts if r.path == "/mcp"]
-    mcp_slash = [r for r in mcp_mounts if r.path == "/mcp/"]
+    mounts = [r for r in captured_routes if isinstance(r, Mount)]
+    # Starlette normalizes Mount("/") path to ""
+    root_mounts = [r for r in mounts if r.path in ("", "/")]
+    bad_mcp_mounts = [r for r in mounts if r.path in ("/mcp", "/mcp/")]
 
-    assert len(mcp_exact) == 1, f"Expected exactly 1 Mount('/mcp'), got {len(mcp_exact)}"
-    assert len(mcp_slash) == 0, f"Expected 0 Mount('/mcp/'), got {len(mcp_slash)}"
+    assert len(root_mounts) == 1, f"Expected exactly 1 Mount('/'), got {len(root_mounts)}"
+    assert len(bad_mcp_mounts) == 0, (
+        f"Mount('/mcp') would compose with the inner Route('/mcp') to /mcp/mcp; "
+        f"got {len(bad_mcp_mounts)} such mounts"
+    )

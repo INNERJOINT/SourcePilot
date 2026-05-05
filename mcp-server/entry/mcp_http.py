@@ -84,12 +84,16 @@ async def main_streamable_http(host: str, port: int) -> None:
         return JSONResponse({"status": "ok"})
 
     # Build outer Starlette that owns the /health route and mounts the FastMCP app.
-    # The inner mcp_app already carries its own lifespan; we expose it at /mcp.
+    # Mount at "/" because the inner FastMCP app already exposes Route("/mcp"); mounting
+    # at "/mcp" would compose to "/mcp/mcp". /health is matched first by route order.
+    # Forward the inner app's lifespan so FastMCP's session_manager.run() actually starts;
+    # without this, requests fail with "Task group is not initialized".
     outer = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Mount("/mcp", app=mcp_app),
+            Mount("/", app=mcp_app),
         ],
+        lifespan=lambda app: mcp_app.router.lifespan_context(app),
     )
 
     wrapped = BearerTokenMiddleware(outer, auth_token)
