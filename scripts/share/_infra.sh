@@ -101,8 +101,12 @@ _infra_wait_tcp() {
 _infra_ensure_network_access() {
   local net="$1"
   [ -f /.dockerenv ] || return 0
+  # Find our own container name by matching hostname
   local self
-  self=$(hostname)
+  self=$("$DOCKER_BIN" ps --filter "name=$(hostname)" --format '{{.Names}}' 2>/dev/null | head -1)
+  # Fallback: try lowercase hostname
+  [ -z "$self" ] && self=$("$DOCKER_BIN" ps --filter "name=$(hostname | tr '[:upper:]' '[:lower:]')" --format '{{.Names}}' 2>/dev/null | head -1)
+  [ -z "$self" ] && return 0
   if ! "$DOCKER_BIN" network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qw "$self"; then
     "$DOCKER_BIN" network connect "$net" "$self" 2>/dev/null || true
   fi
@@ -166,18 +170,16 @@ EOF
         fi
         idx=$((idx + 1))
 
-        # The zoekt_url from projects.yaml uses the in-Docker-network DNS
-        # name (e.g. http://sparse-index-zoekt:6070), which the host cannot
-        # resolve. Translate it to a host-reachable URL via the published
-        # port. Falls back to the configured _port on localhost.
+        # Resolve probe URL: prefer Docker DNS (works in DinD), fall back
+        # to localhost with published port (works on bare host).
         local _probe_url="$_url"
-        # Strip scheme and port from the URL host before resolving via getent.
         local _host_only="${_url#http://}"
         _host_only="${_host_only%%:*}"
+
+        # Try to detect if already running before starting
+        _infra_ensure_network_access sourcepilot-net
         if ! getent hosts "$_host_only" > /dev/null 2>&1; then
           local _published=""
-          # docker compose port returns non-zero when the container is not
-          # running yet; tolerate that and fall back to the configured port.
           _published=$("$DOCKER_BIN" compose -f "$COMPOSE_FILE" port "$svc" 6070 2> /dev/null | awk -F: 'NR==1{print $NF}') || _published=""
           if [ -z "$_published" ]; then
             _published="$_port"
@@ -188,18 +190,18 @@ EOF
         if curl -sf "$_probe_url/" > /dev/null 2>&1; then
           info "Detected ${svc} already running (${_probe_url}), skipping startup"
           ZOEKT_DOCKER=true
-          _infra_ensure_network_access sourcepilot-net
           continue
         fi
 
         info "Starting ${svc} (project=${_name}, probe=${_probe_url})..."
         "$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d "$svc"
         ZOEKT_DOCKER=true
-        _infra_ensure_network_access sourcepilot-net
 
-        # Re-resolve the published port now that the container is up
-        # (compose may not have published the port until startup).
-        if [ "$_probe_url" != "$_url" ]; then
+        # After compose up, the network exists; re-join and re-resolve
+        _infra_ensure_network_access sourcepilot-net
+        if getent hosts "$_host_only" > /dev/null 2>&1; then
+          _probe_url="$_url"
+        elif [ "$_probe_url" != "$_url" ]; then
           local _published2=""
           _published2=$("$DOCKER_BIN" compose -f "$COMPOSE_FILE" port "$svc" 6070 2> /dev/null | awk -F: 'NR==1{print $NF}') || _published2=""
           if [ -n "$_published2" ]; then
@@ -251,9 +253,14 @@ infra_start_dense() {
   _infra_require_cmd curl
   info "Starting dense retrieval stack (qdrant + dense-index-coderankembed)..."
   docker compose -f "$COMPOSE_FILE" up -d qdrant dense-index-coderankembed
+  _infra_ensure_network_access sourcepilot-net
 
+  local _qdrant_url="http://localhost:${QDRANT_PORT:-6333}"
+  if getent hosts qdrant > /dev/null 2>&1; then
+    _qdrant_url="http://qdrant:${QDRANT_PORT:-6333}"
+  fi
   info "Waiting for Qdrant to be ready..."
-  _infra_wait_http "http://localhost:${QDRANT_PORT:-6333}/healthz" "Qdrant" "$MAX_RETRIES" warn ||
+  _infra_wait_http "${_qdrant_url}/healthz" "Qdrant" "$MAX_RETRIES" warn ||
     warn "dense retrieval may be unavailable"
 }
 
@@ -292,28 +299,46 @@ infra_start_structural() {
 # ── sourcepilot-gateway ───────────────────────────────────
 infra_start_sourcepilot() {
   _infra_require_cmd curl
-  if curl -sf http://localhost:9000/api/health > /dev/null 2>&1; then
-    info "Detected SourcePilot already running (port 9000), skipping startup"
+  _infra_ensure_network_access sourcepilot-net
+  local _gw_url="http://localhost:9000"
+  if getent hosts sourcepilot-gateway > /dev/null 2>&1; then
+    _gw_url="http://sourcepilot-gateway:9000"
+  fi
+  if curl -sf "${_gw_url}/api/health" > /dev/null 2>&1; then
+    info "Detected SourcePilot already running (${_gw_url}), skipping startup"
     return
   fi
   _infra_require_cmd docker "install Docker to run sourcepilot-gateway"
   info "Starting sourcepilot-gateway (Docker)..."
   docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
-  _infra_wait_http "http://localhost:9000/api/health" "sourcepilot-gateway ready (Docker)" "$MAX_RETRIES" die
+  _infra_ensure_network_access sourcepilot-net
+  if getent hosts sourcepilot-gateway > /dev/null 2>&1; then
+    _gw_url="http://sourcepilot-gateway:9000"
+  fi
+  _infra_wait_http "${_gw_url}/api/health" "sourcepilot-gateway ready (Docker)" "$MAX_RETRIES" die
 }
 
 # ── mcp-server ────────────────────────────────────────────
 infra_start_mcp() {
   _infra_require_cmd curl
   local mcp_port="${MCP_PORT:-8888}"
-  if curl -sf "http://localhost:${mcp_port}/health" > /dev/null 2>&1; then
-    info "Detected MCP Server already running (port ${mcp_port}), skipping startup"
+  _infra_ensure_network_access sourcepilot-net
+  local _mcp_url="http://localhost:${mcp_port}"
+  if getent hosts mcp-server > /dev/null 2>&1; then
+    _mcp_url="http://mcp-server:${mcp_port}"
+  fi
+  if curl -sf "${_mcp_url}/health" > /dev/null 2>&1; then
+    info "Detected MCP Server already running (${_mcp_url}), skipping startup"
     return
   fi
   _infra_require_cmd docker "install Docker to run mcp-server"
   info "Starting mcp-server (Docker)..."
   docker compose -f "$COMPOSE_FILE" up -d mcp-server
-  _infra_wait_http "http://localhost:${mcp_port}/health" "mcp-server ready (Docker)" "$MAX_RETRIES" die
+  _infra_ensure_network_access sourcepilot-net
+  if getent hosts mcp-server > /dev/null 2>&1; then
+    _mcp_url="http://mcp-server:${mcp_port}"
+  fi
+  _infra_wait_http "${_mcp_url}/health" "mcp-server ready (Docker)" "$MAX_RETRIES" die
 }
 
 # ── sp-cockpit ────────────────────────────────────────────
@@ -322,15 +347,24 @@ infra_start_cockpit() {
   local cockpit_enabled="${SP_COCKPIT_ENABLED:-true}"
   if [ "$cockpit_enabled" != "true" ]; then return; fi
   _infra_require_cmd curl
-  if curl -sf "http://localhost:${cockpit_port}/api/health" > /dev/null 2>&1; then
-    info "Detected sp-cockpit already running (port ${cockpit_port}), skipping startup"
+  _infra_ensure_network_access sourcepilot-net
+  local _cockpit_url="http://localhost:${cockpit_port}"
+  if getent hosts sp-cockpit > /dev/null 2>&1; then
+    _cockpit_url="http://sp-cockpit:${cockpit_port}"
+  fi
+  if curl -sf "${_cockpit_url}/api/health" > /dev/null 2>&1; then
+    info "Detected sp-cockpit already running (${_cockpit_url}), skipping startup"
     SP_COCKPIT_RUNNING=true
     return
   fi
   _infra_require_cmd docker "install Docker to run sp-cockpit"
   info "Starting sp-cockpit (Docker, port ${cockpit_port})..."
   docker compose -f "$COMPOSE_FILE" up -d sp-cockpit
-  if _infra_wait_http "http://localhost:${cockpit_port}/api/health" "sp-cockpit ready (Docker)" "$MAX_RETRIES" warn; then
+  _infra_ensure_network_access sourcepilot-net
+  if getent hosts sp-cockpit > /dev/null 2>&1; then
+    _cockpit_url="http://sp-cockpit:${cockpit_port}"
+  fi
+  if _infra_wait_http "${_cockpit_url}/api/health" "sp-cockpit ready (Docker)" "$MAX_RETRIES" warn; then
     SP_COCKPIT_RUNNING=true
   else
     warn "continuing with other services"

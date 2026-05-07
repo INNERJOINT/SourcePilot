@@ -21,6 +21,7 @@ ARG INSTALL_DENSE=false
 RUN if [ "$INSTALL_DENSE" = "true" ]; then pip install --no-cache-dir "qdrant-client>=1.12,<2"; fi
 
 COPY src/ /app/src/
+COPY config/projects.yaml /etc/sourcepilot/projects.yaml
 
 EXPOSE 9000
 CMD ["python", "-m", "uvicorn", "--app-dir", "/app/src", "app:app", "--host", "0.0.0.0", "--port", "9000"]

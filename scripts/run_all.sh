@@ -189,6 +189,11 @@ main() {
   infra_start_structural
   infra_start_sourcepilot
 
+  # In DinD, update SOURCEPILOT_URL to use Docker DNS (localhost is unreachable)
+  if getent hosts sourcepilot-gateway > /dev/null 2>&1; then
+    SOURCEPILOT_URL="http://sourcepilot-gateway:${SOURCEPILOT_PORT}"
+  fi
+
   export SOURCEPILOT_URL
   MCP_PID=""
   if [ "$MCP_DOCKER" = "true" ]; then

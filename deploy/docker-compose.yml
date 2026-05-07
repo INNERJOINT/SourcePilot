@@ -120,8 +120,7 @@ services:
       STRUCTURAL_NEO4J_USER: ${STRUCTURAL_NEO4J_USER:-neo4j}
       STRUCTURAL_NEO4J_PASSWORD: ${STRUCTURAL_NEO4J_PASSWORD:-sourcepilot}
     volumes:
-      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log
-      - ../config/projects.yaml:/etc/sourcepilot/projects.yaml:ro
+      - sourcepilot-audit:/var/log/sourcepilot
     ports:
       - "${SOURCEPILOT_PORT:-9000}:9000"
     # NOTE: zoekt depends_on intentionally omitted. Per-project zoekt
@@ -340,3 +339,4 @@ volumes:
   neo4j_logs:
   neo4j_import:
   neo4j_plugins:
+  sourcepilot-audit:
