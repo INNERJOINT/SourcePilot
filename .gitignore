@@ -187,4 +187,7 @@ sp-cockpit/frontend/*.tsbuildinfo
 config/projects.yaml
 deploy/docker-compose.yml
 
+# Chinese translation files
+*_zh.md
+
 refs/
