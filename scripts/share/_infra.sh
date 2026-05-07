@@ -162,12 +162,7 @@ EOF
       local idx=0
       while IFS='|' read -r _name _url _port; do
         [ -z "$_name" ] && continue
-        local svc
-        if [ "$idx" -eq 0 ]; then
-          svc="sparse-index-zoekt"
-        else
-          svc="sparse-index-zoekt-${_name}"
-        fi
+        local svc="sparse-index-zoekt-${_name}"
         idx=$((idx + 1))
 
         # Resolve probe URL: prefer Docker DNS (works in DinD), fall back

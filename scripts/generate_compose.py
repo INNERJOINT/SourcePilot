@@ -129,7 +129,7 @@ def build_zoekt_services(projects: list[dict], env: dict[str, str]) -> dict:
     services: dict[str, dict] = {}
     port_counter = 6070
 
-    for idx, proj in enumerate(projects):
+    for proj in projects:
         name = proj["name"]
         sparse = proj.get("sparse_index", {})
         zoekt_urls = sparse.get("zoekt_urls")
@@ -145,9 +145,9 @@ def build_zoekt_services(projects: list[dict], env: dict[str, str]) -> dict:
                 port_counter = max(port_counter, int(port)) + 1
                 services[svc_name] = _zoekt_service_template(vol, port)
         else:
-            svc_name = "sparse-index-zoekt" if idx == 0 else f"sparse-index-zoekt-{name}"
-            env_key_path = f"ZOEKT_INDEX_PATH_{name.upper()}" if idx > 0 else "ZOEKT_INDEX_PATH"
-            env_key_port = f"ZOEKT_PORT_{name.upper()}" if idx > 0 else "ZOEKT_PORT"
+            svc_name = f"sparse-index-zoekt-{name}"
+            env_key_path = f"ZOEKT_INDEX_PATH_{name.upper()}"
+            env_key_port = f"ZOEKT_PORT_{name.upper()}"
             default_path = sparse.get("index_dir", "")
             vol = env.get(env_key_path, default_path)
             port = env.get(env_key_port, str(port_counter))
@@ -162,7 +162,7 @@ def _build_gateway_zoekt_env(projects: list[dict]) -> dict[str, str]:
     zoekt_env: dict[str, str] = {}
     first_url = ""
 
-    for idx, proj in enumerate(projects):
+    for proj in projects:
         name = proj["name"]
         sparse = proj.get("sparse_index", {})
         zoekt_urls = sparse.get("zoekt_urls")
@@ -175,7 +175,7 @@ def _build_gateway_zoekt_env(projects: list[dict]) -> dict[str, str]:
                 if not first_url:
                     first_url = url
         else:
-            svc = "sparse-index-zoekt" if idx == 0 else f"sparse-index-zoekt-{name}"
+            svc = f"sparse-index-zoekt-{name}"
             url = f"http://{svc}:6070"
             zoekt_env[f"ZOEKT_URL_{name.upper()}"] = url
             if not first_url:
