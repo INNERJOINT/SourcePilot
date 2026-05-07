@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,11 @@ async def _lifespan(server: FastMCP) -> AsyncIterator[AppContext]:  # noqa: ARG0
 
 # ─── FastMCP instance ──────────────────────────────────────────────────────────
 
-mcp: FastMCP[AppContext] = FastMCP("sourcepilot-mcp", lifespan=_lifespan)
+mcp: FastMCP[AppContext] = FastMCP(
+    "sourcepilot-mcp",
+    lifespan=_lifespan,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 # ─── Register tools, prompts, resources ───────────────────────────────────────
 
