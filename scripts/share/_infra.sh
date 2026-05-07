@@ -310,7 +310,7 @@ infra_start_sourcepilot() {
   fi
   _infra_require_cmd docker "install Docker to run sourcepilot-gateway"
   info "Starting sourcepilot-gateway (Docker)..."
-  docker compose -f "$COMPOSE_FILE" up -d sourcepilot-gateway
+  docker compose -f "$COMPOSE_FILE" up -d --build sourcepilot-gateway
   _infra_ensure_network_access sourcepilot-net
   if getent hosts sourcepilot-gateway > /dev/null 2>&1; then
     _gw_url="http://sourcepilot-gateway:9000"
