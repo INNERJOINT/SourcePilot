@@ -184,6 +184,19 @@ main() {
     info "RESTART_CONTAINERS=false: reusing already-running containers if present"
   fi
 
+  # Generate docker-compose.yml from projects.yaml + .env
+  info "Generating deploy/docker-compose.yml from config/projects.yaml..."
+  if ! "$VENV_PYTHON" "$DIR/generate_compose.py" \
+    --projects-config "${PROJECTS_CONFIG_PATH:-$PROJ_ROOT/config/projects.yaml}" \
+    --env-file "$PROJ_ROOT/.env" \
+    --output "$PROJ_ROOT/deploy/docker-compose.yml"; then
+    if [ -f "$PROJ_ROOT/deploy/docker-compose.yml" ]; then
+      warn "Compose generation failed — using existing deploy/docker-compose.yml"
+    else
+      die "Compose generation failed and no existing file to fall back to"
+    fi
+  fi
+
   infra_start_zoekt
   infra_start_dense
   infra_start_structural
