@@ -94,6 +94,20 @@ _infra_wait_tcp() {
   done
 }
 
+# _infra_ensure_network_access <network_name>
+# In Docker-in-Docker setups, the host cannot reach containers via published
+# ports.  If we detect we are running inside a container, connect it to the
+# given Compose network so Docker DNS names resolve and we can probe services.
+_infra_ensure_network_access() {
+  local net="$1"
+  [ -f /.dockerenv ] || return 0
+  local self
+  self=$(hostname)
+  if ! "$DOCKER_BIN" network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qw "$self"; then
+    "$DOCKER_BIN" network connect "$net" "$self" 2>/dev/null || true
+  fi
+}
+
 # ── zoekt ─────────────────────────────────────────────────
 # Multi-project Docker mode (run_all.sh): for each project in
 # config/projects.yaml, ensure the corresponding compose service is
@@ -174,12 +188,14 @@ EOF
         if curl -sf "$_probe_url/" > /dev/null 2>&1; then
           info "Detected ${svc} already running (${_probe_url}), skipping startup"
           ZOEKT_DOCKER=true
+          _infra_ensure_network_access sourcepilot-net
           continue
         fi
 
         info "Starting ${svc} (project=${_name}, probe=${_probe_url})..."
         "$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d "$svc"
         ZOEKT_DOCKER=true
+        _infra_ensure_network_access sourcepilot-net
 
         # Re-resolve the published port now that the container is up
         # (compose may not have published the port until startup).
@@ -191,7 +207,7 @@ EOF
           fi
         fi
 
-        _infra_wait_http "$_probe_url/" "  ${svc}" "$ZOEKT_MAX_RETRIES" warn
+        _infra_wait_http "$_probe_url/" "  ${svc}" "$ZOEKT_MAX_RETRIES" warn || true
       done <<< "$entries"
       return
     fi

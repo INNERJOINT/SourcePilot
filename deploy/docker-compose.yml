@@ -49,7 +49,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 120s
     restart: unless-stopped
     logging:
       driver: json-file
@@ -71,7 +71,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 120s
     restart: unless-stopped
     logging:
       driver: json-file
@@ -167,7 +167,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 120s
     restart: on-failure:5
     logging:
       driver: json-file
@@ -221,7 +221,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 120s
     networks:
       - sourcepilot-net
     restart: unless-stopped
