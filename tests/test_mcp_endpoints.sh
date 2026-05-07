@@ -12,17 +12,24 @@
 
 set -uo pipefail
 
+# Load .env from repo root (only sets unset vars)
+_ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+if [ -f "$_ENV_FILE" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*$ ]] && continue
+    line="${line#export }"
+    key="${line%%=*}"
+    val="${line#*=}"
+    val="${val%\"}" ; val="${val#\"}" ; val="${val%\'}" ; val="${val#\'}"
+    [ -z "${!key:-}" ] && export "$key=$val"
+  done < "$_ENV_FILE"
+fi
+
 MCP_URL="${MCP_URL:-http://localhost:8888/mcp}"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Load MCP_AUTH_TOKEN from environment or repo-root .env
-if [ -z "${MCP_AUTH_TOKEN:-}" ]; then
-    ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
-    if [ -f "$ENV_FILE" ]; then
-        MCP_AUTH_TOKEN=$(grep -E '^MCP_AUTH_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-    fi
-fi
 if [ -z "${MCP_AUTH_TOKEN:-}" ]; then
     echo "❌ Error: MCP_AUTH_TOKEN is not set. Export it or define it in .env."
     exit 1

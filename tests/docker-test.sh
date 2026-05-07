@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SP_URL=http://localhost:9000
-ZOEKT_URL=http://localhost:6070
+SP_URL="${SOURCEPILOT_URL:-http://localhost:9000}"
+ZOEKT_URL="${ZOEKT_URL:-http://localhost:6070}"
 
 PASSED=0
 FAILED=0

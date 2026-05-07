@@ -10,6 +10,7 @@
 #   indexer-containers   — Verify dense/structural indexer definitions in docker-compose.yml
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../share/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../share/_env.sh"
 _common_parse_help "$@"
 
 CURL_BIN="${CURL_BIN:-curl}"
