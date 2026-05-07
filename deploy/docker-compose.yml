@@ -152,7 +152,7 @@ services:
       SP_COCKPIT_AUDIT_LOG_PATH: /var/log/sourcepilot/audit.log
       SP_COCKPIT_AUDIT_DB_PATH: /data/audit.db
     volumes:
-      - ${SP_COCKPIT_AUDIT_LOG_PATH:-../audit.log}:/var/log/sourcepilot/audit.log:ro
+      - sourcepilot-audit:/var/log/sourcepilot:ro
       - ../sp-cockpit/data:/data
     ports:
       - "${SP_COCKPIT_PORT:-9100}:9100"
