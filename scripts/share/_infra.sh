@@ -42,6 +42,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 _INFRA_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="${COMPOSE_FILE:-$_INFRA_DIR/../../deploy/docker-compose.yml}"
 MAX_RETRIES="${MAX_RETRIES:-30}"
+ZOEKT_MAX_RETRIES="${ZOEKT_MAX_RETRIES:-120}"
 INFRA_SLEEP_SECONDS="${INFRA_SLEEP_SECONDS:-1}"
 
 # ── shared helpers ───────────────────────────────────────────
@@ -190,7 +191,7 @@ EOF
           fi
         fi
 
-        _infra_wait_http "$_probe_url/" "  ${svc}" "$MAX_RETRIES" warn
+        _infra_wait_http "$_probe_url/" "  ${svc}" "$ZOEKT_MAX_RETRIES" warn
       done <<< "$entries"
       return
     fi
