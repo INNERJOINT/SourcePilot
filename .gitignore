@@ -185,5 +185,6 @@ sp-cockpit/frontend/*.tsbuildinfo
 
 # config
 config/projects.yaml
+deploy/docker-compose.yml
 
 refs/

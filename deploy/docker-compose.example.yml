@@ -79,6 +79,57 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── Multi-Zoekt example: split a single project across sub-containers ──
+  # When a project's source is too large for one Zoekt index, split it into
+  # sub-containers. Configure via sparse_index.zoekt_urls dict in
+  # config/projects.yaml. Gateway fans out queries to all sub-containers in
+  # parallel and merges results transparently.
+  #
+  # Example: project "ace" split into sys + vnd sub-containers:
+  sparse-index-zoekt-ace-sys:
+    build: ./sparse/zoekt
+    profiles: ["zoekt"]
+    volumes:
+      - ${ZOEKT_INDEX_PATH_ACE_SYS:-/mnt/code/ACE-sys/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT_ACE_SYS:-6072}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  sparse-index-zoekt-ace-vnd:
+    build: ./sparse/zoekt
+    profiles: ["zoekt"]
+    volumes:
+      - ${ZOEKT_INDEX_PATH_ACE_VND:-/mnt/code/ACE-vnd/.repo/.zoekt}:/data/index:ro
+    ports:
+      - "${ZOEKT_PORT_ACE_VND:-6073}:6070"
+    networks:
+      - sourcepilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6070/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   zoekt-indexserver:
     build: ./sparse/zoekt
     entrypoint: ["zoekt-git-index"]
@@ -102,6 +153,9 @@ services:
       ZOEKT_URL: ${ZOEKT_URL:-http://sparse-index-zoekt:6070}
       ZOEKT_URL_AOSP_PROJECT: ${ZOEKT_URL_AOSP_PROJECT:-http://sparse-index-zoekt:6070}
       ZOEKT_URL_T2: ${ZOEKT_URL_T2:-http://sparse-index-zoekt-t2:6070}
+      # Multi-Zoekt sub-container URLs (for projects with zoekt_urls dict)
+      ZOEKT_URL_ACE_SYS: ${ZOEKT_URL_ACE_SYS:-http://sparse-index-zoekt-ace-sys:6070}
+      ZOEKT_URL_ACE_VND: ${ZOEKT_URL_ACE_VND:-http://sparse-index-zoekt-ace-vnd:6070}
       PROJECTS_CONFIG_PATH: /etc/sourcepilot/projects.yaml
       AUDIT_LOG_FILE: /var/log/sourcepilot/audit.log
       AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
