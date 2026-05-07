@@ -73,16 +73,11 @@ def _make_client(monkeypatch, projects: list[ProjectConfig]) -> TestClient:
 
 
 @pytest.mark.parametrize("endpoint,base_body", ENDPOINTS)
-def test_multi_project_missing_returns_400(endpoint, base_body, monkeypatch):
-    """POST without 'project' in multi-project deployment returns 400 with available list."""
+def test_multi_project_missing_defaults_to_first(endpoint, base_body, monkeypatch):
+    """POST without 'project' in multi-project deployment defaults to first project (200)."""
     client = _make_client(monkeypatch, [PROJECT_AOSP, PROJECT_T2])
     resp = client.post(endpoint, json=base_body)
-    assert resp.status_code == 400
-    body = resp.json()
-    assert "error" in body
-    assert "project" in body["error"].lower()
-    assert "available" in body
-    assert set(body["available"]) == {"aosp_project", "t2"}
+    assert resp.status_code == 200
 
 
 # ─── Multi-project: unknown project → 400 ────────────────────────────────────

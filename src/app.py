@@ -53,9 +53,8 @@ def _resolve_project(body: dict) -> tuple[str | None, JSONResponse | None]:
     names = list_project_names()
     if len(names) > 1:
         if project is None:
-            return None, _err_body(
-                400, {"error": "project required in multi-project deployment", "available": names}
-            )
+            project = names[0]
+            logger.info("No project specified, defaulting to '%s'", project)
         if project not in names:
             return None, _err_body(
                 400, {"error": f"unknown project '{project}'", "available": names}
