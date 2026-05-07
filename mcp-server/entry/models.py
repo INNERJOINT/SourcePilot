@@ -8,60 +8,80 @@ from pydantic import BaseModel, Field
 
 
 class SearchCodeInput(BaseModel):
-    query: str = Field(description="Search query: keyword, symbol name, file path, property name, etc.")
-    repo: str = Field(default="", description="Optional, restrict search to repo name prefix")
-    top_k: int = Field(default=10, description="Number of results to return, default 10")
-    lang: str | None = Field(default=None, description="Optional, filter by programming language (e.g. java, cpp, go)")
-    branch: str | None = Field(default=None, description="Optional, filter by branch name (e.g. main)")
+    query: str = Field(
+        description="Search query: keyword, symbol name, file path, etc.",
+    )
+    repo: str = Field(default="", description="Restrict search to repo name prefix")
+    top_k: int = Field(default=10, description="Number of results to return")
+    lang: str = Field(default="", description="Filter by language (e.g. java, cpp)")
+    branch: str = Field(default="", description="Filter by branch name (e.g. main)")
     case_sensitive: str = Field(
         default="auto",
         description="Case sensitivity mode: auto (default), yes, no",
     )
-    project: str | None = Field(default=None, description="Optional, project name (e.g. aosp-14, aosp-15)")
+    project: str = Field(default="", description="Project name (e.g. aosp-14)")
 
 
 class SearchSymbolInput(BaseModel):
-    symbol: str = Field(description="Symbol name to search for (class name, function name, etc.)")
-    repo: str = Field(default="", description="Optional, restrict search to repo")
-    top_k: int = Field(default=5, description="Number of results to return, default 5")
-    lang: str | None = Field(default=None, description="Optional, filter by programming language")
-    branch: str | None = Field(default=None, description="Optional, filter by branch name")
-    case_sensitive: str = Field(default="auto", description="Case sensitivity mode: auto, yes, no")
-    project: str | None = Field(default=None, description="Optional, project name")
+    symbol: str = Field(
+        description="Symbol name (class name, function name, etc.)",
+    )
+    repo: str = Field(default="", description="Restrict search to repo")
+    top_k: int = Field(default=5, description="Number of results to return")
+    lang: str = Field(default="", description="Filter by programming language")
+    branch: str = Field(default="", description="Filter by branch name")
+    case_sensitive: str = Field(
+        default="auto", description="Case sensitivity: auto, yes, no",
+    )
+    project: str = Field(default="", description="Project name")
 
 
 class SearchFileInput(BaseModel):
-    path: str = Field(description="File name or path pattern (e.g. SystemServer.java or frameworks/base/)")
-    query: str = Field(default="", description="Optional, additional keyword to search within matched files")
-    top_k: int = Field(default=5, description="Number of results to return, default 5")
-    lang: str | None = Field(default=None, description="Optional, filter by programming language")
-    branch: str | None = Field(default=None, description="Optional, filter by branch name")
-    case_sensitive: str = Field(default="auto", description="Case sensitivity mode: auto, yes, no")
-    project: str | None = Field(default=None, description="Optional, project name")
+    path: str = Field(
+        description="File name or path pattern (e.g. SystemServer.java)",
+    )
+    query: str = Field(
+        default="", description="Additional keyword to search within files",
+    )
+    top_k: int = Field(default=5, description="Number of results to return")
+    lang: str = Field(default="", description="Filter by programming language")
+    branch: str = Field(default="", description="Filter by branch name")
+    case_sensitive: str = Field(
+        default="auto", description="Case sensitivity: auto, yes, no",
+    )
+    project: str = Field(default="", description="Project name")
 
 
 class SearchRegexInput(BaseModel):
     pattern: str = Field(description="Regular expression pattern")
-    repo: str = Field(default="", description="Optional, restrict search to repo")
-    top_k: int = Field(default=10, description="Number of results to return, default 10")
-    lang: str | None = Field(default=None, description="Optional, filter by programming language")
-    branch: str | None = Field(default=None, description="Optional, filter by branch name")
-    case_sensitive: str = Field(default="auto", description="Case sensitivity mode: auto, yes, no")
-    project: str | None = Field(default=None, description="Optional, project name")
+    repo: str = Field(default="", description="Restrict search to repo")
+    top_k: int = Field(default=10, description="Number of results to return")
+    lang: str = Field(default="", description="Filter by programming language")
+    branch: str = Field(default="", description="Filter by branch name")
+    case_sensitive: str = Field(
+        default="auto", description="Case sensitivity: auto, yes, no",
+    )
+    project: str = Field(default="", description="Project name")
 
 
 class ListReposInput(BaseModel):
-    query: str = Field(default="", description="Optional, repo name filter keyword")
-    top_k: int = Field(default=50, description="Maximum number of results to return, default 50")
-    project: str | None = Field(default=None, description="Optional, project name")
+    query: str = Field(default="", description="Repo name filter keyword")
+    top_k: int = Field(default=50, description="Max number of results to return")
+    project: str = Field(default="", description="Project name")
 
 
 class GetFileContentInput(BaseModel):
-    repo: str = Field(description="Repo name (from the repo field of search_file/search_code results)")
-    filepath: str = Field(description="File path (from the path field of search results, without repo prefix)")
-    start_line: int = Field(default=1, description="Start line number (1-based, default 1)")
-    end_line: int | None = Field(default=None, description="End line number (defaults to end of file)")
-    project: str | None = Field(default=None, description="Optional, project name")
+    repo: str = Field(
+        description="Repo name (from search_file/search_code results)",
+    )
+    filepath: str = Field(
+        description="File path (from search results, without repo prefix)",
+    )
+    start_line: int = Field(default=1, description="Start line number (1-based)")
+    end_line: int | None = Field(
+        default=None, description="End line number (defaults to EOF)",
+    )
+    project: str = Field(default="", description="Project name")
 
 
 class ListProjectsInput(BaseModel):
@@ -112,4 +132,6 @@ class ProjectInfo(BaseModel):
 class ListProjectsResult(BaseModel):
     total: int
     projects: list[ProjectInfo]
-    multi_project: bool = Field(description="Whether this is a multi-project deployment")
+    multi_project: bool = Field(
+        description="Whether this is a multi-project deployment",
+    )
