@@ -10,9 +10,15 @@ import asyncio
 import logging
 
 import config
+from adapters.multi_zoekt import MultiZoektAdapter
+from adapters.protocol import ZoektProtocol
 from adapters.zoekt import ZoektAdapter
 from config import get_default_project, get_project
-from gateway.converters import dense_result_to_dict, feishu_result_to_dict, structural_result_to_dict
+from gateway.converters import (
+    dense_result_to_dict,
+    feishu_result_to_dict,
+    structural_result_to_dict,
+)
 from gateway.fusion import rrf_merge
 from gateway.nl.classifier import classify_query
 from gateway.nl.rewriter import rewrite_query
@@ -22,7 +28,7 @@ from observability.audit import audit_stage
 logger = logging.getLogger(__name__)
 
 # Per-project adapter cache
-_adapters: dict[str, ZoektAdapter] = {}
+_adapters: dict[str, ZoektProtocol] = {}
 _dense_adapter: dict[tuple[str, str], object] | None = None
 _structural_adapter = None
 
@@ -39,16 +45,23 @@ def _is_zoekt_project(project: str | None = None) -> bool:
         return True
 
 
-def _get_adapter(project: str | None = None) -> ZoektAdapter:
-    """Return a cached ZoektAdapter for the given project (or default)."""
+def _get_adapter(project: str | None = None) -> ZoektProtocol:
+    """Return a cached ZoektAdapter (or MultiZoektAdapter) for the given project."""
     if project is None:
         proj_cfg = get_default_project()
     else:
         proj_cfg = get_project(project)  # raises ValueError for unknown project
     name = proj_cfg.name
     if name not in _adapters:
-        _adapters[name] = ZoektAdapter(zoekt_url=proj_cfg.zoekt_url)
-        logger.info("Created ZoektAdapter for project '%s' → %s", name, proj_cfg.zoekt_url)
+        urls = proj_cfg.all_zoekt_urls
+        if len(urls) == 1:
+            _adapters[name] = ZoektAdapter(zoekt_url=next(iter(urls.values())))
+        else:
+            adapters = {label: ZoektAdapter(zoekt_url=url) for label, url in urls.items()}
+            _adapters[name] = MultiZoektAdapter(
+                adapters, dedup_by_filepath=proj_cfg.dedup_by_filepath
+            )
+        logger.info("Created adapter for project '%s' (%d sub-containers)", name, len(urls))
     return _adapters[name]
 
 

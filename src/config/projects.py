@@ -7,7 +7,7 @@ an independent AOSP checkout with its own Zoekt webserver instance.
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,19 @@ class ProjectConfig:
     dense_collection_name: str = ""
     project_type: str = "aosp"  # "aosp" or "feishu"
     embedding_model: str = ""
+    zoekt_urls: dict[str, str] = field(default_factory=dict)
+    index_dirs: dict[str, str] = field(default_factory=dict)
+    dedup_by_filepath: bool = False
+
+    @property
+    def all_zoekt_urls(self) -> dict[str, str]:
+        if self.zoekt_urls:
+            return self.zoekt_urls
+        return {"default": self.zoekt_url}
+
+    @property
+    def is_multi_zoekt(self) -> bool:
+        return len(self.all_zoekt_urls) > 1
 
 
 # ---------------------------------------------------------------------------
@@ -111,12 +124,22 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         project_type = entry.get("project_type", "aosp")
 
         # sparse_index overrides top-level index_dir / zoekt_url
+        zoekt_urls: dict[str, str] = {}
+        index_dirs: dict[str, str] = {}
+        dedup_by_filepath = False
         sparse_index = entry.get("sparse_index")
         if isinstance(sparse_index, dict):
             if sparse_index.get("index_dir"):
                 index_dir = sparse_index["index_dir"]
             if sparse_index.get("zoekt_url"):
                 zoekt_url = sparse_index["zoekt_url"]
+            zoekt_urls_raw = sparse_index.get("zoekt_urls")
+            if isinstance(zoekt_urls_raw, dict):
+                zoekt_urls = {k: str(v) for k, v in zoekt_urls_raw.items() if v}
+            index_dirs_raw = sparse_index.get("index_dirs")
+            if isinstance(index_dirs_raw, dict):
+                index_dirs = {k: str(v) for k, v in index_dirs_raw.items() if v}
+            dedup_by_filepath = bool(sparse_index.get("dedup_by_filepath", False))
 
         if not zoekt_url and project_type == "aosp":
             raise ValueError(f"Project '{name}' missing 'zoekt_url' in {path}")
@@ -128,6 +151,13 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
         env_override = os.getenv(f"ZOEKT_URL_{name.upper()}")
         if env_override:
             zoekt_url = env_override
+
+        # Per-sub-container env overrides: ZOEKT_URL_<NAME>_<SUBLABEL>
+        if zoekt_urls:
+            for sub_label in list(zoekt_urls.keys()):
+                sub_env = os.getenv(f"ZOEKT_URL_{name.upper()}_{sub_label.upper()}")
+                if sub_env:
+                    zoekt_urls[sub_label] = sub_env
 
         dense_collection_name = ""
         dense_index = entry.get("dense_index")
@@ -161,6 +191,9 @@ def load_projects(config_path: str | Path | None = None) -> list[ProjectConfig]:
                 dense_collection_name=dense_collection_name,
                 project_type=project_type,
                 embedding_model=resolved_embedding_model,
+                zoekt_urls=zoekt_urls,
+                index_dirs=index_dirs,
+                dedup_by_filepath=dedup_by_filepath,
             )
         )
 
