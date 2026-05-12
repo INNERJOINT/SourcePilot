@@ -161,8 +161,6 @@ def register_tools(mcp: object) -> None:
         projects = [
             ProjectInfo(
                 name=p.get("name", ""),
-                source_root=p.get("source_root", ""),
-                zoekt_url=p.get("zoekt_url", ""),
             )
             for p in raw
         ]

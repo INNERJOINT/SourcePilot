@@ -550,13 +550,11 @@ async def _handle_list_projects(args: dict, trace_id: str) -> list[TextContent]:
         return [TextContent(type="text", text="No projects found.")]
 
     lines = [f"Found {len(projects)} available projects:\n"]
-    lines.append(f"{'name':<20} {'source_root':<40} {'zoekt_url'}")
-    lines.append("-" * 80)
+    lines.append(f"{'name'}")
+    lines.append("-" * 40)
     for p in projects:
         name = p.get("name", "")
-        source_root = p.get("source_root", "")
-        zoekt_url = p.get("zoekt_url", "")
-        lines.append(f"{name:<20} {source_root:<40} {zoekt_url}")
+        lines.append(f"{name}")
 
     if len(projects) > 1:
         lines.append("\nNote: in multi-project deployments, other tools must pass the 'project' field to specify the target project.")

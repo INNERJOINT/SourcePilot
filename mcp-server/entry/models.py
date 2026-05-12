@@ -125,8 +125,6 @@ class FileContentResult(BaseModel):
 
 class ProjectInfo(BaseModel):
     name: str
-    source_root: str = Field(default="")
-    zoekt_url: str = Field(default="")
 
 
 class ListProjectsResult(BaseModel):

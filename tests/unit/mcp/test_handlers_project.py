@@ -16,12 +16,12 @@ from entry.handlers import (
 )
 
 TWO_PROJECTS = [
-    {"name": "aosp_project", "source_root": "/x", "zoekt_url": "http://z1:6070"},
-    {"name": "t2", "source_root": "/y", "zoekt_url": "http://z2:6071"},
+    {"name": "aosp_project"},
+    {"name": "t2"},
 ]
 
 ONE_PROJECT = [
-    {"name": "aosp_project", "source_root": "/x", "zoekt_url": "http://z1:6070"},
+    {"name": "aosp_project"},
 ]
 
 
@@ -35,7 +35,7 @@ def reset_multi_project(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_projects_tool_calls_api():
-    """_handle_list_projects returns TextContent containing name, source_root, zoekt_url."""
+    """_handle_list_projects returns TextContent containing project names."""
     respx.get(f"{SOURCEPILOT_URL}/api/projects").mock(
         return_value=httpx.Response(200, json=TWO_PROJECTS)
     )
@@ -44,8 +44,6 @@ async def test_list_projects_tool_calls_api():
     text = result[0].text
     assert "aosp_project" in text
     assert "t2" in text
-    assert "/x" in text
-    assert "http://z1:6070" in text
 
 
 @pytest.mark.asyncio

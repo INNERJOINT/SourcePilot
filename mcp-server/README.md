@@ -104,7 +104,7 @@ Seven tools are exposed (one for project discovery + six for search):
 
 ### list_projects
 
-List configured AOSP projects (returns each project's `name`, `source_root`, `repo_path`, `index_dir`, `zoekt_url`). In multi-project deployments you must pass the chosen `project` name to every search tool below; in single-project deployments the field is optional.
+List configured AOSP projects (returns each project's `name`). In multi-project deployments you must pass the chosen `project` name to every search tool below; in single-project deployments the field is optional.
 
 ```
 list_projects()
