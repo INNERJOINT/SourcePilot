@@ -75,7 +75,7 @@ async def test_search_code_elicits_when_query_too_short(monkeypatch):
             await session.initialize()
             result = await session.call_tool(
                 "search_code",
-                {"inp": {"project": "aosp_project", "query": ""}},
+                {"project": "aosp_project", "query": ""},
             )
 
     # elicitation must have been invoked
@@ -121,7 +121,7 @@ async def test_search_code_elicitation_declined_returns_empty(monkeypatch):
             result = await session.call_tool(
                 "search_code",
                 {
-                    "inp": {"project": "aosp_project", "query": "x"}
+                    "project": "aosp_project", "query": "x"
                 },  # length 1 → triggers elicitation
             )
 

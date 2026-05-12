@@ -71,7 +71,7 @@ async def test_mcp_search_code():
         async with _mcp_session() as session:
             result = await session.call_tool(
                 "search_code",
-                {"inp": {"project": "aosp_project", "query": "startBootstrapServices"}},
+                {"project": "aosp_project", "query": "startBootstrapServices"},
             )
         text = result.content[0].text
         assert "SystemServer" in text or "startBootstrapServices" in text
@@ -86,7 +86,7 @@ async def test_mcp_search_symbol():
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_symbol", {"inp": {"project": "aosp_project", "symbol": "ActivityManager"}}
+                "search_symbol", {"project": "aosp_project", "symbol": "ActivityManager"}
             )
         assert "SystemServer" in result.content[0].text
 
@@ -100,7 +100,7 @@ async def test_mcp_search_file():
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_file", {"inp": {"project": "aosp_project", "path": "SystemServer.java"}}
+                "search_file", {"project": "aosp_project", "path": "SystemServer.java"}
             )
         assert "SystemServer" in result.content[0].text
 
@@ -114,7 +114,7 @@ async def test_mcp_search_regex():
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_regex", {"inp": {"project": "aosp_project", "pattern": r"TODO.*fix"}}
+                "search_regex", {"project": "aosp_project", "pattern": r"TODO.*fix"}
             )
         assert "SystemServer" in result.content[0].text
 
@@ -127,7 +127,7 @@ async def test_mcp_list_repos():
             return_value=httpx.Response(200, json=MOCK_SP_LIST_REPOS)
         )
         async with _mcp_session() as session:
-            result = await session.call_tool("list_repos", {"inp": {"project": "aosp_project"}})
+            result = await session.call_tool("list_repos", {"project": "aosp_project"})
         assert "frameworks/base" in result.content[0].text
 
 
@@ -142,11 +142,9 @@ async def test_mcp_get_file_content():
             result = await session.call_tool(
                 "get_file_content",
                 {
-                    "inp": {
-                        "project": "aosp_project",
-                        "repo": "frameworks/base",
-                        "filepath": "test.java",
-                    }
+                    "project": "aosp_project",
+                    "repo": "frameworks/base",
+                    "filepath": "test.java",
                 },
             )
         assert "package com.android.server" in result.content[0].text
@@ -161,7 +159,7 @@ async def test_mcp_empty_results():
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_code", {"inp": {"project": "aosp_project", "query": "xyz_nonexistent"}}
+                "search_code", {"project": "aosp_project", "query": "xyz_nonexistent"}
             )
         text = result.content[0].text
         assert '"total": 0' in text or '"hits": []' in text
@@ -181,10 +179,8 @@ async def test_mcp_search_nl_query_hits_sourcepilot():
             result = await session.call_tool(
                 "search_code",
                 {
-                    "inp": {
-                        "project": "aosp_project",
-                        "query": "How does the Android boot process initialize",
-                    }
+                    "project": "aosp_project",
+                    "query": "How does the Android boot process initialize",
                 },
             )
         assert route.called
@@ -200,8 +196,7 @@ async def test_mcp_search_exact_query_hits_sourcepilot():
         )
         async with _mcp_session() as session:
             result = await session.call_tool(
-                "search_code",
-                {"inp": {"project": "aosp_project", "query": "startBootstrapServices"}},
+                "search_code", {"project": "aosp_project", "query": "startBootstrapServices"}
             )
         assert route.called
         assert "startBootstrapServices" in result.content[0].text

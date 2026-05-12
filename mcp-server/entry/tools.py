@@ -17,19 +17,12 @@ from pydantic import BaseModel
 
 from entry.models import (
     FileContentResult,
-    GetFileContentInput,
-    ListProjectsInput,
     ListProjectsResult,
-    ListReposInput,
     ListReposResult,
     ProjectInfo,
     RepoInfo,
-    SearchCodeInput,
-    SearchFileInput,
     SearchHit,
-    SearchRegexInput,
     SearchResult,
-    SearchSymbolInput,
 )
 
 
@@ -100,13 +93,21 @@ async def _get(ctx: Context, endpoint: str, trace_id: str) -> object:
         raise RuntimeError(f"SourcePilot error ({exc.response.status_code}): {detail}") from exc
 
 
-def _extract_filters(inp: object) -> dict:
-    return {
-        "lang": getattr(inp, "lang", None) or None,
-        "branch": getattr(inp, "branch", None) or None,
-        "case_sensitive": getattr(inp, "case_sensitive", "auto"),
-        **({"project": inp.project} if getattr(inp, "project", None) else {}),  # type: ignore[attr-defined]
+def _build_filters(
+    *,
+    lang: str = "",
+    branch: str = "",
+    case_sensitive: str = "auto",
+    project: str = "",
+) -> dict:
+    filters: dict = {
+        "lang": lang or None,
+        "branch": branch or None,
+        "case_sensitive": case_sensitive,
     }
+    if project:
+        filters["project"] = project
+    return filters
 
 
 def _parse_hits(results: list[dict]) -> list[SearchHit]:
@@ -144,11 +145,11 @@ def register_tools(mcp: object) -> None:
 
     @server.tool(
         description=(
-            "List all available AOSP projects. "
-            "In multi-project deployments, other tools must call this first to get the project name."
+            "List all available AOSP projects. In multi-project deployments, "
+            "other tools must call this first to get the project name."
         )
     )
-    async def list_projects(inp: ListProjectsInput, ctx: Context) -> ListProjectsResult:  # noqa: ARG001
+    async def list_projects(ctx: Context) -> ListProjectsResult:  # noqa: ARG001
         trace_id = str(uuid.uuid4())
         await ctx.info(f"list_projects trace_id={trace_id}")
         try:
@@ -177,21 +178,30 @@ def register_tools(mcp: object) -> None:
             "file locations. Example: search_code(query='SystemServer startBootstrapServices')"
         )
     )
-    async def search_code(inp: SearchCodeInput, ctx: Context) -> SearchResult:
+    async def search_code(
+        query: str,
+        project: str,
+        repo: str = "",
+        top_k: int = 10,
+        lang: str = "",
+        branch: str = "",
+        case_sensitive: str = "auto",
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> SearchResult:
         trace_id = str(uuid.uuid4())
 
         # ── B7: Elicitation when query is too short ─────────────────────────
-        query = inp.query.strip()
-        if len(query) < 3:
+        clean_query = query.strip()
+        if len(clean_query) < 3:
             elicit_result = await ctx.elicit(
                 "Your query is too short to search effectively. "
                 "Please provide a more specific search query.",
                 _RefinedQuerySchema,
             )
             if elicit_result.action == "accept":
-                query = elicit_result.data.refined_query.strip()
+                clean_query = elicit_result.data.refined_query.strip()
             else:
-                return SearchResult(query=inp.query, total=0, hits=[])
+                return SearchResult(query=query, total=0, hits=[])
         # ────────────────────────────────────────────────────────────────────
 
         await ctx.info(f"forwarding search_code to sourcepilot trace_id={trace_id}")
@@ -204,14 +214,16 @@ def register_tools(mcp: object) -> None:
             pass
 
         body = {
-            "query": query,
-            "repos": inp.repo or None,
-            "top_k": inp.top_k,
-            **_extract_filters(inp),
+            "query": clean_query,
+            "repos": repo or None,
+            "top_k": top_k,
+            **_build_filters(
+                lang=lang, branch=branch, case_sensitive=case_sensitive, project=project
+            ),
         }
         results = await _post(ctx, "/api/search", body, trace_id)
         await ctx.report_progress(progress=2, total=2, message=f"received {len(results)} hits")  # type: ignore[arg-type]
-        return _format_hits(query, results)  # type: ignore[arg-type]
+        return _format_hits(clean_query, results)  # type: ignore[arg-type]
 
     @server.tool(
         description=(
@@ -220,17 +232,28 @@ def register_tools(mcp: object) -> None:
             "Example: search_symbol(symbol='startBootstrapServices')"
         )
     )
-    async def search_symbol(inp: SearchSymbolInput, ctx: Context) -> SearchResult:
+    async def search_symbol(
+        symbol: str,
+        project: str,
+        repo: str = "",
+        top_k: int = 5,
+        lang: str = "",
+        branch: str = "",
+        case_sensitive: str = "auto",
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> SearchResult:
         trace_id = str(uuid.uuid4())
         await ctx.info(f"forwarding search_symbol to sourcepilot trace_id={trace_id}")
         body = {
-            "symbol": inp.symbol,
-            "repos": inp.repo or None,
-            "top_k": inp.top_k,
-            **_extract_filters(inp),
+            "symbol": symbol,
+            "repos": repo or None,
+            "top_k": top_k,
+            **_build_filters(
+                lang=lang, branch=branch, case_sensitive=case_sensitive, project=project
+            ),
         }
         results = await _post(ctx, "/api/search_symbol", body, trace_id)
-        return _format_hits(inp.symbol, results)  # type: ignore[arg-type]
+        return _format_hits(symbol, results)  # type: ignore[arg-type]
 
     @server.tool(
         description=(
@@ -239,17 +262,28 @@ def register_tools(mcp: object) -> None:
             "Example: search_file(path='SystemServer.java')"
         )
     )
-    async def search_file(inp: SearchFileInput, ctx: Context) -> SearchResult:
+    async def search_file(
+        path: str,
+        project: str,
+        query: str = "",
+        top_k: int = 5,
+        lang: str = "",
+        branch: str = "",
+        case_sensitive: str = "auto",
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> SearchResult:
         trace_id = str(uuid.uuid4())
         await ctx.info(f"forwarding search_file to sourcepilot trace_id={trace_id}")
         body = {
-            "path": inp.path,
-            "extra_query": inp.query,
-            "top_k": inp.top_k,
-            **_extract_filters(inp),
+            "path": path,
+            "extra_query": query,
+            "top_k": top_k,
+            **_build_filters(
+                lang=lang, branch=branch, case_sensitive=case_sensitive, project=project
+            ),
         }
         results = await _post(ctx, "/api/search_file", body, trace_id)
-        return _format_hits(inp.path, results)  # type: ignore[arg-type]
+        return _format_hits(path, results)  # type: ignore[arg-type]
 
     @server.tool(
         description=(
@@ -257,7 +291,16 @@ def register_tools(mcp: object) -> None:
             "Example: search_regex(pattern='func\\\\s+\\\\w+\\\\s*\\\\(')"
         )
     )
-    async def search_regex(inp: SearchRegexInput, ctx: Context) -> SearchResult:
+    async def search_regex(
+        pattern: str,
+        project: str,
+        repo: str = "",
+        top_k: int = 10,
+        lang: str = "",
+        branch: str = "",
+        case_sensitive: str = "auto",
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> SearchResult:
         trace_id = str(uuid.uuid4())
         await ctx.info(f"forwarding search_regex to sourcepilot trace_id={trace_id}")
 
@@ -265,17 +308,19 @@ def register_tools(mcp: object) -> None:
         cancelled_exc = anyio.get_cancelled_exc_class()
         try:
             body = {
-                "pattern": inp.pattern,
-                "repos": inp.repo or None,
-                "top_k": inp.top_k,
-                **_extract_filters(inp),
+                "pattern": pattern,
+                "repos": repo or None,
+                "top_k": top_k,
+                **_build_filters(
+                lang=lang, branch=branch, case_sensitive=case_sensitive, project=project
+            ),
             }
             results = await _post(ctx, "/api/search_regex", body, trace_id)
         except cancelled_exc:
-            logger.info("search_regex cancelled for pattern=%s", inp.pattern)
+            logger.info("search_regex cancelled for pattern=%s", pattern)
             raise
 
-        return _format_hits(f"/{inp.pattern}/", results)  # type: ignore[arg-type]
+        return _format_hits(f"/{pattern}/", results)  # type: ignore[arg-type]
 
     @server.tool(
         description=(
@@ -284,13 +329,18 @@ def register_tools(mcp: object) -> None:
             "Example: list_repos(query='frameworks')"
         )
     )
-    async def list_repos(inp: ListReposInput, ctx: Context) -> ListReposResult:
+    async def list_repos(
+        project: str,
+        query: str = "",
+        top_k: int = 50,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> ListReposResult:
         trace_id = str(uuid.uuid4())
         await ctx.info(f"forwarding list_repos to sourcepilot trace_id={trace_id}")
         body = {
-            "query": inp.query,
-            "top_k": inp.top_k,
-            "project": inp.project or None,
+            "query": query,
+            "top_k": top_k,
+            "project": project or None,
         }
         repos = await _post(ctx, "/api/list_repos", body, trace_id)
         repo_list = [RepoInfo(name=r.get("name", ""), url=r.get("url", "")) for r in repos]  # type: ignore[union-attr]
@@ -299,26 +349,34 @@ def register_tools(mcp: object) -> None:
     @server.tool(
         description=(
             "Read the full content of an AOSP code file (or a specified line range). "
-            "First use search_file to find the repo and filepath, then use this tool to read the content."
+            "First use search_file to find the repo and filepath, "
+            "then use this tool to read the content."
         )
     )
-    async def get_file_content(inp: GetFileContentInput, ctx: Context) -> FileContentResult:
+    async def get_file_content(
+        repo: str,
+        filepath: str,
+        project: str,
+        start_line: int = 1,
+        end_line: int | None = None,
+        ctx: Context = None,  # type: ignore[assignment]
+    ) -> FileContentResult:
         trace_id = str(uuid.uuid4())
         await ctx.info(f"forwarding get_file_content to sourcepilot trace_id={trace_id}")
         body = {
-            "repo": inp.repo,
-            "filepath": inp.filepath,
-            "start_line": inp.start_line,
-            "end_line": inp.end_line,
-            "project": inp.project or None,
+            "repo": repo,
+            "filepath": filepath,
+            "start_line": start_line,
+            "end_line": end_line,
+            "project": project or None,
         }
         result = await _post(ctx, "/api/get_file_content", body, trace_id)
         r = result  # type: ignore[assignment]
         return FileContentResult(
-            repo=inp.repo,
-            filepath=inp.filepath,
-            start_line=r.get("start_line", inp.start_line),  # type: ignore[union-attr]
-            end_line=r.get("end_line", inp.start_line),  # type: ignore[union-attr]
+            repo=repo,
+            filepath=filepath,
+            start_line=r.get("start_line", start_line),  # type: ignore[union-attr]
+            end_line=r.get("end_line", start_line),  # type: ignore[union-attr]
             total_lines=r.get("total_lines", 0),  # type: ignore[union-attr]
             content=r.get("content", ""),  # type: ignore[union-attr]
         )
