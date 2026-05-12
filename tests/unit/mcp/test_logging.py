@@ -64,7 +64,13 @@ async def test_get_file_content_logs_trace_id(_env):
                 await session.initialize()
                 result = await session.call_tool(
                     "get_file_content",
-                    {"inp": {"repo": "frameworks/base", "filepath": "core/Foo.java"}},
+                    {
+                        "inp": {
+                            "project": "aosp_project",
+                            "repo": "frameworks/base",
+                            "filepath": "core/Foo.java",
+                        }
+                    },
                 )
                 assert not result.isError, f"tool error: {result.content}"
         finally:
@@ -107,7 +113,13 @@ async def test_non_200_upstream_emits_warning(_env):
                 await session.initialize()
                 result = await session.call_tool(
                     "get_file_content",
-                    {"inp": {"repo": "frameworks/base", "filepath": "core/Foo.java"}},
+                    {
+                        "inp": {
+                            "project": "aosp_project",
+                            "repo": "frameworks/base",
+                            "filepath": "core/Foo.java",
+                        }
+                    },
                 )
                 # tool returns error content when upstream fails
                 assert result.isError

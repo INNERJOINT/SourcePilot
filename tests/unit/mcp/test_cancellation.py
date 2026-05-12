@@ -76,7 +76,9 @@ async def test_search_regex_cancellation_aborts_http_call():
                         CallToolRequest(
                             params=CallToolRequestParams(
                                 name="search_regex",
-                                arguments={"inp": {"pattern": "startActivity"}},
+                                arguments={
+                                    "inp": {"project": "aosp_project", "pattern": "startActivity"}
+                                },
                             )
                         ),
                         CallToolResult,

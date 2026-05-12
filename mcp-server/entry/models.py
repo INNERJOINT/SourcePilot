@@ -19,7 +19,7 @@ class SearchCodeInput(BaseModel):
         default="auto",
         description="Case sensitivity mode: auto (default), yes, no",
     )
-    project: str = Field(default="", description="Project name (e.g. aosp-14)")
+    project: str = Field(description="Project name (e.g. aosp-14)")
 
 
 class SearchSymbolInput(BaseModel):
@@ -33,7 +33,7 @@ class SearchSymbolInput(BaseModel):
     case_sensitive: str = Field(
         default="auto", description="Case sensitivity: auto, yes, no",
     )
-    project: str = Field(default="", description="Project name")
+    project: str = Field(description="Project name")
 
 
 class SearchFileInput(BaseModel):
@@ -49,7 +49,7 @@ class SearchFileInput(BaseModel):
     case_sensitive: str = Field(
         default="auto", description="Case sensitivity: auto, yes, no",
     )
-    project: str = Field(default="", description="Project name")
+    project: str = Field(description="Project name")
 
 
 class SearchRegexInput(BaseModel):
@@ -61,13 +61,13 @@ class SearchRegexInput(BaseModel):
     case_sensitive: str = Field(
         default="auto", description="Case sensitivity: auto, yes, no",
     )
-    project: str = Field(default="", description="Project name")
+    project: str = Field(description="Project name")
 
 
 class ListReposInput(BaseModel):
     query: str = Field(default="", description="Repo name filter keyword")
     top_k: int = Field(default=50, description="Max number of results to return")
-    project: str = Field(default="", description="Project name")
+    project: str = Field(description="Project name")
 
 
 class GetFileContentInput(BaseModel):
@@ -81,7 +81,7 @@ class GetFileContentInput(BaseModel):
     end_line: int | None = Field(
         default=None, description="End line number (defaults to EOF)",
     )
-    project: str = Field(default="", description="Project name")
+    project: str = Field(description="Project name")
 
 
 class ListProjectsInput(BaseModel):

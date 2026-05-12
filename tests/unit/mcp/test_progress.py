@@ -62,7 +62,7 @@ async def test_search_code_emits_two_progress_notifications(monkeypatch):
             await session.initialize()
             await session.call_tool(
                 "search_code",
-                {"inp": {"query": "startBootstrapServices"}},
+                {"inp": {"project": "aosp_project", "query": "startBootstrapServices"}},
                 progress_callback=_on_progress,
             )
 
