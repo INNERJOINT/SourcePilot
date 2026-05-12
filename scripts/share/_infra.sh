@@ -328,7 +328,7 @@ infra_start_mcp() {
   fi
   _infra_require_cmd docker "install Docker to run mcp-server"
   info "Starting mcp-server (Docker)..."
-  docker compose -f "$COMPOSE_FILE" up -d mcp-server
+  docker compose -f "$COMPOSE_FILE" up -d --build mcp-server
   _infra_ensure_network_access sourcepilot-net
   if getent hosts mcp-server > /dev/null 2>&1; then
     _mcp_url="http://mcp-server:${mcp_port}"
